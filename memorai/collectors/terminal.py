@@ -1,5 +1,3 @@
-"""Terminal activity collector."""
-
 import json
 import os
 import subprocess

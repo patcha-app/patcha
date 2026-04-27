@@ -1,5 +1,3 @@
-"""Browser activity collector."""
-
 import json
 import sqlite3
 import re
@@ -17,26 +15,19 @@ class BrowserCollector:
         self.history_paths = config.browser_history_paths
 
     def _enhance_youtube_title(self, title: str, url: str) -> str:
-        """Enhance YouTube titles by extracting video ID and improving title quality."""
         if "youtube.com/watch" not in url and "youtu.be/" not in url:
             return title
 
-        # Extract video ID from URL
         video_id_match = re.search(r'(?:v=|youtu\.be/|embed/)([a-zA-Z0-9_-]+)', url)
         if not video_id_match:
             return title
 
         video_id = video_id_match.group(1)
-
-        # If title is missing, empty, or just the video ID, enhance it
         if not title or title.strip() == "" or title == "Untitled" or video_id in title:
-            # If the title is just the video ID or very basic, add context
             if title and title != "Untitled" and video_id not in title:
                 return f"YouTube: {title}"
             else:
                 return f"YouTube Video (ID: {video_id})"
-
-        # If we have a good title, ensure it's clearly marked as YouTube content
         if not title.lower().startswith(('youtube', 'yt:')):
             return f"YouTube: {title}"
 
@@ -73,8 +64,6 @@ class BrowserCollector:
                 )
 
                 domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
-
-                # Enhance title, especially for YouTube videos
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -133,8 +122,6 @@ class BrowserCollector:
             for title, url, visit_time in cursor.fetchall():
                 timestamp = datetime.fromtimestamp(visit_time, tz=timezone.utc)
                 domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
-
-                # Enhance title, especially for YouTube videos
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(

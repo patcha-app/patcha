@@ -1,5 +1,3 @@
-"""macOS active window and app focus tracking collector."""
-
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -13,22 +11,11 @@ from memorai.db.models import Event, EventType
 class WindowCollector:
     """Tracks active macOS app and window title via osascript.
 
-    Requires Accessibility permission:
+    requires accessibility permission:
     System Settings > Privacy & Security > Accessibility → enable terminal/memorai.
     """
 
-    _SCRIPT = (
-        'tell application "System Events"\n'
-        '    set frontApp to first application process whose frontmost is true\n'
-        '    set appName to name of frontApp\n'
-        '    try\n'
-        '        set windowTitle to name of front window of frontApp\n'
-        '    on error\n'
-        '        set windowTitle to ""\n'
-        '    end try\n'
-        '    return appName & "|||" & windowTitle\n'
-        'end tell'
-    )
+    _SCRIPT = Path(__file__).parent.parent / "appscripts" / "window_title.applescript"
 
     def __init__(self):
         self.log_file: Path = config.data_dir / "window_log.jsonl"
@@ -36,7 +23,7 @@ class WindowCollector:
     def _get_active_window(self) -> Tuple[str, str]:
         try:
             result = subprocess.run(
-                ["osascript", "-e", self._SCRIPT],
+                ["osascript", self._SCRIPT],
                 capture_output=True,
                 text=True,
                 timeout=5,

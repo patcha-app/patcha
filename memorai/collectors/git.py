@@ -77,7 +77,6 @@ class GitCollector:
             else:
                 print(f"Found {len(git_repos)} git repositories: {[str(r) for r in git_repos]}")
 
-        # Collect commits from all found repositories
         for repo_path in git_repos:
             try:
                 repo = Repo(repo_path)

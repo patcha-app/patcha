@@ -14,11 +14,8 @@ logger = logging.getLogger(__name__)
 from memorai.config import config, settings
 
 _POLL_INTERVAL = settings.get('poll_interval')
-_SWIFT_SOURCE = Path(__file__).parent.parent / "ocr.swift"
-_APP_SCRIPT = (
-    'tell application "System Events" to return name of '
-    "first application process whose frontmost is true"
-)
+_SWIFT_SOURCE = Path(__file__).parent.parent / "appscripts" / "ocr.swift"
+_APP_SCRIPT = Path(__file__).parent.parent / "appscripts" / "window_title.applescript"
 _MAX_LOG_ROWS = 100_000
 _TRIM_EVERY = 1_000
 _SIMILARITY_THRESHOLD = 0.85
@@ -71,7 +68,7 @@ class AccessibilityCollector:
     def _get_app_name(self) -> str:
         try:
             result = subprocess.run(
-                ["osascript", "-e", _APP_SCRIPT],
+                ["osascript", _APP_SCRIPT],
                 capture_output=True,
                 text=True,
                 timeout=3,
