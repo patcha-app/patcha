@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import signal
 import sys
@@ -51,9 +52,12 @@ def _get_vector_store() -> VectorStore:
 
 @click.group()
 @click.version_option()
-def cli():
+@click.option("--debug", is_flag=True, default=False, help="Enable debug logging")
+@click.pass_context
+def cli(ctx, debug):
     """MemorAI - AI-powered memory and activity tracking system."""
-    pass
+    from memorai.utils.logging import init_logging
+    init_logging(level=logging.DEBUG if debug else logging.INFO)
 
 
 @cli.command()

@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 
@@ -7,7 +8,11 @@ from memorai.daemon import ActivityDaemon
 
 
 def main():
-    init_logging()
+    parser = argparse.ArgumentParser(description="memorai daemon")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+
+    init_logging(level=logging.DEBUG if args.debug else logging.INFO)
     log = logging.getLogger("memorai")
     log.info("starting (pid=%d)", os.getpid())
     poll_interval = settings.get("poll_interval") or 60

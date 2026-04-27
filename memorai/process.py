@@ -1,6 +1,7 @@
 """Event preprocessing with summarization and embeddings."""
 
 import asyncio
+import logging
 import re
 from typing import List, Optional, Tuple, Union
 from urllib.parse import urlparse
@@ -9,6 +10,8 @@ from openai import OpenAI
 
 from memorai.config import config
 from memorai.db.models import Category, Event, EventType
+
+log = logging.getLogger(__name__)
 
 
 class EventPreprocessor:
@@ -107,9 +110,12 @@ class EventPreprocessor:
                 model=self.model_name,
                 messages=[{"role": "user", "content": template.format(content=content)}],
             )
-            return response.choices[0].message.content.strip()
+            summary = response.choices[0].message.content.strip()
+            log.debug("summary generated for %s: %s", event.type, summary[:80])
+            return summary
         except Exception as e:
-            print(f"Error generating summary for event {event.type}: {e}")
+            log.error("error generating summary for event %s: %s", event.type, e)
+            log.debug("falling back to template summary for %s", event.type)
             return self._generate_fallback_summary(event)
 
     def _generate_fallback_summary(self, event: Event) -> str:
@@ -161,14 +167,17 @@ class EventPreprocessor:
         return fallback_summaries.get(event.type, f"Completed work activity{project_part}")
 
     def generate_embedding(self, text: str) -> Optional[List[float]]:
+        log.debug("generating embedding for text (len=%d)", len(text))
         try:
             response = self.client.embeddings.create(
                 model=self.embedding_model,
                 input=text,
             )
-            return response.data[0].embedding
+            embedding = response.data[0].embedding
+            log.debug("embedding generated: dim=%d", len(embedding))
+            return embedding
         except Exception as e:
-            print(f"Error generating embedding: {e}")
+            log.error("error generating embedding: %s", e)
             return None
 
     def categorize_event(self, event: Event, summary: str) -> Category:
@@ -198,12 +207,15 @@ class EventPreprocessor:
 
             for category in Category:
                 if category.value.lower() in category_text.lower():
+                    log.debug("categorized %s → %s", event.type, category.value)
                     return category
 
+            log.debug("unrecognized category response '%s', using fallback for %s", category_text, event.type)
             return self._categorize_fallback(event)
 
         except Exception as e:
-            print(f"Error categorizing event: {e}")
+            log.error("error categorizing event %s: %s", event.type, e)
+            log.debug("falling back to default category for %s", event.type)
             return self._categorize_fallback(event)
 
     def _categorize_fallback(self, event: Event) -> Category:
@@ -218,15 +230,14 @@ class EventPreprocessor:
         return fallback_categories.get(event.type, Category.OTHER)
 
     def process_event(self, event: Event) -> Event:
-        # Generate summary
+        log.debug("processing event type=%s source=%s", event.type, event.source)
+
         summary = self.generate_summary(event)
         event.summary = summary
 
-        # Categorize event
         category = self.categorize_event(event, summary)
         event.category = category
 
-        # Generate embedding focused on task content, not platform
         embedding_text = f"Task: {summary}"
         if event.project:
             embedding_text += f" in {event.project} project"
@@ -234,6 +245,7 @@ class EventPreprocessor:
         embedding = self.generate_embedding(embedding_text)
         event.embedding = embedding
 
+        log.debug("event processed: type=%s category=%s has_embedding=%s", event.type, category, embedding is not None)
         return event
 
     def process_events(self, events: List[Event]) -> List[Event]:
@@ -244,8 +256,7 @@ class EventPreprocessor:
                 processed_event = self.process_event(event)
                 processed_events.append(processed_event)
             except Exception as e:
-                print(f"Error processing event: {e}")
-                # Add event without processing if there's an error
+                log.error("error processing event: %s", e)
                 processed_events.append(event)
 
         return processed_events
@@ -278,7 +289,7 @@ class EventPreprocessor:
                     'details': metadata
                 }
             except Exception as e:
-                print(f"Error with enhanced categorization: {e}, falling back to standard")
+                log.error("error with enhanced categorization: %s — falling back to standard", e)
                 event.category = self.categorize_event(event, summary)
         else:
             # Fallback to standard categorization
@@ -299,13 +310,12 @@ class EventPreprocessor:
                 processed_event = self.process_event_with_rag(event, enhanced_categorizer)
                 processed_events.append(processed_event)
             except Exception as e:
-                print(f"Error processing event with RAG: {e}")
-                # Fallback to standard processing
+                log.error("error processing event with RAG: %s", e)
                 try:
                     processed_event = self.process_event(event)
                     processed_events.append(processed_event)
                 except Exception as e2:
-                    print(f"Error with fallback processing: {e2}")
+                    log.error("error with fallback processing: %s", e2)
                     processed_events.append(event)
 
         return processed_events
@@ -394,7 +404,7 @@ class EventPreprocessor:
             all_processed_events.extend(processed_events)
             all_identified_tasks.extend(identified_tasks)
 
-            print(f"Processed batch {i//batch_size + 1}/{(len(events) + batch_size - 1)//batch_size}")
+            log.debug("processed batch %d/%d", i // batch_size + 1, (len(events) + batch_size - 1) // batch_size)
 
         return all_processed_events, all_identified_tasks
 
@@ -447,8 +457,7 @@ Respond with a focused topic summary:"""
             return response.choices[0].message.content.strip()
 
         except Exception as e:
-            print(f"Error generating enhanced browser summary: {e}")
-            # Fallback to enhanced fallback summary
+            log.error("error generating enhanced browser summary: %s", e)
             return self._generate_enhanced_browser_fallback(event, project_context)
 
     def _generate_enhanced_browser_summary(self, event: Union[Event, dict], project_context: str) -> str:
@@ -485,7 +494,7 @@ Respond with a focused topic summary:"""
             return response.choices[0].message.content.strip()
 
         except Exception as e:
-            print(f"Error generating enhanced browser summary: {e}")
+            log.error("error generating enhanced browser summary: %s", e)
             return self._generate_enhanced_browser_fallback(event, project_context)
 
     def _extract_topic_from_url(self, url: str) -> str:

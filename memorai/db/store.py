@@ -1,5 +1,6 @@
 """Vector storage using Qdrant."""
 
+import logging
 import uuid
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
@@ -8,6 +9,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, Fi
 
 from memorai.db.models import Event, Category
 from memorai.config import config
+
+log = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -30,20 +33,24 @@ class VectorStore:
                         distance=Distance.COSINE
                     )
                 )
-                print(f"Created collection: {self.collection_name}")
+                log.info("created collection: %s", self.collection_name)
+            else:
+                log.debug("collection already exists: %s", self.collection_name)
         except Exception as e:
-            print(f"Error ensuring collection exists: {e}")
+            log.error("error ensuring collection exists: %s", e)
 
     def store_event(self, event: Event) -> bool:
         if not event.embedding:
-            print(f"Event {event.type} has no embedding, skipping storage")
+            log.debug("skipping event %s — no embedding", event.type)
             return False
 
         try:
             if event.source_doc_id:
                 point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
+                log.debug("dedup: using deterministic id for source_doc_id=%s → point_id=%s", event.source_doc_id, point_id)
             else:
                 point_id = str(uuid.uuid4())
+                log.debug("new point id (no source_doc_id): %s", point_id)
 
             payload = {
                 "timestamp": event.timestamp.isoformat(),
@@ -67,11 +74,11 @@ class VectorStore:
                 collection_name=self.collection_name,
                 points=[point]
             )
-
+            log.debug("upserted event type=%s point_id=%s", event.type, point_id)
             return True
 
         except Exception as e:
-            print(f"Error storing event: {e}")
+            log.error("error storing event: %s", e)
             return False
 
     def store_events(self, events: List[Event]) -> int:
@@ -80,13 +87,16 @@ class VectorStore:
 
         for event in events:
             if not event.embedding:
+                log.debug("skipping event %s — no embedding", event.type)
                 continue
 
             try:
                 if event.source_doc_id:
                     point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
+                    log.debug("dedup: deterministic id for source_doc_id=%s → %s", event.source_doc_id, point_id)
                 else:
                     point_id = str(uuid.uuid4())
+                    log.debug("new point id: %s type=%s", point_id, event.type)
 
                 payload = {
                     "timestamp": event.timestamp.isoformat(),
@@ -109,19 +119,24 @@ class VectorStore:
                 points.append(point)
 
             except Exception as e:
-                print(f"Error preparing event for storage: {e}")
+                log.error("error preparing event for storage: %s", e)
                 continue
 
         if points:
             try:
+                log.debug("upserting batch of %d points to collection %s", len(points), self.collection_name)
                 self.client.upsert(
                     collection_name=self.collection_name,
                     points=points
                 )
                 successful_stores = len(points)
-                print(f"Stored {successful_stores} events")
+                log.info("stored %d events", successful_stores)
             except Exception as e:
-                print(f"Error batch storing events: {e}")
+                log.error("error batch storing events: %s", e)
+
+        skipped = len(events) - successful_stores
+        if skipped:
+            log.debug("skipped %d events (no embedding or prep error)", skipped)
 
         return successful_stores
 
@@ -138,6 +153,7 @@ class VectorStore:
         filter_conditions = []
 
         if date_filter:
+            log.debug("search filter: date=%s", date_filter.isoformat())
             filter_conditions.append(
                 FieldCondition(
                     key="date",
@@ -146,6 +162,7 @@ class VectorStore:
             )
 
         if category_filter:
+            log.debug("search filter: category=%s", category_filter.value)
             filter_conditions.append(
                 FieldCondition(
                     key="category",
@@ -154,6 +171,7 @@ class VectorStore:
             )
 
         if project_filter:
+            log.debug("search filter: project=%s", project_filter)
             filter_conditions.append(
                 FieldCondition(
                     key="project",
@@ -162,6 +180,7 @@ class VectorStore:
             )
 
         if type_filter:
+            log.debug("search filter: type=%s", type_filter)
             filter_conditions.append(
                 FieldCondition(
                     key="type",
@@ -170,6 +189,7 @@ class VectorStore:
             )
 
         query_filter = Filter(must=filter_conditions) if filter_conditions else None
+        log.debug("searching with %d filter(s), limit=%d", len(filter_conditions), limit)
 
         try:
             results = self.client.search(
@@ -178,6 +198,7 @@ class VectorStore:
                 limit=limit,
                 query_filter=query_filter
             )
+            log.debug("search returned %d results", len(results))
 
             return [
                 {
@@ -189,7 +210,7 @@ class VectorStore:
             ]
 
         except Exception as e:
-            print(f"Error searching events: {e}")
+            log.error("error searching events: %s", e)
             return []
 
     def get_events_by_date(self, target_date: date) -> List[Dict[str, Any]]:
@@ -227,7 +248,7 @@ class VectorStore:
             ]
 
         except Exception as e:
-            print(f"Error getting events by date: {e}")
+            log.error("error getting events by date: %s", e)
             return []
 
     def get_events_by_category(
@@ -278,7 +299,7 @@ class VectorStore:
             ]
 
         except Exception as e:
-            print(f"Error getting events by category: {e}")
+            log.error("error getting events by category: %s", e)
             return []
 
     def get_collection_info(self) -> Dict[str, Any]:
@@ -291,7 +312,7 @@ class VectorStore:
                 "status": info.status
             }
         except Exception as e:
-            print(f"Error getting collection info: {e}")
+            log.error("error getting collection info: %s", e)
             return {}
 
     def delete_events_by_date(self, target_date: date) -> bool:
@@ -313,5 +334,5 @@ class VectorStore:
             return True
 
         except Exception as e:
-            print(f"Error deleting events by date: {e}")
+            log.error("error deleting events by date: %s", e)
             return False

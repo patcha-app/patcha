@@ -1,8 +1,10 @@
- data/*
- !data/.gitkeep
- .venv/
- *.pyc
- __pycache__/
- *.egg-info/
- dist/
- *.log
+data/*
+!data/.gitkeep
+.venv/
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+*.log
+.env
+.env.development
