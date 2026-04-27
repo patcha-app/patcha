@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.memorai.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>MEMORAI_UV_BIN</string>
+        <string>run</string>
+        <string>--project</string>
+        <string>MEMORAI_PROJECT_PATH</string>
+        <string>python</string>
+        <string>MEMORAI_PROJECT_PATH/main.py</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>MEMORAI_PROJECT_PATH</string>
+
+    <key>StandardOutPath</key>
+    <string>MEMORAI_LOG_PATH/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>MEMORAI_LOG_PATH/launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>MEMORAI_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>MEMORAI_HOME</string>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>
