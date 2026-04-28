@@ -10,13 +10,31 @@ guard
     let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
 else { exit(1) }
 
+struct TextObs: Codable {
+    let text: String
+    let x: Double
+    let y: Double
+    let w: Double
+    let h: Double
+}
+
 let semaphore = DispatchSemaphore(value: 0)
-var recognized = ""
+var observations: [TextObs] = []
 
 let request = VNRecognizeTextRequest { req, _ in
     defer { semaphore.signal() }
     guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
-    recognized = obs.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+    for observation in obs {
+        guard let text = observation.topCandidates(1).first?.string else { continue }
+        let b = observation.boundingBox
+        observations.append(TextObs(
+            text: text,
+            x: Double(b.origin.x),
+            y: Double(b.origin.y),
+            w: Double(b.size.width),
+            h: Double(b.size.height)
+        ))
+    }
 }
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = true
@@ -25,5 +43,7 @@ let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 try? handler.perform([request])
 semaphore.wait()
 
-let maxLen = 2000
-print(recognized.count > maxLen ? String(recognized.prefix(maxLen)) : recognized)
+if let data = try? JSONEncoder().encode(observations),
+   let json = String(data: data, encoding: .utf8) {
+    print(json)
+}

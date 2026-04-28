@@ -15,7 +15,7 @@ class WindowCollector:
     System Settings > Privacy & Security > Accessibility → enable terminal/memorai.
     """
 
-    _SCRIPT = Path(__file__).parent.parent / "appscripts" / "window_title.applescript"
+    _SCRIPT = Path(__file__).parent.parent / "macos" / "window_title.applescript"
 
     def __init__(self):
         self.log_file: Path = config.data_dir / "window_log.jsonl"

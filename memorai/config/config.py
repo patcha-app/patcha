@@ -15,6 +15,11 @@ class Config(BaseModel):
     collection_name: str = "mem"
     vector_size: int = 1536
     max_events_per_day: int = 10000
+    max_embedding_tokens: int = 8191
+    embedding_chunk_overlap: int = 100
+    working_memory_dedup_threshold: float = 0.95
+    compaction_interval_minutes: int = 30
+    digest_collection_name: str = "digests"
     browser_history_paths: dict = {
         "chrome": "~/Library/Application Support/Google/Chrome/Default/History",
         "arc": "~/Library/Application Support/Arc/User Data/Default/History",

@@ -13,6 +13,7 @@ from memorai.collectors.browser import BrowserCollector
 from memorai.collectors.terminal import TerminalCollector
 from memorai.collectors.window import WindowCollector
 from memorai.collectors.accessibility import AccessibilityCollector
+from memorai.utils.compaction import Compactor
 from memorai.process import EventPreprocessor
 from memorai.db.store import VectorStore
 from memorai.db.models import Event, EventType
@@ -37,6 +38,7 @@ class ActivityDaemon:
         self.accessibility_collector = AccessibilityCollector()
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
+        self.compactor = Compactor()
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -154,8 +156,7 @@ class ActivityDaemon:
                 processed_events = []
                 for event in batch:
                     try:
-                        processed_event = self.preprocessor.process_event(event)
-                        processed_events.append(processed_event)
+                        processed_events.extend(self.preprocessor.process_event(event))
                     except Exception as e:
                         self.logger.warning(f"Error processing event: {e}")
                         continue
@@ -170,6 +171,12 @@ class ActivityDaemon:
                         continue
 
             self.logger.info(f"Successfully processed and stored {total_stored}/{len(all_events)} events")
+
+            try:
+                self.compactor.maybe_compact(all_events, since, current_time)
+            except Exception as e:
+                self.logger.error(f"Compaction error: {e}")
+
             self.last_collection_time = current_time
 
             pid_file = config.data_dir / "daemon.pid"

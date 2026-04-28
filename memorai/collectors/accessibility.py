@@ -14,16 +14,21 @@ logger = logging.getLogger(__name__)
 from memorai.config import config, settings
 
 _POLL_INTERVAL = settings.get('poll_interval')
-_SWIFT_SOURCE = Path(__file__).parent.parent / "appscripts" / "ocr.swift"
-_APP_SCRIPT = Path(__file__).parent.parent / "appscripts" / "window_title.applescript"
+_AX_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ax_content.swift"
+_OCR_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ocr.swift"
+_APP_SCRIPT = Path(__file__).parent.parent / "macos" / "window_title.applescript"
 _MAX_LOG_ROWS = 100_000
 _TRIM_EVERY = 1_000
 _SIMILARITY_THRESHOLD = 0.85
+_MIN_CONTENT_LEN = 60
+_MIN_DURATION_SECS = 4
+_SKIP_APPS = {"Finder", "System Preferences", "System Settings", "loginwindow", "Dock", ""}
 
 
 class AccessibilityCollector:
     def __init__(self) -> None:
-        self._binary: Optional[Path] = None
+        self._ax_binary: Optional[Path] = None
+        self._ocr_binary: Optional[Path] = None
         self._last_text = ""
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -43,29 +48,34 @@ class AccessibilityCollector:
             return 0
         return count
 
-    def _ensure_binary(self) -> Optional[Path]:
-        if self._binary:
-            return self._binary
-        binary = config.data_dir / "ocr"
+    def _compile(self, source: Path, output_name: str) -> Optional[Path]:
+        binary = config.data_dir / output_name
         if binary.exists():
-            self._binary = binary
             return binary
-
-        if not _SWIFT_SOURCE.exists():
+        if not source.exists():
             return None
-
         config.data_dir.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
-            ["swiftc", str(_SWIFT_SOURCE), "-o", str(binary)],
+            ["swiftc", str(source), "-o", str(binary)],
             capture_output=True,
             timeout=60,
         )
         if result.returncode != 0:
+            logger.debug("swiftc failed for %s: %s", source.name, result.stderr.decode())
             return None
-        self._binary = binary
         return binary
 
-    def _get_app_name(self) -> str:
+    def _ensure_ax_binary(self) -> Optional[Path]:
+        if not self._ax_binary:
+            self._ax_binary = self._compile(_AX_SWIFT_SOURCE, "ax_content")
+        return self._ax_binary
+
+    def _ensure_ocr_binary(self) -> Optional[Path]:
+        if not self._ocr_binary:
+            self._ocr_binary = self._compile(_OCR_SWIFT_SOURCE, "ocr")
+        return self._ocr_binary
+
+    def _get_app_name_fallback(self) -> Tuple[str, str]:
         try:
             result = subprocess.run(
                 ["osascript", _APP_SCRIPT],
@@ -73,15 +83,105 @@ class AccessibilityCollector:
                 text=True,
                 timeout=3,
             )
-            return result.stdout.strip() if result.returncode == 0 else ""
+            if result.returncode != 0:
+                return ("", "")
+            parts = result.stdout.strip().split("|||", 1)
+            return (parts[0].strip(), parts[1].strip() if len(parts) > 1 else "")
         except (subprocess.TimeoutExpired, OSError):
-            return ""
+            return ("", "")
 
-    def _get_ocr_text(self) -> Optional[Dict]:
-        binary = self._ensure_binary()
+    def _get_ax_content(self) -> Optional[Dict]:
+        binary = self._ensure_ax_binary()
         if not binary:
             return None
+        try:
+            result = subprocess.run(
+                [str(binary)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return None
+            raw = result.stdout.strip()
+            if not raw:
+                return None
+            return json.loads(raw)
+        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+            return None
 
+    @staticmethod
+    def _reconstruct_layout(observations: List[Dict]) -> str:
+        if not observations:
+            return ""
+
+        def x_mid(o: Dict) -> float: return o["x"] + o["w"] / 2
+        def y_mid(o: Dict) -> float: return o["y"] + o["h"] / 2
+
+        def gap_splits(midpoints: List[float], min_gap: float) -> List[float]:
+            pts = sorted(midpoints)
+            splits = []
+            for i in range(1, len(pts)):
+                if pts[i] - pts[i - 1] > min_gap:
+                    splits.append((pts[i - 1] + pts[i]) / 2)
+            return splits
+
+        def assign(val: float, splits: List[float]) -> int:
+            return sum(1 for s in splits if val > s)
+
+        col_splits = gap_splits([x_mid(o) for o in observations], min_gap=0.02)
+
+        cols: Dict[int, List] = {}
+        for obs in observations:
+            cols.setdefault(assign(x_mid(obs), col_splits), []).append(obs)
+
+        section_parts = []
+        for ci in sorted(cols):
+            col_obs = cols[ci]
+
+            row_splits = gap_splits(
+                sorted([y_mid(o) for o in col_obs], reverse=True),
+                min_gap=0.03,
+            )
+            row_splits_asc = sorted(row_splits)
+
+            def row_idx(o: Dict) -> int:
+                ym = y_mid(o)
+                return sum(1 for s in row_splits_asc if ym < s)
+
+            rows: Dict[int, List] = {}
+            for obs in col_obs:
+                rows.setdefault(row_idx(obs), []).append(obs)
+
+            col_lines = []
+            for ri in sorted(rows):
+                row_obs = sorted(rows[ri], key=lambda o: -y_mid(o))
+                lines: List[str] = []
+                current: List[Dict] = []
+                for obs in row_obs:
+                    if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.015:
+                        current.append(obs)
+                    else:
+                        lines.append(" ".join(
+                            o["text"] for o in sorted(current, key=lambda o: o["x"])
+                        ))
+                        current = [obs]
+                if current:
+                    lines.append(" ".join(
+                        o["text"] for o in sorted(current, key=lambda o: o["x"])
+                    ))
+                col_lines.extend(lines)
+                if ri < max(rows):
+                    col_lines.append("---")
+
+            section_parts.append("\n".join(col_lines))
+
+        return "\n\n===\n\n".join(section_parts)[:4000]
+
+    def _take_ocr_screenshot(self, app_name: str, window_title: str) -> Optional[Dict]:
+        binary = self._ensure_ocr_binary()
+        if not binary:
+            return None
         fd, tmp_path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
@@ -92,7 +192,6 @@ class AccessibilityCollector:
             )
             if cap.returncode != 0 or not os.path.getsize(tmp_path):
                 return None
-
             ocr = subprocess.run(
                 [str(binary), tmp_path],
                 capture_output=True,
@@ -101,12 +200,17 @@ class AccessibilityCollector:
             )
             if ocr.returncode != 0:
                 return None
-
-            text = ocr.stdout.strip()
+            raw = ocr.stdout.strip()
+            if not raw:
+                return None
+            try:
+                observations = json.loads(raw)
+                text = self._reconstruct_layout(observations)
+            except (json.JSONDecodeError, TypeError, KeyError):
+                text = raw[:4000]
             if not text:
                 return None
-
-            return {"app": self._get_app_name(), "text": text}
+            return {"app": app_name, "window_title": window_title, "text": text}
         except (subprocess.TimeoutExpired, OSError):
             return None
         finally:
@@ -115,18 +219,45 @@ class AccessibilityCollector:
             except OSError:
                 pass
 
+    def _get_screen_content(self) -> Optional[Dict]:
+        ax = self._get_ax_content()
+        if ax:
+            app_name = ax.get("app", "")
+            window_title = ax.get("window_title", "")
+            source = ax.get("source", "ocr_needed")
+            logger.debug("AX result: app=%s source=%s", app_name, source)
+
+            if source != "ocr_needed":
+                content = ax.get("content", "").strip()
+                if content:
+                    return {"app": app_name, "window_title": window_title, "text": content}
+
+            # AX binary ran but content requires OCR; use app/window from AX
+            return self._take_ocr_screenshot(app_name, window_title)
+
+        # AX binary unavailable — fall back to applescript for app name + OCR
+        app_name, window_title = self._get_app_name_fallback()
+        return self._take_ocr_screenshot(app_name, window_title)
+
     def record_current_screen(self) -> None:
-        data = self._get_ocr_text()
+        data = self._get_screen_content()
         if not data:
-            logger.debug("No OCR data captured from screen")
+            logger.debug("No screen content captured")
             return
-        if data["text"] == self._last_text:
+        if data["app"] in _SKIP_APPS:
+            logger.debug("Skipping capture for noise app: %s", data["app"])
+            return
+        text = data["text"]
+        if len(text.strip()) < _MIN_CONTENT_LEN:
+            logger.debug("Skipping capture: content too short (%d chars)", len(text.strip()))
+            return
+        if text == self._last_text:
             return
         if self._last_text:
-            ratio = SequenceMatcher(None, self._last_text, data["text"]).ratio()
+            ratio = SequenceMatcher(None, self._last_text, text).ratio()
             if ratio >= _SIMILARITY_THRESHOLD:
                 return
-        self._last_text = data["text"]
+        self._last_text = text
         config.data_dir.mkdir(parents=True, exist_ok=True)
         entry = {"timestamp": datetime.now(timezone.utc).isoformat(), **data}
         with open(self.log_file, "a") as f:
@@ -193,17 +324,28 @@ class AccessibilityCollector:
             end_ts = entries[i + 1][0] if i + 1 < len(entries) else now
             duration = int((end_ts - ts).total_seconds())
 
+            if duration < _MIN_DURATION_SECS:
+                continue
+
             text = obj.get("text", "")
             if not text:
                 continue
 
             app = obj.get("app", "")
+            window_title = obj.get("window_title", "")
+
+            if window_title:
+                raw_content = f"{app} — {window_title}: {text}"
+            else:
+                raw_content = f"{app}: {text}"
+
             events.append({
                 "timestamp": ts,
                 "source": "accessibility",
-                "raw_content": f"{app}: {text}",
+                "raw_content": raw_content,
                 "metadata": {
                     "app_name": app,
+                    "window_title": window_title,
                     "duration_seconds": duration,
                 },
             })

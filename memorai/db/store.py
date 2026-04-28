@@ -302,6 +302,34 @@ class VectorStore:
             log.error("error getting events by category: %s", e)
             return []
 
+    def get_recent_events(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+        today = date.today()
+        payloads = [p["payload"] for p in self.get_events_by_date(today)]
+
+        if since.date() < today:
+            yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
+            if yesterday:
+                payloads += [p["payload"] for p in self.get_events_by_date(yesterday)]
+
+        since_str = since.isoformat()
+        recent = [p for p in payloads if p.get("timestamp", "") >= since_str]
+        recent.sort(key=lambda p: p.get("timestamp", ""))
+        return recent[:limit]
+
+    def get_recent_events_with_vectors(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+        today = date.today()
+        rows = self.get_events_by_date(today)
+
+        if since.date() < today:
+            yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
+            if yesterday:
+                rows += self.get_events_by_date(yesterday)
+
+        since_str = since.isoformat()
+        recent = [r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str]
+        recent.sort(key=lambda r: r.get("payload", {}).get("timestamp", ""))
+        return recent[:limit]
+
     def get_collection_info(self) -> Dict[str, Any]:
         try:
             info = self.client.get_collection(self.collection_name)
