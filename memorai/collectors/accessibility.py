@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -19,8 +18,9 @@ _OCR_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ocr.swift"
 _APP_SCRIPT = Path(__file__).parent.parent / "macos" / "window_title.applescript"
 _MAX_LOG_ROWS = 100_000
 _TRIM_EVERY = 1_000
-_SIMILARITY_THRESHOLD = 0.85
 _MIN_CONTENT_LEN = 60
+_MIN_DIFF_LEN = 30        # minimum new chars required to write a diff entry
+_FULL_REPLACE_RATIO = 0.8 # if diff is >80% of new content, store full text (new page)
 _MIN_DURATION_SECS = 4
 _SKIP_APPS = {"Finder", "System Preferences", "System Settings", "loginwindow", "Dock", ""}
 
@@ -29,7 +29,7 @@ class AccessibilityCollector:
     def __init__(self) -> None:
         self._ax_binary: Optional[Path] = None
         self._ocr_binary: Optional[Path] = None
-        self._last_text = ""
+        self._last_text: Dict[Tuple[str, str], str] = {}  # (app, window_title) → last full text
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.log_file: Path = config.data_dir / "screen_log.jsonl"
@@ -239,27 +239,53 @@ class AccessibilityCollector:
         app_name, window_title = self._get_app_name_fallback()
         return self._take_ocr_screenshot(app_name, window_title)
 
+    @staticmethod
+    def _content_diff(old: str, new: str) -> str:
+        """Return lines that appear in `new` but not in `old`."""
+        old_lines = set(old.splitlines())
+        added = [line for line in new.splitlines() if line.strip() and line not in old_lines]
+        return "\n".join(added)
+
     def record_current_screen(self) -> None:
         data = self._get_screen_content()
         if not data:
             logger.debug("No screen content captured")
             return
-        if data["app"] in _SKIP_APPS:
-            logger.debug("Skipping capture for noise app: %s", data["app"])
+        app = data["app"]
+        window_title = data["window_title"]
+        if app in _SKIP_APPS:
+            logger.debug("Skipping capture for noise app: %s", app)
             return
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:
             logger.debug("Skipping capture: content too short (%d chars)", len(text.strip()))
             return
-        if text == self._last_text:
-            return
-        if self._last_text:
-            ratio = SequenceMatcher(None, self._last_text, text).ratio()
-            if ratio >= _SIMILARITY_THRESHOLD:
+
+        key = (app, window_title)
+        last = self._last_text.get(key, "")
+
+        if last:
+            diff = self._content_diff(last, text)
+            if len(diff) < _MIN_DIFF_LEN:
+                self._last_text[key] = text
                 return
-        self._last_text = text
+            diff_ratio = len(diff) / max(len(text), 1)
+            is_diff = diff_ratio <= _FULL_REPLACE_RATIO
+            raw_for_embed = diff if is_diff else text
+        else:
+            raw_for_embed = text
+            is_diff = False
+
+        self._last_text[key] = text
         config.data_dir.mkdir(parents=True, exist_ok=True)
-        entry = {"timestamp": datetime.now(timezone.utc).isoformat(), **data}
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "app": app,
+            "window_title": window_title,
+            "text": raw_for_embed,
+            "is_diff": is_diff,
+            "full_content_chars": len(text),
+        }
         with open(self.log_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
         self._line_count += 1
@@ -339,15 +365,20 @@ class AccessibilityCollector:
             else:
                 raw_content = f"{app}: {text}"
 
+            meta: Dict = {
+                "app_name": app,
+                "window_title": window_title,
+                "duration_seconds": duration,
+            }
+            if obj.get("is_diff"):
+                meta["is_diff"] = True
+                meta["full_content_chars"] = obj.get("full_content_chars", len(text))
+
             events.append({
                 "timestamp": ts,
                 "source": "accessibility",
                 "raw_content": raw_content,
-                "metadata": {
-                    "app_name": app,
-                    "window_title": window_title,
-                    "duration_seconds": duration,
-                },
+                "metadata": meta,
             })
 
         return events
