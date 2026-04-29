@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Build (if source is newer than binary) and run the AX content diagnostic.
-# Usage: ./scripts/diag_ax.sh [--raw] [--content]
+# Usage: ./tests/manual/diag_ax.sh [--raw] [--content]
 #   --raw      print raw JSON
 #   --content  show full captured text after the summary
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$SCRIPT_DIR/.."
-SRC="$ROOT/memorai/macos/ax_content_diag.swift"
+ROOT="$SCRIPT_DIR/../.."
+SRC="$ROOT/memorai/macos/ax_content.swift"
 BIN="$ROOT/data/ax_content_diag"
 
 mkdir -p "$ROOT/data"
 
 if [[ ! -f "$BIN" || "$SRC" -nt "$BIN" ]]; then
-    echo "► Compiling ax_content_diag.swift…" >&2
+    echo "► Compiling ax_content.swift…" >&2
     swiftc "$SRC" -o "$BIN"
     echo "► Done." >&2
 fi
@@ -26,7 +26,7 @@ for arg in "$@"; do
     [[ "$arg" == "--content" ]] && SHOW_CONTENT=true
 done
 
-OUTPUT=$("$BIN")
+OUTPUT=$("$BIN" --diag)
 
 if $RAW || ! command -v python3 &>/dev/null; then
     echo "$OUTPUT"
@@ -47,7 +47,12 @@ CYAN   = "\033[36m"
 BOLD   = "\033[1m"
 RESET  = "\033[0m"
 
+trusted = data.get("ax_trusted", False)
+trust_color = GREEN if trusted else RED
+trust_label = "yes" if trusted else "NO  ← grant in System Settings → Privacy & Security → Accessibility"
+
 print(f"\n{BOLD}{'─'*60}{RESET}")
+print(f"{BOLD}AX trusted:{RESET} {trust_color}{trust_label}{RESET}")
 print(f"{BOLD}App:{RESET}    {data['app']}")
 print(f"{BOLD}Window:{RESET} {data['window_title']}")
 print(f"{BOLD}Cursor:{RESET} {data['cursor_pos']}")
@@ -55,7 +60,6 @@ print(f"{'─'*60}{RESET}")
 
 for s in data["strategies"]:
     icon  = f"{GREEN}✔{RESET}" if s["fired"] else f"{RED}✘{RESET}"
-    color = GREEN if s["fired"] else RED
     print(f"\n{icon} {BOLD}Strategy {s['strategy']}: {s['name']}{RESET}")
     print(f"   detail  : {s['detail']}")
     if s.get("element_role"):

@@ -34,7 +34,13 @@ memorai-mcp = "memorai.mcp_server:main"
 [dependency-groups]
 dev = [
     "ruff>=0.1.0",
+    "pytest>=8.0.0",
+    "pyinstaller>=6.20.0",
+    "pyinstaller-hooks-contrib>=2026.4",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["hatchling"]

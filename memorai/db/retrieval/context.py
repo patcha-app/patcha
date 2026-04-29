@@ -108,6 +108,16 @@ def get_working_memory(store: "VectorStore", minutes: int = 15) -> str:
     return f"# Working memory (last {minutes}m)\n" + "\n".join(lines)
 
 
+def get_recent_activity(store: "VectorStore", hours: int = 3) -> str:
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = store.get_recent_events_with_vectors(since)
+    rows = _dedup_by_similarity(rows, config.working_memory_dedup_threshold)
+    lines = [_format_line(r.get("payload", {})) for r in rows]
+    if not lines:
+        return f"# Recent activity (last {hours}h)\nNo activity recorded."
+    return f"# Recent activity (last {hours}h)\n" + "\n".join(lines)
+
+
 def search_activity(store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5) -> str:
     embedding = preprocessor.generate_embedding(query)
     if not embedding:

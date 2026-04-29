@@ -32,8 +32,30 @@ from memorai.db.retrieval.graphrag import GraphRAGSystem
 
 console = Console()
 
+try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("memorai")
+except Exception:
+    _VERSION = "0.1.0"
+
 _preprocessor: Optional[EventPreprocessor] = None
 _vector_store: Optional[VectorStore] = None
+
+_COMMANDS_WITHOUT_KEY = {"start-daemon", "stop-daemon", "daemon-status", "status", "config"}
+
+
+def _ensure_api_key() -> None:
+    if config.openai_api_key:
+        return
+    console.print("[yellow]No OpenAI API key configured.[/yellow]")
+    key = click.prompt("Enter your OpenAI API key", hide_input=True)
+    env_file = Path.home() / ".memorai" / ".env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(env_file, "a") as f:
+        f.write(f"OPENAI_API_KEY={key}\n")
+    os.environ["OPENAI_API_KEY"] = key
+    config.openai_api_key = key
+    console.print("[green]API key saved to ~/.memorai/.env[/green]")
 
 
 def _get_preprocessor() -> EventPreprocessor:
@@ -51,13 +73,15 @@ def _get_vector_store() -> VectorStore:
 
 
 @click.group()
-@click.version_option()
+@click.version_option(version=_VERSION)
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging")
 @click.pass_context
 def cli(ctx, debug):
     """MemorAI - AI-powered memory and activity tracking system."""
     from memorai.utils.logging import init_logging
     init_logging(level=logging.DEBUG if debug else logging.INFO)
+    if ctx.invoked_subcommand not in _COMMANDS_WITHOUT_KEY:
+        _ensure_api_key()
 
 
 @cli.command()
@@ -71,10 +95,6 @@ def cli(ctx, debug):
               help="Git repository path (default: current directory)")
 def collect(date: Optional[datetime], sources: tuple, repo_path: Optional[str]):
     """Collect activities from various sources."""
-
-    if not config.openai_api_key:
-        console.print("[red]Error: OPENAI_API_KEY not set. Please configure your .env file.[/red]")
-        return
 
     target_date = date.date() if date else datetime.now().date()
     since = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
@@ -454,6 +474,51 @@ def config_cmd(config_key: str, config_value: Optional[str]):
         console.print(f"[green]Set {config_key} = {config_value}[/green]")
 
 
+@cli.command("compact-day")
+@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
+              default=None, help="Date to compact (default: yesterday)")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Preview without writing or deleting anything")
+@click.option("--force", is_flag=True, default=False,
+              help="Re-compact even if already done")
+def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
+    """Compact raw activities for a day into tasks, then delete the raw events."""
+    from memorai.utils.compaction import DailyCompactor
+
+    if date is None:
+        from datetime import timezone as _tz
+        target = (datetime.now(_tz.utc) - timedelta(days=1)).date()
+    else:
+        target = date.date()
+
+    label = "[dim](dry run)[/dim]" if dry_run else ""
+    console.print(f"Compacting {target} {label}")
+
+    compactor = DailyCompactor()
+
+    with console.status("Running compaction..."):
+        result = compactor.compact_day(target, dry_run=dry_run, force=force)
+
+    if result.get("skipped"):
+        console.print(Panel(
+            f"[yellow]Skipped:[/yellow] {result.get('reason', 'unknown')}\n"
+            f"Date: {result.get('date', target)}",
+            title="compact-day",
+        ))
+        return
+
+    table = Table(show_header=False, box=None)
+    table.add_column("Key", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_row("Date", str(result.get("date", target)))
+    table.add_row("Raw events fetched", str(result.get("event_count", 0)))
+    table.add_row("After dedup", str(result.get("deduped_count", 0)))
+    table.add_row("Tasks created", str(result.get("task_count", 0)))
+    table.add_row("Raw events deleted", "no (dry run)" if dry_run else "yes")
+
+    console.print(Panel(table, title="compact-day result"))
+
+
 @cli.command()
 @click.option("--poll-interval", "-p", default=60, help="Poll interval in seconds")
 @click.option("--batch-size", "-b", default=50, help="Batch size for processing events")
@@ -466,10 +531,6 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
 
     if status["running"]:
         console.print(f"[yellow]Daemon is already running (PID: {status['pid']})[/yellow]")
-        return
-
-    if not config.openai_api_key:
-        console.print("[red]Error: OPENAI_API_KEY not set. Please configure your .env file.[/red]")
         return
 
     console.print(f"Starting daemon with {poll_interval}s poll interval...")
@@ -749,10 +810,6 @@ def categorization_analysis(days: int, sample_size: int):
               help="Confidence threshold for RAG categorization")
 def collect_enhanced(use_rag: bool, confidence_threshold: float):
     """Collect activities with enhanced categorization (RAG-based)."""
-
-    if not config.openai_api_key:
-        console.print("[red]Error: OPENAI_API_KEY not set[/red]")
-        return
 
     target_date = datetime.now().date()
 
@@ -1368,7 +1425,7 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
 @click.option('--dry-run', is_flag=True, help='Analyze migration without storing data')
 def migrate_to_tasks(start_date, end_date, batch_size, dry_run):
     """Migrate existing activities to task-first architecture."""
-    from memorai.db.migrate import DataMigration
+    from memorai.db.migrations.migrate import DataMigration
 
     migration = DataMigration()
 
@@ -1400,7 +1457,7 @@ def migrate_to_tasks(start_date, end_date, batch_size, dry_run):
               required=True, help='End date for analysis')
 def analyze_migration(start_date, end_date):
     """Analyze migration feasibility for a date range."""
-    from memorai.db.migrate import DataMigration
+    from memorai.db.migrations.migrate import DataMigration
 
     migration = DataMigration()
 
@@ -1422,7 +1479,7 @@ def analyze_migration(start_date, end_date):
               help='Date to clean up (default: last 30 days)')
 def cleanup_duplicate_tasks(date):
     """Clean up duplicate tasks created during migration."""
-    from memorai.db.migrate import DataMigration
+    from memorai.db.migrations.migrate import DataMigration
 
     migration = DataMigration()
     target_date = date.date() if date else None

@@ -1,189 +1,218 @@
 import json
 import logging
-import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
-from openai import OpenAI
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+import numpy as np
 
 from memorai.config import config
-from memorai.db.models import Event, EventType
+from memorai.db.models import Category, Event, EventType
+from memorai.db.store import VectorStore
+from memorai.db.tasks import TaskStore
+from memorai.identify import TaskIdentifier
+from memorai.process import EventPreprocessor
 
 log = logging.getLogger(__name__)
 
-_PROMPT = """\
-Summarise the following developer activity into one compact paragraph (60 words max).
-
-Preserve:
-- What was built or changed (file names, features)
-- What was researched (docs, articles, URLs)
-- Key commands run
-- The apparent current focus
-
-Rules: past tense except for current focus. Be specific — include file names, \
-tool names, and task names. Skip noise (window switches, repeated identical commands).
-
-Activity ({start} to {end}):
-{events}
-
-Compact summary:"""
+_STATE_FILE = config.data_dir / "daily_compaction.json"
 
 
-def _format_events_for_prompt(events: List[Event]) -> str:
-    lines = []
-    for e in events:
-        ts = e.timestamp.strftime("%H:%M")
-        if e.type == EventType.TERMINAL:
-            try:
-                cmd = json.loads(e.raw_content).get("command", e.raw_content)
-            except Exception:
-                cmd = e.raw_content
-            lines.append(f"[{ts}] terminal: {cmd[:100]}")
-
-        elif e.type == EventType.BROWSER:
-            try:
-                data = json.loads(e.raw_content)
-                lines.append(f"[{ts}] browser: {data.get('title', '')} | {data.get('domain', '')}")
-            except Exception:
-                lines.append(f"[{ts}] browser: {e.raw_content[:100]}")
-
-        elif e.type in (EventType.GIT_COMMIT, EventType.GIT_STASH):
-            try:
-                data = json.loads(e.raw_content)
-                msg = data.get("message", "")
-                files = data.get("files_changed", [])
-                line = f"[{ts}] {e.type.value}: {msg}"
-                if files:
-                    line += " | " + ", ".join(files[:5])
-                lines.append(line)
-            except Exception:
-                lines.append(f"[{ts}] {e.type.value}: {e.raw_content[:100]}")
-
-        elif e.type == EventType.GIT_STAGED:
-            lines.append(f"[{ts}] git-staged: {e.raw_content[:100]}")
-
-        elif e.type in (EventType.SCREEN, EventType.WINDOW):
-            meta = e.metadata or {}
-            app = meta.get("app_name", "")
-            title = meta.get("window_title", "")
-            lines.append(f"[{ts}] {e.type.value}: {app} — {title}")
-
-    return "\n".join(lines) if lines else "(no events)"
+def _load_state() -> dict:
+    if _STATE_FILE.exists():
+        try:
+            with open(_STATE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"compacted_dates": [], "last_trigger_date": None}
 
 
-class Compactor:
+def _save_state(state: dict):
+    _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+class DailyCompactor:
     def __init__(self):
-        self._client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
-        self._openai = OpenAI(api_key=config.openai_api_key)
-        self._collection = config.digest_collection_name
-        self._last_compaction: Optional[datetime] = None
-        self._ensure_collection()
+        self.vector_store = VectorStore()
+        self.task_store = TaskStore()
+        preprocessor = EventPreprocessor()
+        self.task_identifier = TaskIdentifier(preprocessor, vector_store=None)
 
-    def _ensure_collection(self):
-        try:
-            names = [c.name for c in self._client.get_collections().collections]
-            if self._collection not in names:
-                self._client.create_collection(
-                    collection_name=self._collection,
-                    vectors_config=VectorParams(size=config.vector_size, distance=Distance.COSINE),
+    def _reconstruct_events(self, raw_records: list) -> List[Event]:
+        events = []
+        for record in raw_records:
+            vector = record.get("vector")
+            if vector is None:
+                continue
+            payload = record["payload"]
+            try:
+                event = Event(
+                    timestamp=datetime.fromisoformat(payload["timestamp"]),
+                    type=EventType(payload["type"]),
+                    source=payload.get("source", ""),
+                    project=payload.get("project"),
+                    raw_content=payload.get("raw_content", ""),
+                    metadata=payload.get("metadata") or {},
+                    summary=payload.get("summary"),
+                    category=Category(payload["category"]) if payload.get("category") else None,
+                    embedding=vector,
                 )
-                log.info("created digest collection: %s", self._collection)
-        except Exception as e:
-            log.error("error ensuring digest collection: %s", e)
+                events.append(event)
+            except Exception as e:
+                log.debug("skipping malformed record: %s", e)
+        return events
 
-    def _summarise(self, events: List[Event], start: datetime, end: datetime) -> Optional[str]:
-        formatted = _format_events_for_prompt(events)
-        prompt = _PROMPT.format(
-            start=start.strftime("%H:%M"),
-            end=end.strftime("%H:%M"),
-            events=formatted,
+    def _dedup_by_content(self, events: List[Event]) -> List[Event]:
+        seen: dict = {}
+        kept: List[Event] = []
+
+        for event in events:
+            key = None
+
+            if event.type == EventType.TERMINAL:
+                try:
+                    cmd = json.loads(event.raw_content).get("command", event.raw_content)
+                except Exception:
+                    cmd = event.raw_content
+                key = ("terminal", cmd)
+
+            elif event.type == EventType.BROWSER:
+                try:
+                    url = json.loads(event.raw_content).get("url", event.raw_content)
+                except Exception:
+                    url = event.raw_content
+                key = ("browser", url)
+
+            elif event.type in (EventType.WINDOW, EventType.SCREEN):
+                app = (event.metadata or {}).get("app_name", "")
+                title = (event.metadata or {}).get("window_title", "")
+                key = (event.type.value, app, title)
+
+            if key is None:
+                kept.append(event)
+                continue
+
+            if key not in seen:
+                seen[key] = len(kept)
+                kept.append(event)
+            else:
+                kept[seen[key]] = event
+
+        return kept
+
+    def _dedup_by_vector(self, events: List[Event]) -> List[Event]:
+        threshold = config.working_memory_dedup_threshold
+        kept: List[Event] = []
+        kept_vecs: List[np.ndarray] = []
+
+        for event in events:
+            if event.embedding is None:
+                kept.append(event)
+                continue
+
+            emb = np.array(event.embedding, dtype=np.float32)
+            norm = np.linalg.norm(emb)
+            if norm == 0:
+                kept.append(event)
+                continue
+            emb_n = emb / norm
+
+            if kept_vecs:
+                matrix = np.stack(kept_vecs)
+                sims = matrix @ emb_n
+                if float(sims.max()) >= threshold:
+                    continue
+
+            kept.append(event)
+            kept_vecs.append(emb_n)
+
+        return kept
+
+    def _dedup_events(self, events: List[Event]) -> List[Event]:
+        before = len(events)
+        events = sorted(events, key=lambda e: e.timestamp)
+        events = self._dedup_by_content(events)
+        after_content = len(events)
+        log.info("content dedup: %d -> %d events", before, after_content)
+
+        if len(events) > 50:
+            events = self._dedup_by_vector(events)
+            log.info("vector dedup: %d -> %d events", after_content, len(events))
+
+        return events
+
+    def compact_day(self, target_date: date, dry_run: bool = False, force: bool = False) -> dict:
+        today = datetime.now(timezone.utc).date()
+        if target_date >= today:
+            return {"skipped": True, "reason": "cannot_compact_today_or_future"}
+
+        state = _load_state()
+        date_str = target_date.isoformat()
+
+        if date_str in state["compacted_dates"] and not force:
+            log.info("daily compaction: %s already compacted, skipping", date_str)
+            return {"skipped": True, "reason": "already_compacted", "date": date_str}
+
+        raw_records = self.vector_store.get_events_by_date(target_date)
+        log.info("daily compaction: fetched %d raw events for %s", len(raw_records), date_str)
+
+        if not raw_records:
+            if not dry_run:
+                if date_str not in state["compacted_dates"]:
+                    state["compacted_dates"].append(date_str)
+                _save_state(state)
+            return {"date": date_str, "event_count": 0, "deduped_count": 0, "task_count": 0, "dry_run": dry_run}
+
+        events = self._reconstruct_events(raw_records)
+        events = self._dedup_events(events)
+        log.info("daily compaction: %d events after dedup for %s", len(events), date_str)
+
+        tasks = self.task_identifier.identify_tasks_from_activities(
+            events,
+            min_activities_per_task=config.daily_compaction_min_activities,
         )
-        try:
-            response = self._openai.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=120,
-            )
-            summary = response.choices[0].message.content.strip()
-            log.debug("compaction summary (%d events): %s", len(events), summary[:80])
-            return summary
-        except Exception as e:
-            log.error("compaction LLM call failed: %s", e)
-            return None
+        log.info("daily compaction: identified %d tasks for %s", len(tasks), date_str)
 
-    def _embed(self, text: str) -> Optional[List[float]]:
-        try:
-            response = self._openai.embeddings.create(
-                model="text-embedding-3-small",
-                input=text,
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            log.error("compaction embedding failed: %s", e)
-            return None
+        if not dry_run:
+            for task in tasks:
+                self.task_store.store_task(task)
+            point_ids = [r["id"] for r in raw_records]
+            self.vector_store.mark_events_compacted(point_ids)
+            self.vector_store.delete_events_by_date(target_date)
+            if date_str not in state["compacted_dates"]:
+                state["compacted_dates"].append(date_str)
+            _save_state(state)
 
-    def _store(self, summary: str, embedding: List[float], start: datetime, end: datetime, event_count: int):
-        point = PointStruct(
-            id=str(uuid.uuid4()),
-            vector=embedding,
-            payload={
-                "summary": summary,
-                "start_time": start.isoformat(),
-                "end_time": end.isoformat(),
-                "created_at_epoch": end.timestamp(),
-                "event_count": event_count,
-            },
-        )
-        self._client.upsert(collection_name=self._collection, points=[point])
-        log.info("stored digest: %d events → %d chars", event_count, len(summary))
+        return {
+            "date": date_str,
+            "event_count": len(raw_records),
+            "deduped_count": len(events),
+            "task_count": len(tasks),
+            "dry_run": dry_run,
+        }
 
-    def maybe_compact(self, events: List[Event], window_start: datetime, window_end: datetime):
-        if not events:
+    def maybe_compact_previous_days(self):
+        state = _load_state()
+        today = datetime.now(timezone.utc).date()
+        today_str = today.isoformat()
+
+        if state.get("last_trigger_date") == today_str:
+            log.debug("daily compaction already ran today, skipping")
             return
 
-        interval_seconds = config.compaction_interval_minutes * 60
-        if self._last_compaction and (window_end - self._last_compaction).total_seconds() < interval_seconds:
-            log.debug("compaction skipped — %ds since last (interval %ds)",
-                      (window_end - self._last_compaction).total_seconds(), interval_seconds)
-            return
+        for days_ago in range(1, 8):
+            target = today - timedelta(days=days_ago)
+            target_str = target.isoformat()
+            if target_str in state["compacted_dates"]:
+                continue
+            try:
+                result = self.compact_day(target)
+                log.info("daily compaction result for %s: %s", target_str, result)
+            except Exception as e:
+                log.error("daily compaction failed for %s: %s", target_str, e)
 
-        summary = self._summarise(events, window_start, window_end)
-        if not summary:
-            return
-
-        embedding = self._embed(summary)
-        if not embedding:
-            return
-
-        self._store(summary, embedding, window_start, window_end, len(events))
-        self._last_compaction = window_end
-
-    def get_recent_digests(self, n: int = 3) -> str:
-        try:
-            points, _ = self._client.scroll(
-                collection_name=self._collection,
-                limit=200,
-                with_payload=True,
-                with_vectors=False,
-            )
-        except Exception as e:
-            log.error("error fetching digests: %s", e)
-            return "# Recent digests\nUnavailable."
-
-        if not points:
-            return "# Recent digests\nNone yet."
-
-        sorted_points = sorted(points, key=lambda p: p.payload.get("created_at_epoch", 0), reverse=True)
-        recent = sorted_points[:n]
-        recent.reverse()
-
-        lines = []
-        for p in recent:
-            start = p.payload.get("start_time", "")[:16].replace("T", " ")
-            end = p.payload.get("end_time", "")[:16].replace("T", " ")
-            summary = p.payload.get("summary", "")
-            lines.append(f"[{start} – {end}] {summary}")
-
-        return "# Recent digests\n" + "\n".join(lines)
+        state = _load_state()
+        state["last_trigger_date"] = today_str
+        _save_state(state)

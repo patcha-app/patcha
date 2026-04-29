@@ -2,22 +2,26 @@
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from typing import Any
 
+import click
+import uvicorn
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-from memorai.db.retrieval.context import get_working_memory, search_activity
+from memorai.db.retrieval.context import get_working_memory, get_recent_activity, search_activity
 from memorai.db.store import VectorStore
 from memorai.process import EventPreprocessor
-from memorai.utils.compaction import Compactor
 
 server = Server("memorai")
 
 _store: VectorStore | None = None
 _preprocessor: EventPreprocessor | None = None
-_compactor: Compactor | None = None
 
 
 def _get_store() -> VectorStore:
@@ -32,13 +36,6 @@ def _get_preprocessor() -> EventPreprocessor:
     if _preprocessor is None:
         _preprocessor = EventPreprocessor()
     return _preprocessor
-
-
-def _get_compactor() -> Compactor:
-    global _compactor
-    if _compactor is None:
-        _compactor = Compactor()
-    return _compactor
 
 
 @server.list_tools()
@@ -88,18 +85,18 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="get_recent_digests",
+            name="get_recent_activity",
             description=(
-                "Get compact AI-generated summaries of recent activity windows (each ~30 min). "
+                "Get a deduped log of the user's raw activity over the last N hours. "
                 "Use this for broader historical context — what the user has been working on "
                 "over the last few hours, not just the last few minutes."
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "n": {
+                    "hours": {
                         "type": "integer",
-                        "description": "Number of digest windows to return. Default 3.",
+                        "description": "How many hours back to look. Default 3.",
                         "default": 3,
                     }
                 },
@@ -119,9 +116,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         limit = arguments.get("limit", 5)
         result = search_activity(_get_store(), _get_preprocessor(), query, limit=limit)
 
-    elif name == "get_recent_digests":
-        n = arguments.get("n", 3)
-        result = _get_compactor().get_recent_digests(n=n)
+    elif name == "get_recent_activity":
+        hours = arguments.get("hours", 3)
+        result = get_recent_activity(_get_store(), hours=hours)
 
     else:
         result = f"Unknown tool: {name}"
@@ -129,11 +126,34 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=result)]
 
 
-async def _serve() -> None:
+def _build_http_app() -> Starlette:
+    session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette):
+        async with session_manager.run():
+            yield
+
+    return Starlette(
+        routes=[Mount("/mcp", app=session_manager.handle_request)],
+        lifespan=lifespan,
+    )
+
+
+async def _serve_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-def main() -> None:
+@click.command()
+@click.option("--http", "transport", flag_value="http", default=False, help="Serve over HTTP instead of stdio.")
+@click.option("--stdio", "transport", flag_value="stdio", default=True, help="Serve over stdio (default).")
+@click.option("--port", default=7861, show_default=True, help="Port for HTTP transport.")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host for HTTP transport.")
+def main(transport: str, port: int, host: str) -> None:
     logging.basicConfig(level=logging.WARNING)
-    asyncio.run(_serve())
+    if transport == "http":
+        app = _build_http_app()
+        uvicorn.run(app, host=host, port=port)
+    else:
+        asyncio.run(_serve_stdio())

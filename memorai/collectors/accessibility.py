@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -12,10 +13,17 @@ logger = logging.getLogger(__name__)
 
 from memorai.config import config, settings
 
+_FROZEN = getattr(sys, 'frozen', False)
+_MEIPASS = Path(getattr(sys, '_MEIPASS', ''))
+
 _POLL_INTERVAL = settings.get('poll_interval')
 _AX_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ax_content.swift"
 _OCR_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ocr.swift"
-_APP_SCRIPT = Path(__file__).parent.parent / "macos" / "window_title.applescript"
+_APP_SCRIPT = (
+    (_MEIPASS / "macos" / "window_title.applescript")
+    if _FROZEN
+    else (Path(__file__).parent.parent / "macos" / "window_title.applescript")
+)
 _MAX_LOG_ROWS = 100_000
 _TRIM_EVERY = 1_000
 _MIN_CONTENT_LEN = 60
@@ -49,8 +57,11 @@ class AccessibilityCollector:
         return count
 
     def _compile(self, source: Path, output_name: str) -> Optional[Path]:
+        if _FROZEN:
+            bundled = _MEIPASS / "macos" / output_name
+            return bundled if bundled.exists() else None
         binary = config.data_dir / output_name
-        if binary.exists():
+        if binary.exists() and binary.stat().st_mtime >= source.stat().st_mtime:
             return binary
         if not source.exists():
             return None
@@ -178,15 +189,29 @@ class AccessibilityCollector:
 
         return "\n\n===\n\n".join(section_parts)[:4000]
 
-    def _take_ocr_screenshot(self, app_name: str, window_title: str) -> Optional[Dict]:
+    def _take_ocr_screenshot(
+        self,
+        app_name: str,
+        window_title: str,
+        frame: Optional[Dict] = None,
+    ) -> Optional[Dict]:
         binary = self._ensure_ocr_binary()
         if not binary:
             return None
         fd, tmp_path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
+            cap_cmd = ["screencapture", "-x"]
+            if frame and frame.get("w", 0) > 0 and frame.get("h", 0) > 0:
+                pad = 50
+                x = max(0, int(frame["x"]) - pad)
+                y = max(0, int(frame["y"]) - pad)
+                w = int(frame["w"]) + pad * 2
+                h = int(frame["h"]) + pad * 2
+                cap_cmd += ["-R", f"{x},{y},{w},{h}"]
+            cap_cmd.append(tmp_path)
             cap = subprocess.run(
-                ["screencapture", "-x", tmp_path],
+                cap_cmd,
                 capture_output=True,
                 timeout=5,
             )
@@ -232,8 +257,8 @@ class AccessibilityCollector:
                 if content:
                     return {"app": app_name, "window_title": window_title, "text": content}
 
-            # AX binary ran but content requires OCR; use app/window from AX
-            return self._take_ocr_screenshot(app_name, window_title)
+            # AX binary ran but content requires OCR; use app/window and frame from AX
+            return self._take_ocr_screenshot(app_name, window_title, frame=ax.get("frame"))
 
         # AX binary unavailable — fall back to applescript for app name + OCR
         app_name, window_title = self._get_app_name_fallback()

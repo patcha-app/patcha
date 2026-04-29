@@ -1,11 +1,12 @@
 """Vector storage using Qdrant."""
 
 import logging
+import sys
 import uuid
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range, PointIdsList
 
 from memorai.db.models import Event, Category
 from memorai.config import config
@@ -15,7 +16,11 @@ log = logging.getLogger(__name__)
 
 class VectorStore:
     def __init__(self):
-        self.client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
+        if getattr(sys, 'frozen', False):
+            config.qdrant_path.mkdir(parents=True, exist_ok=True)
+            self.client = QdrantClient(path=str(config.qdrant_path))
+        else:
+            self.client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
         self.collection_name = config.collection_name
         self.vector_size = config.vector_size
         self._ensure_collection_exists()
@@ -342,6 +347,18 @@ class VectorStore:
         except Exception as e:
             log.error("error getting collection info: %s", e)
             return {}
+
+    def mark_events_compacted(self, point_ids: List[str]) -> None:
+        if not point_ids:
+            return
+        try:
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload={"compacted": True},
+                points=PointIdsList(points=point_ids),
+            )
+        except Exception as e:
+            log.error("error marking events compacted: %s", e)
 
     def delete_events_by_date(self, target_date: date) -> bool:
         try:

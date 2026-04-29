@@ -13,7 +13,7 @@ from memorai.collectors.browser import BrowserCollector
 from memorai.collectors.terminal import TerminalCollector
 from memorai.collectors.window import WindowCollector
 from memorai.collectors.accessibility import AccessibilityCollector
-from memorai.utils.compaction import Compactor
+from memorai.utils.compaction import DailyCompactor
 from memorai.process import EventPreprocessor
 from memorai.db.store import VectorStore
 from memorai.db.models import Event, EventType
@@ -38,7 +38,7 @@ class ActivityDaemon:
         self.accessibility_collector = AccessibilityCollector()
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
-        self.compactor = Compactor()
+        self.daily_compactor = DailyCompactor()
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -173,9 +173,9 @@ class ActivityDaemon:
             self.logger.info(f"Successfully processed and stored {total_stored}/{len(all_events)} events")
 
             try:
-                self.compactor.maybe_compact(all_events, since, current_time)
+                self.daily_compactor.maybe_compact_previous_days()
             except Exception as e:
-                self.logger.error(f"Compaction error: {e}")
+                self.logger.error(f"Daily compaction error: {e}")
 
             self.last_collection_time = current_time
 
