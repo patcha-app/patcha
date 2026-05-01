@@ -483,11 +483,10 @@ def config_cmd(config_key: str, config_value: Optional[str]):
               help="Re-compact even if already done")
 def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
     """Compact raw activities for a day into tasks, then delete the raw events."""
-    from memorai.utils.compaction import DailyCompactor
+    from memorai.compaction import DailyCompactor
 
     if date is None:
-        from datetime import timezone as _tz
-        target = (datetime.now(_tz.utc) - timedelta(days=1)).date()
+        target = (datetime.now() - timedelta(days=1)).date()
     else:
         target = date.date()
 
@@ -1340,7 +1339,7 @@ def contextual_search(query, date, limit):
 @click.option('--use-rag', is_flag=True, help='Use RAG for enhanced contextual analysis')
 def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities, use_rag):
     """Identify tasks from existing activities for a specific date."""
-    from memorai.identify import TaskIdentifier
+    from memorai.compaction import TaskIdentifier
     from memorai.db.tasks import TaskStore
     from memorai.db.models import Event, EventType
 

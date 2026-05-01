@@ -1,18 +1,43 @@
-from openai import OpenAI
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
-from collections import defaultdict
-import numpy as np
+import json
+import logging
 import threading
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+from openai import OpenAI
 from sklearn.cluster import DBSCAN, HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 
-from memorai.db.models import Event, Task, TaskStatus, Category, TaskPriority
+from memorai.config import config
+from memorai.db.models import Category, Event, EventType, Task, TaskPriority, TaskStatus
 from memorai.db.retrieval.rag import RAGSystem
 from memorai.db.store import VectorStore
+from memorai.db.tasks import TaskStore
 from memorai.process import EventPreprocessor
-from memorai.config import config
+from memorai.prompts import render_system, render_user
+
+log = logging.getLogger(__name__)
+
+_STATE_FILE = config.data_dir / "daily_compaction.json"
+
+
+def _load_state() -> dict:
+    if _STATE_FILE.exists():
+        try:
+            with open(_STATE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"compacted_dates": [], "last_trigger_date": None}
+
+
+def _save_state(state: dict):
+    _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_STATE_FILE, "w") as f:
+        json.dump(state, f)
 
 
 class LLMTaskAnalyzer:
@@ -44,10 +69,74 @@ class LLMTaskAnalyzer:
         content_parts = []
 
         for i, activity in enumerate(activities, 1):
-            content = activity.summary or activity.raw_content or f"{activity.type.value} activity"
             timestamp = activity.timestamp.strftime("%H:%M")
-            source = activity.source if activity.source else activity.type.value
-            content_parts.append(f"{i}. [{timestamp}] ({source}) {content}")
+            project_tag = f" | project: {activity.project}" if activity.project else ""
+            source_tag = f" ({activity.source})" if activity.source else ""
+            header = f"{i}. [{timestamp}] {activity.type.value}{project_tag}{source_tag}"
+            detail_lines = []
+
+            if activity.type == EventType.TERMINAL:
+                try:
+                    data = json.loads(activity.raw_content)
+                    cmd = data.get("command", "").strip()
+                    detail_lines.append(f"   CMD: {cmd}" if cmd else f"   {activity.summary or activity.raw_content}")
+                except (json.JSONDecodeError, TypeError):
+                    detail_lines.append(f"   {activity.summary or activity.raw_content}")
+
+            elif activity.type == EventType.BROWSER:
+                try:
+                    data = json.loads(activity.raw_content)
+                    url = data.get("url", "")
+                    title = data.get("title", "")
+                    if url:
+                        detail_lines.append(f"   URL: {url}")
+                    if title:
+                        detail_lines.append(f"   TITLE: {title}")
+                    if not url and not title:
+                        detail_lines.append(f"   {activity.summary or activity.raw_content}")
+                except (json.JSONDecodeError, TypeError):
+                    detail_lines.append(f"   {activity.summary or activity.raw_content}")
+
+            elif activity.type in (EventType.GIT_COMMIT, EventType.GIT_STASH):
+                try:
+                    data = json.loads(activity.raw_content)
+                    message = data.get("message", "").strip()
+                    branch = data.get("branch", "")
+                    files = data.get("files_changed", [])
+                    if branch and message:
+                        detail_lines.append(f"   BRANCH: {branch} | COMMIT: \"{message}\"")
+                    elif message:
+                        detail_lines.append(f"   COMMIT: \"{message}\"")
+                    if files:
+                        detail_lines.append(f"   FILES: {', '.join(files[:5])}")
+                except (json.JSONDecodeError, TypeError):
+                    detail_lines.append(f"   {activity.summary or activity.raw_content}")
+
+            elif activity.type == EventType.GIT_STAGED:
+                detail_lines.append(f"   {activity.raw_content}")
+
+            elif activity.type == EventType.SCREEN:
+                app = activity.metadata.get("app_name", "")
+                window = activity.metadata.get("window_title", "")
+                if app:
+                    detail_lines.append(f"   APP: {app}" + (f" | WINDOW: {window}" if window else ""))
+                text = activity.raw_content.strip()
+                if text:
+                    detail_lines.append(f"   TEXT: {text}")
+
+            elif activity.type == EventType.WINDOW:
+                app = activity.metadata.get("app_name", "")
+                window = activity.metadata.get("window_title", "")
+                if app:
+                    detail_lines.append(f"   APP: {app}" + (f" | WINDOW: {window}" if window else ""))
+                elif activity.summary or activity.raw_content:
+                    detail_lines.append(f"   {activity.summary or activity.raw_content}")
+
+            else:
+                detail_lines.append(f"   {activity.summary or activity.raw_content or f'{activity.type.value} activity'}")
+
+            content_parts.append(header)
+            content_parts.extend(detail_lines)
 
         return "\n".join(content_parts)
 
@@ -62,43 +151,25 @@ class LLMTaskAnalyzer:
         projects = [a.project for a in activities if a.project]
         primary_project = max(set(projects), key=projects.count) if projects else None
 
-        prompt = f"""
-        Analyze this sequence of related activities and provide a comprehensive task analysis:
-
-        ACTIVITIES:
-        {content}
-
-        METADATA:
-        - Duration: {duration_minutes} minutes
-        - Activity count: {len(activities)}
-        - Time range: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}
-        - Primary category: {primary_category}
-        - Project: {primary_project or 'Personal'}
-
-        Please provide:
-
-        1. TASK_TITLE: A specific, descriptive title (max 50 characters) that captures what was actually accomplished. Focus on the main topic/outcome, not generic words like "research" or "work".
-
-        2. ACCOMPLISHMENTS: A list of 3-5 specific things that were done, each as a concise one-liner. Focus on concrete actions and outcomes.
-
-        3. DESCRIPTION: A 1-2 sentence summary of the overall task and its purpose.
-
-        4. MAIN_THEMES: 2-3 key themes or topics (single words or short phrases)
-
-        Format your response exactly as:
-        TASK_TITLE: [specific title here]
-        ACCOMPLISHMENTS:
-        - [specific accomplishment 1]
-        - [specific accomplishment 2]
-        - [specific accomplishment 3]
-        DESCRIPTION: [1-2 sentence description]
-        MAIN_THEMES: [theme1, theme2, theme3]
-        """
+        user_prompt = render_user(
+            "task_analysis",
+            activities=content,
+            duration_minutes=duration_minutes,
+            activity_count=len(activities),
+            start_time=start_time.strftime("%H:%M"),
+            end_time=end_time.strftime("%H:%M"),
+            primary_category=primary_category,
+            primary_project=primary_project or "Personal",
+            accomplishment_count=min(len(activities), 8),
+        )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return self._parse_llm_response(response.choices[0].message.content, activities)
 
@@ -150,20 +221,25 @@ class LLMTaskAnalyzer:
         categories = [a.category.value for a in activities if a.category]
         primary_category = max(set(categories), key=categories.count) if categories else "General"
 
+        snippets = []
+        for a in activities:
+            text = (a.summary or a.raw_content or "").strip()
+            if text:
+                snippets.append(text[:120])
+
+        title = snippets[0][:50] if snippets else f"{primary_category} Work"
+        description = "; ".join(snippets[:3]) if snippets else f"{len(activities)} {primary_category.lower()} activities"
+
         return {
-            "title": f"{primary_category} Work",
-            "accomplishments": [
-                f"Completed {len(activities)} related activities",
-                f"Focused on {primary_category.lower()} tasks",
-                "Maintained productive workflow"
-            ],
-            "description": f"Completed {len(activities)} activities in the {primary_category.lower()} category",
-            "themes": [primary_category, "Productivity"],
-            "confidence_score": 0.5,
+            "title": title,
+            "accomplishments": snippets[:3],
+            "description": description,
+            "themes": [primary_category],
+            "confidence_score": 0.4,
             "activity_count": len(activities),
-            "start_time": min(activity.timestamp for activity in activities),
-            "end_time": max(activity.timestamp for activity in activities),
-            "duration_minutes": int((max(activity.timestamp for activity in activities) - min(activity.timestamp for activity in activities)).total_seconds() / 60)
+            "start_time": min(a.timestamp for a in activities),
+            "end_time": max(a.timestamp for a in activities),
+            "duration_minutes": int((max(a.timestamp for a in activities) - min(a.timestamp for a in activities)).total_seconds() / 60),
         }
 
     def _empty_task_analysis(self) -> Dict[str, Any]:
@@ -237,10 +313,29 @@ class TaskIdentifier:
         min_activities_per_chunk: int,
         clustering_method: str = "hdbscan"
     ) -> List[List[Event]]:
+        project_groups: Dict[str, List[Event]] = defaultdict(list)
+        for a in activities:
+            key = a.project if a.project is not None else "__none__"
+            project_groups[key].append(a)
+
+        all_chunks: List[List[Event]] = []
+        for group_events in project_groups.values():
+            all_chunks.extend(
+                self._cluster_project_group(group_events, similarity_threshold, min_activities_per_chunk, clustering_method)
+            )
+        return all_chunks
+
+    def _cluster_project_group(
+        self,
+        activities: List[Event],
+        similarity_threshold: float,
+        min_activities_per_chunk: int,
+        clustering_method: str = "hdbscan"
+    ) -> List[List[Event]]:
         activities_with_embeddings = [a for a in activities if a.embedding is not None]
 
         if len(activities_with_embeddings) < min_activities_per_chunk:
-            return self._fallback_category_chunks(activities, min_activities_per_chunk)
+            return []
 
         embeddings = np.array([a.embedding for a in activities_with_embeddings])
 
@@ -263,7 +358,7 @@ class TaskIdentifier:
             )
             cluster_labels = clusterer.fit_predict(distance_matrix)
 
-        chunks = defaultdict(list)
+        chunks: Dict[int, List[Event]] = defaultdict(list)
         outliers = []
 
         for idx, label in enumerate(cluster_labels):
@@ -272,10 +367,10 @@ class TaskIdentifier:
             else:
                 chunks[label].append(activities_with_embeddings[idx])
 
-        valid_chunks = []
-        for chunk_activities in chunks.values():
-            if len(chunk_activities) >= min_activities_per_chunk:
-                valid_chunks.append(chunk_activities)
+        valid_chunks = [c for c in chunks.values() if len(c) >= min_activities_per_chunk]
+
+        if not valid_chunks and len(activities_with_embeddings) >= min_activities_per_chunk:
+            valid_chunks = [activities_with_embeddings]
 
         print(f"  Found {len(outliers)} outliers (excluded from chunks)")
         return valid_chunks
@@ -405,9 +500,9 @@ class TaskIdentifier:
             tags=analysis["themes"],
         )
 
+        task.description = analysis["description"]
         if analysis["accomplishments"]:
-            accomplishments_text = "; ".join(analysis["accomplishments"])
-            task.description = f"{analysis['description']}. Accomplished: {accomplishments_text}"
+            task.metadata["accomplishments"] = analysis["accomplishments"]
 
         return task
 
@@ -777,31 +872,14 @@ class TaskIdentifier:
             summary = activity.summary or activity.raw_content[:100]
             activity_summaries.append(f"- {activity.type.value}: {summary}")
 
-        activities_text = "\n".join(activity_summaries)
-
-        prompt = f"""
-        Based on the following related activities, generate a concise task title and description:
-
-        Activities:
-        {activities_text}
-
-        Project: {task.project or "Unknown"}
-        Category: {task.category.value if task.category else "Unknown"}
-        Duration: {task.duration_minutes} minutes
-        Activity Count: {task.activity_count}
-
-        Please provide:
-        1. A concise, descriptive title (max 60 characters)
-        2. A brief description of what this task involved (1-2 sentences)
-        3. Priority level (low/medium/high/urgent)
-        4. Confidence score (0.0-1.0) for how well these activities form a coherent task
-
-        Format your response as:
-        TITLE: [title here]
-        DESCRIPTION: [description here]
-        PRIORITY: [priority level]
-        CONFIDENCE: [score]
-        """
+        user_prompt = render_user(
+            "task_enhance",
+            activities_text="\n".join(activity_summaries),
+            project=task.project or "Unknown",
+            category=task.category.value if task.category else "Unknown",
+            duration_minutes=task.duration_minutes,
+            activity_count=task.activity_count,
+        )
 
         try:
             import concurrent.futures
@@ -809,7 +887,10 @@ class TaskIdentifier:
             def generate_content_with_timeout():
                 return self.client.chat.completions.create(
                     model=self.model_name,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": render_system()},
+                        {"role": "user", "content": user_prompt},
+                    ],
                 )
 
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -1023,3 +1104,201 @@ class TaskIdentifier:
         except Exception as e:
             print(f"Error in LLM analysis: {e}")
             return self._create_basic_task_from_chunk(chunk)
+
+
+class DailyCompactor:
+    def __init__(self):
+        self.vector_store = VectorStore()
+        self.task_store = TaskStore()
+        preprocessor = EventPreprocessor()
+        self.task_identifier = TaskIdentifier(preprocessor, vector_store=None)
+
+    def _reconstruct_events(self, raw_records: list) -> List[Event]:
+        events = []
+        for record in raw_records:
+            vector = record.get("vector")
+            if vector is None:
+                continue
+            payload = record["payload"]
+            try:
+                event = Event(
+                    timestamp=datetime.fromisoformat(payload["timestamp"]),
+                    type=EventType(payload["type"]),
+                    source=payload.get("source", ""),
+                    project=payload.get("project"),
+                    raw_content=payload.get("raw_content", ""),
+                    metadata=payload.get("metadata") or {},
+                    summary=payload.get("summary"),
+                    category=Category(payload["category"]) if payload.get("category") else None,
+                    embedding=vector,
+                )
+                events.append(event)
+            except Exception as e:
+                log.debug("skipping malformed record: %s", e)
+        return events
+
+    def _dedup_by_content(self, events: List[Event]) -> List[Event]:
+        seen: dict = {}
+        kept: List[Event] = []
+
+        for event in events:
+            key = None
+
+            if event.type == EventType.TERMINAL:
+                try:
+                    cmd = json.loads(event.raw_content).get("command", event.raw_content)
+                except Exception:
+                    cmd = event.raw_content
+                key = ("terminal", cmd)
+
+            elif event.type == EventType.BROWSER:
+                try:
+                    url = json.loads(event.raw_content).get("url", event.raw_content)
+                except Exception:
+                    url = event.raw_content
+                key = ("browser", url)
+
+            elif event.type in (EventType.WINDOW, EventType.SCREEN):
+                app = (event.metadata or {}).get("app_name", "")
+                title = (event.metadata or {}).get("window_title", "")
+                key = (event.type.value, app, title)
+
+            if key is None:
+                kept.append(event)
+                continue
+
+            if key not in seen:
+                seen[key] = len(kept)
+                kept.append(event)
+            else:
+                kept[seen[key]] = event
+
+        return kept
+
+    def _dedup_by_vector(self, events: List[Event]) -> List[Event]:
+        threshold = config.working_memory_dedup_threshold
+        kept: List[Event] = []
+        kept_vecs: List[np.ndarray] = []
+
+        for event in events:
+            if event.embedding is None:
+                kept.append(event)
+                continue
+
+            emb = np.array(event.embedding, dtype=np.float32)
+            norm = np.linalg.norm(emb)
+            if norm == 0:
+                kept.append(event)
+                continue
+            emb_n = emb / norm
+
+            if kept_vecs:
+                matrix = np.stack(kept_vecs)
+                sims = matrix @ emb_n
+                if float(sims.max()) >= threshold:
+                    continue
+
+            kept.append(event)
+            kept_vecs.append(emb_n)
+
+        return kept
+
+    def _dedup_events(self, events: List[Event]) -> List[Event]:
+        before = len(events)
+        events = sorted(events, key=lambda e: e.timestamp)
+        events = self._dedup_by_content(events)
+        after_content = len(events)
+        log.info("content dedup: %d -> %d events", before, after_content)
+
+        if len(events) > 50:
+            events = self._dedup_by_vector(events)
+            log.info("vector dedup: %d -> %d events", after_content, len(events))
+
+        return events
+
+    def compact_day(self, target_date: date, dry_run: bool = False, force: bool = False) -> dict:
+        today = datetime.now().date()
+        if target_date >= today:
+            return {"skipped": True, "reason": "cannot_compact_today_or_future"}
+
+        state = _load_state()
+        date_str = target_date.isoformat()
+
+        if date_str in state["compacted_dates"] and not force:
+            log.info("daily compaction: %s already compacted, skipping", date_str)
+            return {"skipped": True, "reason": "already_compacted", "date": date_str}
+
+        raw_records = self.vector_store.get_events_by_date(target_date, exclude_compacted=True)
+        log.info("daily compaction: fetched %d raw events for %s", len(raw_records), date_str)
+
+        if not raw_records:
+            if not dry_run:
+                if date_str not in state["compacted_dates"]:
+                    state["compacted_dates"].append(date_str)
+                _save_state(state)
+            return {"date": date_str, "event_count": 0, "deduped_count": 0, "task_count": 0, "dry_run": dry_run}
+
+        events = self._reconstruct_events(raw_records)
+        events = self._dedup_events(events)
+        log.info("daily compaction: %d events after dedup for %s", len(events), date_str)
+
+        tasks = self.task_identifier.identify_tasks_from_activities(
+            events,
+            min_activities_per_task=config.daily_compaction_min_activities,
+        )
+        log.info("daily compaction: identified %d tasks for %s", len(tasks), date_str)
+
+        if not dry_run:
+            failed = [task for task in tasks if not self.task_store.store_task(task)]
+            if failed:
+                log.error(
+                    "daily compaction: %d/%d tasks failed to store for %s — skipping deletion",
+                    len(failed), len(tasks), date_str,
+                )
+                return {
+                    "date": date_str,
+                    "event_count": len(raw_records),
+                    "deduped_count": len(events),
+                    "task_count": len(tasks),
+                    "tasks_stored": len(tasks) - len(failed),
+                    "dry_run": dry_run,
+                    "error": "partial_task_store_failure",
+                }
+            for task in tasks:
+                self.vector_store.store_task(task)
+            self.vector_store.delete_events_by_date(target_date)
+            if date_str not in state["compacted_dates"]:
+                state["compacted_dates"].append(date_str)
+            _save_state(state)
+
+        return {
+            "date": date_str,
+            "event_count": len(raw_records),
+            "deduped_count": len(events),
+            "task_count": len(tasks),
+            "dry_run": dry_run,
+        }
+
+    def maybe_compact_previous_days(self):
+        state = _load_state()
+        today = datetime.now().date()
+        today_str = today.isoformat()
+
+        if state.get("last_trigger_date") == today_str:
+            log.debug("daily compaction already ran today, skipping")
+            return
+
+        for days_ago in range(1, 8):
+            target = today - timedelta(days=days_ago)
+            target_str = target.isoformat()
+            if target_str in state["compacted_dates"]:
+                continue
+            try:
+                result = self.compact_day(target)
+                log.info("daily compaction result for %s: %s", target_str, result)
+            except Exception as e:
+                log.error("daily compaction failed for %s: %s", target_str, e)
+
+        state = _load_state()
+        state["last_trigger_date"] = today_str
+        _save_state(state)

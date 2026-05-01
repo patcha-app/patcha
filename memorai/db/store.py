@@ -218,16 +218,11 @@ class VectorStore:
             log.error("error searching events: %s", e)
             return []
 
-    def get_events_by_date(self, target_date: date) -> List[Dict[str, Any]]:
+    def get_events_by_date(self, target_date: date, exclude_compacted: bool = False) -> List[Dict[str, Any]]:
         try:
-            filter_condition = Filter(
-                must=[
-                    FieldCondition(
-                        key="date",
-                        match=MatchValue(value=target_date.isoformat())
-                    )
-                ]
-            )
+            must = [FieldCondition(key="date", match=MatchValue(value=target_date.isoformat()))]
+            must_not = [FieldCondition(key="compacted", match=MatchValue(value=True))] if exclude_compacted else None
+            filter_condition = Filter(must=must, must_not=must_not)
 
             all_points = []
             next_offset = None
@@ -309,12 +304,12 @@ class VectorStore:
 
     def get_recent_events(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
         today = date.today()
-        payloads = [p["payload"] for p in self.get_events_by_date(today)]
+        payloads = [p["payload"] for p in self.get_events_by_date(today, exclude_compacted=True)]
 
         if since.date() < today:
             yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
             if yesterday:
-                payloads += [p["payload"] for p in self.get_events_by_date(yesterday)]
+                payloads += [p["payload"] for p in self.get_events_by_date(yesterday, exclude_compacted=True)]
 
         since_str = since.isoformat()
         recent = [p for p in payloads if p.get("timestamp", "") >= since_str]
@@ -323,12 +318,12 @@ class VectorStore:
 
     def get_recent_events_with_vectors(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
         today = date.today()
-        rows = self.get_events_by_date(today)
+        rows = self.get_events_by_date(today, exclude_compacted=True)
 
         if since.date() < today:
             yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
             if yesterday:
-                rows += self.get_events_by_date(yesterday)
+                rows += self.get_events_by_date(yesterday, exclude_compacted=True)
 
         since_str = since.isoformat()
         recent = [r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str]
@@ -347,6 +342,36 @@ class VectorStore:
         except Exception as e:
             log.error("error getting collection info: %s", e)
             return {}
+
+    def store_task(self, task) -> bool:
+        if not task.embedding:
+            return False
+        try:
+            payload = {
+                "type": "task",
+                "timestamp": task.start_time.isoformat(),
+                "date": task.start_time.date().isoformat(),
+                "summary": task.title,
+                "raw_content": task.description or task.title,
+                "project": task.project,
+                "category": task.category.value if task.category else None,
+                "source": "compaction",
+                "metadata": {
+                    "task_id": task.id,
+                    "status": task.status.value,
+                    "duration_minutes": task.duration_minutes,
+                    "confidence_score": task.confidence_score,
+                    "tags": task.tags,
+                },
+            }
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[PointStruct(id=task.id, vector=task.embedding, payload=payload)],
+            )
+            return True
+        except Exception as e:
+            log.error("error storing task in mem collection: %s", e)
+            return False
 
     def mark_events_compacted(self, point_ids: List[str]) -> None:
         if not point_ids:

@@ -8,7 +8,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 
 from memorai.db.models import Event, EventType, Category
 from memorai.db.store import VectorStore
-from memorai.identify import TaskIdentifier
+from memorai.compaction import TaskIdentifier
 from memorai.db.tasks import TaskStore
 from memorai.process import EventPreprocessor
 from memorai.config import config

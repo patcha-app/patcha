@@ -13,7 +13,7 @@ from memorai.collectors.browser import BrowserCollector
 from memorai.collectors.terminal import TerminalCollector
 from memorai.collectors.window import WindowCollector
 from memorai.collectors.accessibility import AccessibilityCollector
-from memorai.utils.compaction import DailyCompactor
+from memorai.compaction import DailyCompactor
 from memorai.process import EventPreprocessor
 from memorai.db.store import VectorStore
 from memorai.db.models import Event, EventType

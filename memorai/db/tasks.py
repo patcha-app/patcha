@@ -18,7 +18,7 @@ class TaskStore:
         self.tasks_collection_name = "tasks"
         self.vector_size = config.vector_size
         self.local_storage_path = config.data_dir / "tasks"
-        self.local_storage_path.mkdir(exist_ok=True)
+        self.local_storage_path.mkdir(parents=True, exist_ok=True)
         self._ensure_collection_exists()
 
     def _ensure_collection_exists(self):

@@ -11,6 +11,7 @@ from memorai.db.models import Category, DailySummary, Task, DailyTaskSummary, Ta
 from memorai.db.store import VectorStore
 from memorai.db.tasks import TaskStore
 from memorai.config import config
+from memorai.prompts import render_system, render_user
 
 
 class DailySummarizer:
@@ -82,20 +83,21 @@ class DailySummarizer:
         sample_events = events[:20]
         summaries = [event.get("summary", event.get("raw_content", "")[:100]) for event in sample_events]
 
-        prompt = f"""
-        Summarize the following {category.value.lower()} activities from today in 2-4 sentences.
-        Focus on the main accomplishments, patterns, and key activities.
-
-        Activities ({len(events)} total):
-        {chr(10).join(f"- {summary}" for summary in summaries[:15])}
-
-        {"... and " + str(len(events) - 15) + " more activities" if len(events) > 15 else ""}
-        """
+        user_prompt = render_user(
+            "category_summary",
+            category_name=category.value.lower(),
+            event_count=len(events),
+            summaries=summaries[:15],
+            extra_count=max(0, len(events) - 15),
+        )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
@@ -137,20 +139,22 @@ class DailySummarizer:
         category_counts = {cat.value: len(events) for cat, events in events_by_category.items()}
         top_categories = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:3]
 
-        prompt = f"""
-        Generate an overall summary for {target_date.strftime('%B %d, %Y')} based on the following activity breakdown:
-
-        Total activities: {total_events}
-        Top categories: {', '.join([f"{cat} ({count})" for cat, count in top_categories])}
-        Projects worked on: {', '.join(projects[:5])}{"..." if len(projects) > 5 else ""}
-
-        Write 2-3 sentences summarizing the day's productivity and focus areas.
-        """
+        projects_str = ', '.join(projects[:5]) + ("..." if len(projects) > 5 else "")
+        user_prompt = render_user(
+            "overall_summary",
+            date_str=target_date.strftime('%B %d, %Y'),
+            total_events=total_events,
+            top_categories_str=', '.join([f"{cat} ({count})" for cat, count in top_categories]),
+            projects_str=projects_str,
+        )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
@@ -473,27 +477,20 @@ class TaskSummarizer:
             task_list = "\n".join(task_details)
             themes_str = ", ".join(themes) if themes else "general activities"
 
-            prompt = f"""
-            Summarize the {category.lower()} work done today based on these tasks:
-
-            Tasks completed:
-            {task_list}
-
-            Key themes: {themes_str}
-            Total tasks: {len(tasks)}
-            Category: {category}
-
-            Write a 2-3 sentence summary focusing on:
-            1. What specific work was accomplished
-            2. The main themes and focus areas
-            3. Any notable patterns or achievements
-
-            Keep it engaging and informative, similar to a daily activity report.
-            """
+            user_prompt = render_user(
+                "task_category_summary",
+                category=category.lower(),
+                task_details=task_details,
+                themes_str=themes_str,
+                task_count=len(tasks),
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
@@ -526,30 +523,23 @@ class TaskSummarizer:
             # Extract projects
             projects = list(set([t.project for t in tasks if t.project]))
 
-            prompt = f"""
-            Write an engaging overview paragraph for {target_date.strftime('%B %d, %Y')}:
-
-            Key metrics:
-            - Total tasks: {total_tasks}
-            - Completed: {completed_tasks} ({completion_rate:.1f}% completion rate)
-            - Total time: {total_time_hours:.1f} hours
-
-            Top focus areas:
-            {chr(10).join([f'- {cat}: {data["count"]} tasks' for cat, data in top_categories])}
-
-            Projects worked on: {', '.join(projects) if projects else 'Various personal tasks'}
-
-            Write a 2-3 sentence engaging summary that:
-            1. Describes the day as productive/focused/diverse based on the metrics
-            2. Highlights the main areas of work
-            3. Mentions key projects if any
-
-            Make it sound like a professional daily report but engaging.
-            """
+            user_prompt = render_user(
+                "task_rich_overview",
+                date_str=target_date.strftime('%B %d, %Y'),
+                total_tasks=total_tasks,
+                completed_tasks=completed_tasks,
+                completion_rate=f"{completion_rate:.1f}",
+                total_time_hours=f"{total_time_hours:.1f}",
+                top_categories=top_categories,
+                projects_str=', '.join(projects) if projects else 'Various personal tasks',
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
@@ -579,30 +569,23 @@ class TaskSummarizer:
             # Extract projects
             projects = list(set([task.project for task in tasks if task.project]))
 
-            prompt = f"""
-            Write an engaging overview paragraph for {target_date.strftime('%B %d, %Y')}:
-
-            Key metrics:
-            - Total tasks: {total_tasks}
-            - Completed: {completed_tasks} ({completion_rate:.1f}% completion rate)
-            - Total time: {total_time_hours:.1f} hours
-
-            Top tasks by time spent:
-            {chr(10).join([f'- {title}' for title in top_task_titles])}
-
-            Projects worked on: {', '.join(projects) if projects else 'Various personal tasks'}
-
-            Write a 2-3 sentence engaging summary that:
-            1. Describes the day's productivity focusing on specific tasks accomplished
-            2. Mentions the most time-intensive or important tasks by name
-            3. Highlights any notable patterns in the work
-
-            Make it sound professional and engaging, focusing on what was actually accomplished.
-            """
+            user_prompt = render_user(
+                "task_based_overview",
+                date_str=target_date.strftime('%B %d, %Y'),
+                total_tasks=total_tasks,
+                completed_tasks=completed_tasks,
+                completion_rate=f"{completion_rate:.1f}",
+                total_time_hours=f"{total_time_hours:.1f}",
+                top_task_titles=top_task_titles,
+                projects_str=', '.join(projects) if projects else 'Various personal tasks',
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
@@ -627,23 +610,23 @@ class TaskSummarizer:
     def _generate_task_summary(self, task: Task) -> str:
         """Generate an AI summary for a single task."""
         try:
-            prompt = f"""
-            Summarize this task in 1-2 concise sentences:
-
-            Title: {task.title}
-            Description: {task.description or "No description"}
-            Status: {task.status.value}
-            Category: {task.category.value if task.category else "None"}
-            Duration: {task.duration_minutes or 0} minutes
-            Activities: {task.activity_count}
-            Confidence: {task.confidence_score:.2f}
-
-            Focus on what was accomplished and the key outcomes.
-            """
+            user_prompt = render_user(
+                "task_summary",
+                title=task.title,
+                description=task.description or "No description",
+                status=task.status.value,
+                category=task.category.value if task.category else "None",
+                duration_minutes=task.duration_minutes or 0,
+                activity_count=task.activity_count,
+                confidence_score=f"{task.confidence_score:.2f}",
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
@@ -670,30 +653,22 @@ class TaskSummarizer:
             total_time_hours = sum(t.duration_minutes or 0 for t in tasks) / 60
             main_categories = Counter(t.category.value for t in tasks if t.category).most_common(3)
 
-            prompt = f"""
-            Generate a comprehensive daily task summary for {target_date}:
-
-            Tasks completed today:
-            {task_list}
-
-            Key metrics:
-            - Total tasks: {len(tasks)}
-            - Completion rate: {completion_rate:.1f}%
-            - Total time: {total_time_hours:.1f} hours
-            - Main categories: {', '.join([f'{cat} ({count})' for cat, count in main_categories])}
-
-            Please provide:
-            1. A brief overview of the day's productivity
-            2. Key accomplishments and patterns
-            3. Areas of focus
-            4. Any insights about work patterns
-
-            Keep it concise but informative (3-4 sentences).
-            """
+            user_prompt = render_user(
+                "task_daily_overall",
+                date_str=str(target_date),
+                task_info=task_info,
+                total_tasks=len(tasks),
+                completion_rate=f"{completion_rate:.1f}",
+                total_time_hours=f"{total_time_hours:.1f}",
+                main_categories_str=', '.join([f'{cat} ({count})' for cat, count in main_categories]),
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
@@ -851,29 +826,26 @@ class TaskSummarizer:
 
             main_categories = Counter(t.category.value for t in weekly_tasks if t.category).most_common(3)
 
-            prompt = f"""
-            Analyze this week's task patterns ({start_date} to {end_date}):
-
-            Weekly overview:
-            - Total tasks: {len(weekly_tasks)}
-            - Completed: {len([t for t in weekly_tasks if t.status == TaskStatus.COMPLETED])}
-            - Busiest day: {busiest_day[0]} ({busiest_day[1]} tasks)
-            - Average daily tasks: {avg_daily_tasks:.1f}
-            - Best completion day: {best_day[0] if best_day else 'N/A'} ({best_day[1]*100:.1f}% completion rate)
-            - Main focus areas: {', '.join([f'{cat} ({count})' for cat, count in main_categories])}
-
-            Provide insights about:
-            1. Productivity patterns and trends
-            2. Most productive days/times
-            3. Areas of focus
-            4. Suggestions for improvement
-
-            Keep it concise (3-4 sentences).
-            """
+            user_prompt = render_user(
+                "task_weekly_insights",
+                start_date=str(start_date),
+                end_date=str(end_date),
+                total_tasks=len(weekly_tasks),
+                completed_tasks=len([t for t in weekly_tasks if t.status == TaskStatus.COMPLETED]),
+                busiest_day=str(busiest_day[0]),
+                busiest_day_count=busiest_day[1],
+                avg_daily_tasks=f"{avg_daily_tasks:.1f}",
+                best_day=str(best_day[0]) if best_day else 'N/A',
+                best_day_rate=f"{best_day[1]*100:.1f}" if best_day else '0.0',
+                main_categories_str=', '.join([f'{cat} ({count})' for cat, count in main_categories]),
+            )
 
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": render_system()},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
             return response.choices[0].message.content.strip()
 
