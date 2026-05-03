@@ -73,6 +73,7 @@ class GitCommit(BaseModel):
     insertions: int
     deletions: int
     branch: str
+    diff: str = ""
 
 
 class GitStash(BaseModel):

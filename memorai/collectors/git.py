@@ -54,6 +54,9 @@ class GitCollector:
                 pattern = '/'.join(['*'] * depth) + '/.git'
                 for git_dir in search_path.glob(pattern):
                     repo_path = git_dir.parent
+                    rel_parts = repo_path.relative_to(search_path).parts
+                    if any(part.startswith('.') for part in rel_parts):
+                        continue
                     if repo_path not in git_repos:
                         git_repos.append(repo_path)
 
@@ -65,17 +68,9 @@ class GitCollector:
     def collect_commits(self, since: Optional[datetime] = None) -> List[Event]:
         events = []
 
-        # Find all git repositories
-        if self.is_git_repo():
-            git_repos = [self.repo_path]
-        else:
-            print(f"Current directory {self.repo_path} is not a git repo, searching for git repositories...")
-            git_repos = self._find_git_repos()
-            if not git_repos:
-                print("No git repositories found in current directory tree")
-                return []
-            else:
-                print(f"Found {len(git_repos)} git repositories: {[str(r) for r in git_repos]}")
+        git_repos = self._find_git_repos(Path.home())
+        if not git_repos:
+            return []
 
         for repo_path in git_repos:
             try:
@@ -101,15 +96,29 @@ class GitCollector:
                     # Filter to only include language files for better summaries
                     language_files = self._filter_language_files(all_files_changed)
 
+                    try:
+                        branch = repo.active_branch.name
+                    except TypeError:
+                        branch = "unknown"
+
+                    try:
+                        if commit.parents:
+                            diff_text = repo.git.diff(commit.parents[0].hexsha, commit.hexsha)[:4000]
+                        else:
+                            diff_text = ""
+                    except Exception:
+                        diff_text = ""
+
                     git_commit = GitCommit(
                         hash=commit.hexsha,
                         message=commit.message.strip(),
                         author=str(commit.author),
                         timestamp=commit_time,
-                        files_changed=language_files if language_files else all_files_changed[:5],  # Fallback to first 5 if no language files
+                        files_changed=language_files if language_files else all_files_changed[:5],
                         insertions=commit.stats.total["insertions"],
                         deletions=commit.stats.total["deletions"],
-                        branch=repo.active_branch.name if repo.active_branch else "unknown"
+                        branch=branch,
+                        diff=diff_text,
                     )
 
                     event = Event(
@@ -118,6 +127,7 @@ class GitCollector:
                         source="git",
                         project=repo_path.name,
                         raw_content=json.dumps(git_commit.model_dump(), default=str),
+                        source_doc_id=f"{repo_path}:{commit.hexsha}",
                         metadata={
                             "repo_path": str(repo_path),
                             "files_count": len(all_files_changed),
@@ -191,7 +201,7 @@ class GitCollector:
 
     def record_staging_snapshot(self) -> None:
         """Snapshot staged/unstaged state for all known repos and append to log."""
-        repos = [self.repo_path] if self.is_git_repo() else self._find_git_repos()
+        repos = self._find_git_repos(Path.home())
         config.data_dir.mkdir(parents=True, exist_ok=True)
         snapshot_file = config.data_dir / "git_stage_snapshots.jsonl"
 

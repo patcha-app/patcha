@@ -38,6 +38,8 @@ def _build_embedding_text(event: Event) -> str:
             files = data.get("files_changed", [])
             if files:
                 parts.append("files: " + ", ".join(files[:20]))
+            if data.get("diff"):
+                parts.append(data["diff"])
             text = " | ".join(parts) if parts else event.raw_content
         except (json.JSONDecodeError, TypeError):
             text = event.raw_content
