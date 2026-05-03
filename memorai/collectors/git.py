@@ -207,12 +207,18 @@ class GitCollector:
                 unstaged = [d.a_path for d in repo.index.diff(None)]
                 untracked = list(repo.untracked_files)[:20]
 
+                try:
+                    staged_diff = repo.git.diff("HEAD", "--staged")[:4000]
+                except Exception:
+                    staged_diff = ""
+
                 entry = {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "repo": str(repo_path),
                     "staged": staged,
                     "unstaged": unstaged,
                     "untracked": untracked,
+                    "staged_diff": staged_diff,
                 }
                 with open(snapshot_file, "a") as f:
                     f.write(json.dumps(entry) + "\n")
@@ -270,10 +276,14 @@ class GitCollector:
                     if newly_unstaged:
                         parts.append(f"unstaged: {', '.join(sorted(newly_unstaged))}")
 
+                    diff_content = entry.get("staged_diff", "")
+                    diff_section = f"\nDiff:\n{diff_content}" if diff_content else ""
+
                     raw = (
                         f"Git index change in {project}\n"
                         f"Change: {'; '.join(parts)}\n"
                         f"Currently staged: {file_list}{suffix}"
+                        f"{diff_section}"
                     )
 
                     events.append(Event(

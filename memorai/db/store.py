@@ -3,7 +3,7 @@
 import logging
 import sys
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range, PointIdsList
@@ -304,12 +304,12 @@ class VectorStore:
 
     def get_recent_events(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
         today = date.today()
-        payloads = [p["payload"] for p in self.get_events_by_date(today, exclude_compacted=True)]
-
-        if since.date() < today:
-            yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
-            if yesterday:
-                payloads += [p["payload"] for p in self.get_events_by_date(yesterday, exclude_compacted=True)]
+        since_date = since.date()
+        payloads = []
+        current = since_date
+        while current <= today:
+            payloads += [p["payload"] for p in self.get_events_by_date(current, exclude_compacted=True)]
+            current += timedelta(days=1)
 
         since_str = since.isoformat()
         recent = [p for p in payloads if p.get("timestamp", "") >= since_str]
@@ -318,12 +318,12 @@ class VectorStore:
 
     def get_recent_events_with_vectors(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
         today = date.today()
-        rows = self.get_events_by_date(today, exclude_compacted=True)
-
-        if since.date() < today:
-            yesterday = date(today.year, today.month, today.day - 1) if today.day > 1 else None
-            if yesterday:
-                rows += self.get_events_by_date(yesterday, exclude_compacted=True)
+        since_date = since.date()
+        rows = []
+        current = since_date
+        while current <= today:
+            rows += self.get_events_by_date(current, exclude_compacted=True)
+            current += timedelta(days=1)
 
         since_str = since.isoformat()
         recent = [r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str]

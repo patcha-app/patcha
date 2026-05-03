@@ -67,8 +67,8 @@ class EventPreprocessor:
             log.debug("embedding generated: dim=%d", len(embedding))
             return embedding
         except Exception as e:
-            log.error("error generating embedding: %s", e)
-            return None
+            log.error("embedding failed: %s: %s", type(e).__name__, e)
+            raise
 
     def process_event(self, event: Event) -> List[Event]:
         log.debug("processing event type=%s source=%s", event.type, event.source)

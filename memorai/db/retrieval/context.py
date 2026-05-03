@@ -24,7 +24,7 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
 
 def _format_line(payload: dict) -> str:
     ts = payload.get("timestamp", "")
-    hhmm = ts[11:16] if len(ts) >= 16 else "??:??"
+    hhmm = (ts[:10] + " " + ts[11:16]) if len(ts) >= 16 else "??:??"
     event_type = payload.get("type", "unknown")
     meta = payload.get("metadata") or {}
     raw = payload.get("raw_content", "")
@@ -119,9 +119,12 @@ def get_recent_activity(store: "VectorStore", hours: int = 3) -> str:
 
 
 def search_activity(store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5) -> str:
-    embedding = preprocessor.generate_embedding(query)
+    try:
+        embedding = preprocessor.generate_embedding(query)
+    except Exception as e:
+        return f'# Search results for "{query}"\nEmbedding failed: {type(e).__name__}: {e}'
     if not embedding:
-        return f'# Search results for "{query}"\nEmbedding failed — cannot search.'
+        return f'# Search results for "{query}"\nEmbedding failed — no vector returned.'
 
     results = store.search_events(embedding, limit=limit)
     if not results:
