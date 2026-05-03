@@ -66,7 +66,7 @@ class VectorStore:
                 "summary": event.summary,
                 "category": event.category.value if event.category else None,
                 "metadata": event.metadata,
-                "raw_content": event.raw_content[:1000]
+                "raw_content": event.raw_content[:4000]
             }
 
             point = PointStruct(
@@ -112,7 +112,7 @@ class VectorStore:
                     "summary": event.summary,
                     "category": event.category.value if event.category else None,
                     "metadata": event.metadata,
-                    "raw_content": event.raw_content[:1000]
+                    "raw_content": event.raw_content[:4000]
                 }
 
                 point = PointStruct(
