@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 
 _DEFAULT_MEMORAI_DIR = Path.home() / ".memorai"
 
-load_dotenv()                               # project .env (dev) — takes priority
-load_dotenv(_DEFAULT_MEMORAI_DIR / ".env")  # user config fallback — works in binary
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
+load_dotenv(_DEFAULT_MEMORAI_DIR / ".env", override=True)
 
 
 class Config(BaseModel):

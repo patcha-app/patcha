@@ -197,12 +197,14 @@ class VectorStore:
         log.debug("searching with %d filter(s), limit=%d", len(filter_conditions), limit)
 
         try:
-            results = self.client.search(
+            response = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_vector,
+                query=query_vector,
                 limit=limit,
-                query_filter=query_filter
+                query_filter=query_filter,
+                with_payload=True,
             )
+            results = response.points
             log.debug("search returned %d results", len(results))
 
             return [
