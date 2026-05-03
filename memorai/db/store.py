@@ -66,7 +66,7 @@ class VectorStore:
                 "summary": event.summary,
                 "category": event.category.value if event.category else None,
                 "metadata": event.metadata,
-                "raw_content": event.raw_content[:4000]
+                "raw_content": event.raw_content
             }
 
             point = PointStruct(
@@ -112,7 +112,7 @@ class VectorStore:
                     "summary": event.summary,
                     "category": event.category.value if event.category else None,
                     "metadata": event.metadata,
-                    "raw_content": event.raw_content[:4000]
+                    "raw_content": event.raw_content
                 }
 
                 point = PointStruct(
@@ -315,8 +315,8 @@ class VectorStore:
 
         since_str = since.isoformat()
         recent = [p for p in payloads if p.get("timestamp", "") >= since_str]
-        recent.sort(key=lambda p: p.get("timestamp", ""))
-        return recent[:limit]
+        recent.sort(key=lambda p: p.get("timestamp", ""), reverse=True)
+        return list(reversed(recent[:limit]))
 
     def get_recent_events_with_vectors(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
         today = date.today()
@@ -329,8 +329,8 @@ class VectorStore:
 
         since_str = since.isoformat()
         recent = [r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str]
-        recent.sort(key=lambda r: r.get("payload", {}).get("timestamp", ""))
-        return recent[:limit]
+        recent.sort(key=lambda r: r.get("payload", {}).get("timestamp", ""), reverse=True)
+        return list(reversed(recent[:limit]))
 
     def get_collection_info(self) -> Dict[str, Any]:
         try:

@@ -65,8 +65,9 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Search the user's full activity history semantically. "
                 "Use this to find specific past work — e.g. 'qdrant vector search setup', "
-                "'authentication bug fix', 'npm install error'. "
-                "Returns the most relevant past events with similarity scores."
+                "'authentication bug fix', 'npm install error', 'what changed in the auth fix'. "
+                "Returns the most relevant past events with similarity scores. "
+                "For git commits and stashes, the full diff is included in the result."
             ),
             inputSchema={
                 "type": "object",
@@ -77,8 +78,8 @@ async def list_tools() -> list[Tool]:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Number of results to return. Default 5.",
-                        "default": 5,
+                        "description": "Number of results to return. Default 10.",
+                        "default": 10,
                     },
                 },
                 "required": ["query"],

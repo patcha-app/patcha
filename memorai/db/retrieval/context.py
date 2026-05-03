@@ -118,6 +118,36 @@ def get_recent_activity(store: "VectorStore", hours: int = 3) -> str:
     return f"# Recent activity (last {hours}h)\n" + "\n".join(lines)
 
 
+def _format_detail(payload: dict) -> str:
+    event_type = payload.get("type", "")
+    if event_type in ("git_commit", "git_stash"):
+        try:
+            data = json.loads(payload.get("raw_content", ""))
+            ts = payload.get("timestamp", "")
+            hhmm = (ts[:10] + " " + ts[11:16]) if len(ts) >= 16 else "??:??"
+            project = payload.get("project", "")
+            msg = data.get("message", "").strip()
+            files = data.get("files_changed", [])
+            diff = data.get("diff", "")
+
+            project_tag = f" [{project}]" if project else ""
+            header = f"[{hhmm}] {event_type}: {msg}{project_tag}"
+            if files:
+                header += f"\nFiles: {', '.join(files)}"
+            if diff:
+                return header + f"\n\n{diff}"
+            return header + "\n(no diff stored)"
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    base = _format_line(payload)
+    if event_type == "git_staged":
+        raw = payload.get("raw_content", "")
+        if "Diff:\n" in raw:
+            return base + "\n" + raw[raw.index("Diff:\n"):]
+    return base
+
+
 def search_activity(store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5) -> str:
     try:
         embedding = preprocessor.generate_embedding(query)
@@ -135,7 +165,7 @@ def search_activity(store: "VectorStore", preprocessor: "EventPreprocessor", que
         score = round(r.get("score", 0), 3)
         p = r.get("payload", {})
         ts = p.get("timestamp", "")[:16].replace("T", " ")
-        line = _format_line(p)
+        line = _format_detail(p)
         lines.append(f"[score={score} | {ts}] {line.split('] ', 1)[-1]}")
 
-    return f'# Search results for "{query}"\n' + "\n".join(lines)
+    return f'# Search results for "{query}"\n' + "\n\n".join(lines)

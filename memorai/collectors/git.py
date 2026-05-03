@@ -1,5 +1,4 @@
 import json
-import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,32 +14,12 @@ class GitCollector:
     def __init__(self, repo_path: Optional[str] = None):
         self.repo_path = Path(repo_path) if repo_path else Path.cwd()
 
-        self.language_extensions = {
-            '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.cpp', '.c', '.h', '.hpp',
-            '.cs', '.php', '.rb', '.go', '.rs', '.swift', '.kt', '.scala', '.sh',
-            '.bash', '.zsh', '.fish', '.ps1', '.r', '.R', '.m', '.mm', '.pl', '.pm',
-            '.lua', '.dart', '.elm', '.ex', '.exs', '.clj', '.cljs', '.hs', '.ml',
-            '.fs', '.fsx', '.vb', '.pas', '.dpr', '.asm', '.s', '.f90', '.f95',
-            '.html', '.htm', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
-            '.xml', '.xsl', '.xslt', '.sql', '.graphql', '.gql',
-            '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env',
-            '.dockerfile', '.dockerignore', '.gitignore', '.gitattributes',
-        }
-
     def is_git_repo(self) -> bool:
         try:
             Repo(self.repo_path)
             return True
         except git.exc.InvalidGitRepositoryError:
             return False
-
-    def _filter_language_files(self, files: List[str]) -> List[str]:
-        filtered_files = []
-        for file_path in files:
-            file_ext = Path(file_path).suffix.lower()
-            if file_ext in self.language_extensions:
-                filtered_files.append(file_path)
-        return filtered_files
 
     def _find_git_repos(self, search_path: Optional[Path] = None) -> List[Path]:
         search_path = search_path or self.repo_path
@@ -90,11 +69,7 @@ class GitCollector:
                     if since and commit_time < since:
                         continue
 
-                    # Get all changed files
                     all_files_changed = list(commit.stats.files.keys())
-
-                    # Filter to only include language files for better summaries
-                    language_files = self._filter_language_files(all_files_changed)
 
                     try:
                         branch = repo.active_branch.name
@@ -103,7 +78,7 @@ class GitCollector:
 
                     try:
                         if commit.parents:
-                            diff_text = repo.git.diff(commit.parents[0].hexsha, commit.hexsha)[:4000]
+                            diff_text = repo.git.diff(commit.parents[0].hexsha, commit.hexsha)
                         else:
                             diff_text = ""
                     except Exception:
@@ -114,7 +89,7 @@ class GitCollector:
                         message=commit.message.strip(),
                         author=str(commit.author),
                         timestamp=commit_time,
-                        files_changed=language_files if language_files else all_files_changed[:5],
+                        files_changed=all_files_changed[:30],
                         insertions=commit.stats.total["insertions"],
                         deletions=commit.stats.total["deletions"],
                         branch=branch,
@@ -131,9 +106,7 @@ class GitCollector:
                         metadata={
                             "repo_path": str(repo_path),
                             "files_count": len(all_files_changed),
-                            "language_files_count": len(language_files),
                             "lines_changed": git_commit.insertions + git_commit.deletions,
-                            "filtered_for_summary": len(language_files) > 0
                         }
                     )
                     events.append(event)
@@ -218,7 +191,7 @@ class GitCollector:
                 untracked = list(repo.untracked_files)[:20]
 
                 try:
-                    staged_diff = repo.git.diff("HEAD", "--staged")[:4000]
+                    staged_diff = repo.git.diff("HEAD", "--staged")
                 except Exception:
                     staged_diff = ""
 
