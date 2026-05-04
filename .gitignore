@@ -5,6 +5,7 @@ data/*
 __pycache__/
 *.egg-info/
 dist/
+build/
 *.log
 .env
 .env.development
