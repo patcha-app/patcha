@@ -6,7 +6,16 @@ import uuid
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range, PointIdsList
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    Range,
+    PointIdsList,
+)
 
 from patcha.db.models import Event, Category
 from patcha.config import config
@@ -16,7 +25,7 @@ log = logging.getLogger(__name__)
 
 class VectorStore:
     def __init__(self):
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, "frozen", False):
             config.qdrant_path.mkdir(parents=True, exist_ok=True)
             self.client = QdrantClient(path=str(config.qdrant_path))
         else:
@@ -34,9 +43,8 @@ class VectorStore:
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(
-                        size=self.vector_size,
-                        distance=Distance.COSINE
-                    )
+                        size=self.vector_size, distance=Distance.COSINE
+                    ),
                 )
                 log.info("created collection: %s", self.collection_name)
             else:
@@ -52,7 +60,11 @@ class VectorStore:
         try:
             if event.source_doc_id:
                 point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
-                log.debug("dedup: using deterministic id for source_doc_id=%s → point_id=%s", event.source_doc_id, point_id)
+                log.debug(
+                    "dedup: using deterministic id for source_doc_id=%s → point_id=%s",
+                    event.source_doc_id,
+                    point_id,
+                )
             else:
                 point_id = str(uuid.uuid4())
                 log.debug("new point id (no source_doc_id): %s", point_id)
@@ -66,19 +78,12 @@ class VectorStore:
                 "summary": event.summary,
                 "category": event.category.value if event.category else None,
                 "metadata": event.metadata,
-                "raw_content": event.raw_content
+                "raw_content": event.raw_content,
             }
 
-            point = PointStruct(
-                id=point_id,
-                vector=event.embedding,
-                payload=payload
-            )
+            point = PointStruct(id=point_id, vector=event.embedding, payload=payload)
 
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=[point]
-            )
+            self.client.upsert(collection_name=self.collection_name, points=[point])
             log.debug("upserted event type=%s point_id=%s", event.type, point_id)
             return True
 
@@ -98,7 +103,11 @@ class VectorStore:
             try:
                 if event.source_doc_id:
                     point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
-                    log.debug("dedup: deterministic id for source_doc_id=%s → %s", event.source_doc_id, point_id)
+                    log.debug(
+                        "dedup: deterministic id for source_doc_id=%s → %s",
+                        event.source_doc_id,
+                        point_id,
+                    )
                 else:
                     point_id = str(uuid.uuid4())
                     log.debug("new point id: %s type=%s", point_id, event.type)
@@ -112,13 +121,11 @@ class VectorStore:
                     "summary": event.summary,
                     "category": event.category.value if event.category else None,
                     "metadata": event.metadata,
-                    "raw_content": event.raw_content
+                    "raw_content": event.raw_content,
                 }
 
                 point = PointStruct(
-                    id=point_id,
-                    vector=event.embedding,
-                    payload=payload
+                    id=point_id, vector=event.embedding, payload=payload
                 )
 
                 points.append(point)
@@ -129,11 +136,12 @@ class VectorStore:
 
         if points:
             try:
-                log.debug("upserting batch of %d points to collection %s", len(points), self.collection_name)
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=points
+                log.debug(
+                    "upserting batch of %d points to collection %s",
+                    len(points),
+                    self.collection_name,
                 )
+                self.client.upsert(collection_name=self.collection_name, points=points)
                 successful_stores = len(points)
                 log.info("stored %d events", successful_stores)
             except Exception as e:
@@ -152,7 +160,7 @@ class VectorStore:
         date_filter: Optional[date] = None,
         category_filter: Optional[Category] = None,
         project_filter: Optional[str] = None,
-        type_filter: Optional[str] = None
+        type_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
 
         filter_conditions = []
@@ -161,8 +169,7 @@ class VectorStore:
             log.debug("search filter: date=%s", date_filter.isoformat())
             filter_conditions.append(
                 FieldCondition(
-                    key="date",
-                    match=MatchValue(value=date_filter.isoformat())
+                    key="date", match=MatchValue(value=date_filter.isoformat())
                 )
             )
 
@@ -170,31 +177,26 @@ class VectorStore:
             log.debug("search filter: category=%s", category_filter.value)
             filter_conditions.append(
                 FieldCondition(
-                    key="category",
-                    match=MatchValue(value=category_filter.value)
+                    key="category", match=MatchValue(value=category_filter.value)
                 )
             )
 
         if project_filter:
             log.debug("search filter: project=%s", project_filter)
             filter_conditions.append(
-                FieldCondition(
-                    key="project",
-                    match=MatchValue(value=project_filter)
-                )
+                FieldCondition(key="project", match=MatchValue(value=project_filter))
             )
 
         if type_filter:
             log.debug("search filter: type=%s", type_filter)
             filter_conditions.append(
-                FieldCondition(
-                    key="type",
-                    match=MatchValue(value=type_filter)
-                )
+                FieldCondition(key="type", match=MatchValue(value=type_filter))
             )
 
         query_filter = Filter(must=filter_conditions) if filter_conditions else None
-        log.debug("searching with %d filter(s), limit=%d", len(filter_conditions), limit)
+        log.debug(
+            "searching with %d filter(s), limit=%d", len(filter_conditions), limit
+        )
 
         try:
             response = self.client.query_points(
@@ -208,11 +210,7 @@ class VectorStore:
             log.debug("search returned %d results", len(results))
 
             return [
-                {
-                    "id": result.id,
-                    "score": result.score,
-                    "payload": result.payload
-                }
+                {"id": result.id, "score": result.score, "payload": result.payload}
                 for result in results
             ]
 
@@ -220,10 +218,20 @@ class VectorStore:
             log.error("error searching events: %s", e)
             return []
 
-    def get_events_by_date(self, target_date: date, exclude_compacted: bool = False) -> List[Dict[str, Any]]:
+    def get_events_by_date(
+        self, target_date: date, exclude_compacted: bool = False
+    ) -> List[Dict[str, Any]]:
         try:
-            must = [FieldCondition(key="date", match=MatchValue(value=target_date.isoformat()))]
-            must_not = [FieldCondition(key="compacted", match=MatchValue(value=True))] if exclude_compacted else None
+            must = [
+                FieldCondition(
+                    key="date", match=MatchValue(value=target_date.isoformat())
+                )
+            ]
+            must_not = (
+                [FieldCondition(key="compacted", match=MatchValue(value=True))]
+                if exclude_compacted
+                else None
+            )
             filter_condition = Filter(must=must, must_not=must_not)
 
             all_points = []
@@ -234,18 +242,14 @@ class VectorStore:
                     scroll_filter=filter_condition,
                     limit=config.max_events_per_day,
                     offset=next_offset,
-                    with_vectors=True
+                    with_vectors=True,
                 )
                 all_points.extend(points)
                 if next_offset is None:
                     break
 
             return [
-                {
-                    "id": point.id,
-                    "payload": point.payload,
-                    "vector": point.vector
-                }
+                {"id": point.id, "payload": point.payload, "vector": point.vector}
                 for point in all_points
             ]
 
@@ -257,24 +261,18 @@ class VectorStore:
         self,
         category: Category,
         start_date: Optional[date] = None,
-        end_date: Optional[date] = None
+        end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
 
         filter_conditions = [
-            FieldCondition(
-                key="category",
-                match=MatchValue(value=category.value)
-            )
+            FieldCondition(key="category", match=MatchValue(value=category.value))
         ]
 
         if start_date and end_date:
             filter_conditions.append(
                 FieldCondition(
                     key="date",
-                    range=Range(
-                        gte=start_date.isoformat(),
-                        lte=end_date.isoformat()
-                    )
+                    range=Range(gte=start_date.isoformat(), lte=end_date.isoformat()),
                 )
             )
 
@@ -286,31 +284,30 @@ class VectorStore:
                     collection_name=self.collection_name,
                     scroll_filter=Filter(must=filter_conditions),
                     limit=config.max_events_per_day,
-                    offset=next_offset
+                    offset=next_offset,
                 )
                 all_points.extend(points)
                 if next_offset is None:
                     break
 
-            return [
-                {
-                    "id": point.id,
-                    "payload": point.payload
-                }
-                for point in all_points
-            ]
+            return [{"id": point.id, "payload": point.payload} for point in all_points]
 
         except Exception as e:
             log.error("error getting events by category: %s", e)
             return []
 
-    def get_recent_events(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+    def get_recent_events(
+        self, since: datetime, limit: int = 200
+    ) -> List[Dict[str, Any]]:
         today = date.today()
         since_date = since.date()
         payloads = []
         current = since_date
         while current <= today:
-            payloads += [p["payload"] for p in self.get_events_by_date(current, exclude_compacted=True)]
+            payloads += [
+                p["payload"]
+                for p in self.get_events_by_date(current, exclude_compacted=True)
+            ]
             current += timedelta(days=1)
 
         since_str = since.isoformat()
@@ -318,7 +315,9 @@ class VectorStore:
         recent.sort(key=lambda p: p.get("timestamp", ""), reverse=True)
         return list(reversed(recent[:limit]))
 
-    def get_recent_events_with_vectors(self, since: datetime, limit: int = 200) -> List[Dict[str, Any]]:
+    def get_recent_events_with_vectors(
+        self, since: datetime, limit: int = 200
+    ) -> List[Dict[str, Any]]:
         today = date.today()
         since_date = since.date()
         rows = []
@@ -328,8 +327,12 @@ class VectorStore:
             current += timedelta(days=1)
 
         since_str = since.isoformat()
-        recent = [r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str]
-        recent.sort(key=lambda r: r.get("payload", {}).get("timestamp", ""), reverse=True)
+        recent = [
+            r for r in rows if r.get("payload", {}).get("timestamp", "") >= since_str
+        ]
+        recent.sort(
+            key=lambda r: r.get("payload", {}).get("timestamp", ""), reverse=True
+        )
         return list(reversed(recent[:limit]))
 
     def get_collection_info(self) -> Dict[str, Any]:
@@ -339,7 +342,7 @@ class VectorStore:
                 "name": self.collection_name,
                 "vectors_count": info.vectors_count,
                 "points_count": info.points_count,
-                "status": info.status
+                "status": info.status,
             }
         except Exception as e:
             log.error("error getting collection info: %s", e)
@@ -368,7 +371,9 @@ class VectorStore:
             }
             self.client.upsert(
                 collection_name=self.collection_name,
-                points=[PointStruct(id=task.id, vector=task.embedding, payload=payload)],
+                points=[
+                    PointStruct(id=task.id, vector=task.embedding, payload=payload)
+                ],
             )
             return True
         except Exception as e:
@@ -392,15 +397,13 @@ class VectorStore:
             filter_condition = Filter(
                 must=[
                     FieldCondition(
-                        key="date",
-                        match=MatchValue(value=target_date.isoformat())
+                        key="date", match=MatchValue(value=target_date.isoformat())
                     )
                 ]
             )
 
             self.client.delete(
-                collection_name=self.collection_name,
-                points_selector=filter_condition
+                collection_name=self.collection_name, points_selector=filter_condition
             )
 
             return True

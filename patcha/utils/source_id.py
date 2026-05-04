@@ -4,8 +4,18 @@ from typing import Optional
 from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
 
 _TRACKING_PARAMS = {
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "msclkid", "ref", "source", "_hsenc", "_hsmi",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+    "msclkid",
+    "ref",
+    "source",
+    "_hsenc",
+    "_hsmi",
 }
 
 
@@ -55,18 +65,23 @@ def derive_source_doc_id(raw: str) -> Optional[str]:
     # then use the cleaned URL as the identity.
     parsed = urlparse(s)
     if parsed.scheme in ("http", "https") and parsed.netloc:
-        clean_qs = urlencode([
-            (k, v) for k, v in parse_qsl(parsed.query)
-            if k.lower() not in _TRACKING_PARAMS
-        ])
-        normalized = urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path.rstrip("/") or "/",
-            "",          # params
-            clean_qs,
-            "",          # fragment stripped
-        ))
+        clean_qs = urlencode(
+            [
+                (k, v)
+                for k, v in parse_qsl(parsed.query)
+                if k.lower() not in _TRACKING_PARAMS
+            ]
+        )
+        normalized = urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path.rstrip("/") or "/",
+                "",  # params
+                clean_qs,
+                "",  # fragment stripped
+            )
+        )
         return f"url:{normalized}"
 
     return None

@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger(__name__)
-
 from patcha.config import config, settings
 
-_FROZEN = getattr(sys, 'frozen', False)
-_MEIPASS = Path(getattr(sys, '_MEIPASS', ''))
+logger = logging.getLogger(__name__)
 
-_POLL_INTERVAL = settings.get('poll_interval')
+_FROZEN = getattr(sys, "frozen", False)
+_MEIPASS = Path(getattr(sys, "_MEIPASS", ""))
+
+_POLL_INTERVAL = settings.get("poll_interval")
 _AX_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ax_content.swift"
 _OCR_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ocr.swift"
 _APP_SCRIPT = (
@@ -27,17 +27,26 @@ _APP_SCRIPT = (
 _MAX_LOG_ROWS = 100_000
 _TRIM_EVERY = 1_000
 _MIN_CONTENT_LEN = 60
-_MIN_DIFF_LEN = 30        # minimum new chars required to write a diff entry
-_FULL_REPLACE_RATIO = 0.8 # if diff is >80% of new content, store full text (new page)
+_MIN_DIFF_LEN = 30  # minimum new chars required to write a diff entry
+_FULL_REPLACE_RATIO = 0.8  # if diff is >80% of new content, store full text (new page)
 _MIN_DURATION_SECS = 4
-_SKIP_APPS = {"Finder", "System Preferences", "System Settings", "loginwindow", "Dock", ""}
+_SKIP_APPS = {
+    "Finder",
+    "System Preferences",
+    "System Settings",
+    "loginwindow",
+    "Dock",
+    "",
+}
 
 
 class AccessibilityCollector:
     def __init__(self) -> None:
         self._ax_binary: Optional[Path] = None
         self._ocr_binary: Optional[Path] = None
-        self._last_text: Dict[Tuple[str, str], str] = {}  # (app, window_title) → last full text
+        self._last_text: Dict[
+            Tuple[str, str], str
+        ] = {}  # (app, window_title) → last full text
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.log_file: Path = config.data_dir / "screen_log.jsonl"
@@ -72,7 +81,9 @@ class AccessibilityCollector:
             timeout=60,
         )
         if result.returncode != 0:
-            logger.debug("swiftc failed for %s: %s", source.name, result.stderr.decode())
+            logger.debug(
+                "swiftc failed for %s: %s", source.name, result.stderr.decode()
+            )
             return None
         return binary
 
@@ -126,8 +137,11 @@ class AccessibilityCollector:
         if not observations:
             return ""
 
-        def x_mid(o: Dict) -> float: return o["x"] + o["w"] / 2
-        def y_mid(o: Dict) -> float: return o["y"] + o["h"] / 2
+        def x_mid(o: Dict) -> float:
+            return o["x"] + o["w"] / 2
+
+        def y_mid(o: Dict) -> float:
+            return o["y"] + o["h"] / 2
 
         def gap_splits(midpoints: List[float], min_gap: float) -> List[float]:
             pts = sorted(midpoints)
@@ -173,14 +187,18 @@ class AccessibilityCollector:
                     if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.015:
                         current.append(obs)
                     else:
-                        lines.append(" ".join(
-                            o["text"] for o in sorted(current, key=lambda o: o["x"])
-                        ))
+                        lines.append(
+                            " ".join(
+                                o["text"] for o in sorted(current, key=lambda o: o["x"])
+                            )
+                        )
                         current = [obs]
                 if current:
-                    lines.append(" ".join(
-                        o["text"] for o in sorted(current, key=lambda o: o["x"])
-                    ))
+                    lines.append(
+                        " ".join(
+                            o["text"] for o in sorted(current, key=lambda o: o["x"])
+                        )
+                    )
                 col_lines.extend(lines)
                 if ri < max(rows):
                     col_lines.append("---")
@@ -255,10 +273,16 @@ class AccessibilityCollector:
             if source != "ocr_needed":
                 content = ax.get("content", "").strip()
                 if content:
-                    return {"app": app_name, "window_title": window_title, "text": content}
+                    return {
+                        "app": app_name,
+                        "window_title": window_title,
+                        "text": content,
+                    }
 
             # AX binary ran but content requires OCR; use app/window and frame from AX
-            return self._take_ocr_screenshot(app_name, window_title, frame=ax.get("frame"))
+            return self._take_ocr_screenshot(
+                app_name, window_title, frame=ax.get("frame")
+            )
 
         # AX binary unavailable — fall back to applescript for app name + OCR
         app_name, window_title = self._get_app_name_fallback()
@@ -268,7 +292,9 @@ class AccessibilityCollector:
     def _content_diff(old: str, new: str) -> str:
         """Return lines that appear in `new` but not in `old`."""
         old_lines = set(old.splitlines())
-        added = [line for line in new.splitlines() if line.strip() and line not in old_lines]
+        added = [
+            line for line in new.splitlines() if line.strip() and line not in old_lines
+        ]
         return "\n".join(added)
 
     def record_current_screen(self) -> None:
@@ -283,7 +309,9 @@ class AccessibilityCollector:
             return
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:
-            logger.debug("Skipping capture: content too short (%d chars)", len(text.strip()))
+            logger.debug(
+                "Skipping capture: content too short (%d chars)", len(text.strip())
+            )
             return
 
         key = (app, window_title)
@@ -399,11 +427,13 @@ class AccessibilityCollector:
                 meta["is_diff"] = True
                 meta["full_content_chars"] = obj.get("full_content_chars", len(text))
 
-            events.append({
-                "timestamp": ts,
-                "source": "accessibility",
-                "raw_content": raw_content,
-                "metadata": meta,
-            })
+            events.append(
+                {
+                    "timestamp": ts,
+                    "source": "accessibility",
+                    "raw_content": raw_content,
+                    "metadata": meta,
+                }
+            )
 
         return events

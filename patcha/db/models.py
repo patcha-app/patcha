@@ -2,8 +2,8 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 
 
@@ -168,14 +168,10 @@ class DailyTaskSummary(BaseModel):
     productivity_score: float
     created_at: datetime = Field(default_factory=datetime.now)
 
-from enum import Enum
-from typing import List, Dict, Any, Optional, Set
-from pydantic import BaseModel
-from datetime import datetime
-
 
 class EntityType(Enum):
     """Types of entities that can be extracted from activities."""
+
     TECHNOLOGY = "technology"  # Programming languages, frameworks, tools
     PROJECT = "project"  # Project names, repositories
     CONCEPT = "concept"  # Technical concepts, methodologies
@@ -189,6 +185,7 @@ class EntityType(Enum):
 
 class RelationshipType(Enum):
     """Types of relationships between entities."""
+
     USES = "uses"  # Person uses Technology
     WORKS_ON = "works_on"  # Person works on Project/Feature
     LEARNS = "learns"  # Person learns Concept/Technology
@@ -203,6 +200,7 @@ class RelationshipType(Enum):
 
 class Entity(BaseModel):
     """An entity extracted from activities."""
+
     id: str  # Unique identifier
     name: str  # Display name
     type: EntityType
@@ -219,6 +217,7 @@ class Entity(BaseModel):
 
 class Relationship(BaseModel):
     """A relationship between two entities."""
+
     id: str
     source_entity_id: str
     target_entity_id: str
@@ -233,6 +232,7 @@ class Relationship(BaseModel):
 
 class GraphNode(BaseModel):
     """A node in the knowledge graph with connected relationships."""
+
     entity: Entity
     outgoing_relationships: List[Relationship] = []
     incoming_relationships: List[Relationship] = []
@@ -255,6 +255,7 @@ class GraphNode(BaseModel):
 
 class GraphPath(BaseModel):
     """A path through the knowledge graph."""
+
     entities: List[Entity]
     relationships: List[Relationship]
     total_strength: float
@@ -267,6 +268,7 @@ class GraphPath(BaseModel):
 
 class GraphContext(BaseModel):
     """Context retrieved from the knowledge graph."""
+
     query_entities: List[Entity]
     related_entities: List[Entity]
     relationships: List[Relationship]
@@ -304,6 +306,7 @@ class GraphContext(BaseModel):
 
 class EntityExtractionResult(BaseModel):
     """Result of entity extraction from an activity."""
+
     entities: List[Entity]
     relationships: List[Relationship]
     confidence: float

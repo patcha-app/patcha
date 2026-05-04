@@ -10,7 +10,9 @@ _ENCODING = tiktoken.get_encoding("cl100k_base")
 def chunk_text(text: str, max_tokens: int, overlap: int = 100) -> List[str]:
     # overlap shared tokens keep adjacent chunks close in vector space
     if overlap >= max_tokens:
-        raise ValueError(f"overlap ({overlap}) must be less than max_tokens ({max_tokens})")
+        raise ValueError(
+            f"overlap ({overlap}) must be less than max_tokens ({max_tokens})"
+        )
 
     tokens = _ENCODING.encode(text)
     if len(tokens) <= max_tokens:

@@ -1,14 +1,20 @@
 """Task storage and retrieval system using Qdrant and local JSON storage."""
 
 import json
-import uuid
 from datetime import datetime, date, timedelta
-from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue,
+    Range,
+)
 
-from patcha.db.models import Task, TaskStatus, Category, TaskSearchResult, TaskPriority
+from patcha.db.models import Task, TaskStatus, TaskSearchResult
 from patcha.config import config
 
 
@@ -31,9 +37,8 @@ class TaskStore:
                 self.client.create_collection(
                     collection_name=self.tasks_collection_name,
                     vectors_config=VectorParams(
-                        size=self.vector_size,
-                        distance=Distance.COSINE
-                    )
+                        size=self.vector_size, distance=Distance.COSINE
+                    ),
                 )
                 print(f"Created tasks collection: {self.tasks_collection_name}")
         except Exception as e:
@@ -76,16 +81,9 @@ class TaskStore:
             "updated_at": task.updated_at.isoformat(),
         }
 
-        point = PointStruct(
-            id=task.id,
-            vector=task.embedding,
-            payload=payload
-        )
+        point = PointStruct(id=task.id, vector=task.embedding, payload=payload)
 
-        self.client.upsert(
-            collection_name=self.tasks_collection_name,
-            points=[point]
-        )
+        self.client.upsert(collection_name=self.tasks_collection_name, points=[point])
 
     def _store_task_local(self, task: Task):
         """Store task in local JSON file."""
@@ -95,14 +93,14 @@ class TaskStore:
         # Load existing tasks for the date
         tasks_data = {}
         if file_path.exists():
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 tasks_data = json.load(f)
 
         # Add or update the task
-        tasks_data[task.id] = task.model_dump(mode='json')
+        tasks_data[task.id] = task.model_dump(mode="json")
 
         # Save back to file
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(tasks_data, f, indent=2, default=str)
 
     def get_task(self, task_id: str) -> Optional[Task]:
@@ -110,7 +108,7 @@ class TaskStore:
         try:
             # First try to find it in local storage
             for file_path in self.local_storage_path.glob("*_tasks.json"):
-                with open(file_path, 'r') as f:
+                with open(file_path, "r") as f:
                     tasks_data = json.load(f)
                     if task_id in tasks_data:
                         return Task(**tasks_data[task_id])
@@ -129,7 +127,7 @@ class TaskStore:
             if not file_path.exists():
                 return []
 
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 tasks_data = json.load(f)
 
             tasks = []
@@ -141,11 +139,7 @@ class TaskStore:
             print(f"Error getting tasks for date {target_date}: {e}")
             return []
 
-    def get_tasks_by_date_range(
-        self,
-        start_date: date,
-        end_date: date
-    ) -> List[Task]:
+    def get_tasks_by_date_range(self, start_date: date, end_date: date) -> List[Task]:
         """Get all tasks within a date range."""
         all_tasks = []
         current_date = start_date
@@ -171,7 +165,7 @@ class TaskStore:
         query: str,
         query_vector: Optional[List[float]] = None,
         limit: int = 10,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[TaskSearchResult]:
         """Search tasks using vector similarity and/or text filters."""
         results = []
@@ -183,52 +177,65 @@ class TaskStore:
                 qdrant_filters = []
 
                 if filters:
-                    if 'status' in filters:
+                    if "status" in filters:
                         qdrant_filters.append(
-                            FieldCondition(key="status", match=MatchValue(value=filters['status']))
+                            FieldCondition(
+                                key="status", match=MatchValue(value=filters["status"])
+                            )
                         )
-                    if 'category' in filters:
+                    if "category" in filters:
                         qdrant_filters.append(
-                            FieldCondition(key="category", match=MatchValue(value=filters['category']))
+                            FieldCondition(
+                                key="category",
+                                match=MatchValue(value=filters["category"]),
+                            )
                         )
-                    if 'project' in filters:
+                    if "project" in filters:
                         qdrant_filters.append(
-                            FieldCondition(key="project", match=MatchValue(value=filters['project']))
+                            FieldCondition(
+                                key="project",
+                                match=MatchValue(value=filters["project"]),
+                            )
                         )
-                    if 'date_from' in filters and 'date_to' in filters:
+                    if "date_from" in filters and "date_to" in filters:
                         qdrant_filters.append(
                             FieldCondition(
                                 key="date",
                                 range=Range(
-                                    gte=filters['date_from'],
-                                    lte=filters['date_to']
-                                )
+                                    gte=filters["date_from"], lte=filters["date_to"]
+                                ),
                             )
                         )
 
-                filter_condition = Filter(must=qdrant_filters) if qdrant_filters else None
+                filter_condition = (
+                    Filter(must=qdrant_filters) if qdrant_filters else None
+                )
 
                 # Search in Qdrant
                 search_results = self.client.search(
                     collection_name=self.tasks_collection_name,
                     query_vector=query_vector,
                     query_filter=filter_condition,
-                    limit=limit
+                    limit=limit,
                 )
 
                 # Convert to TaskSearchResult
                 for result in search_results:
                     task = self.get_task(result.payload["task_id"])
                     if task:
-                        results.append(TaskSearchResult(
-                            task=task,
-                            score=result.score,
-                            match_reason="vector_similarity"
-                        ))
+                        results.append(
+                            TaskSearchResult(
+                                task=task,
+                                score=result.score,
+                                match_reason="vector_similarity",
+                            )
+                        )
 
             # If no vector search or need more results, do text-based search
             if len(results) < limit and query:
-                text_results = self._text_search_tasks(query, limit - len(results), filters)
+                text_results = self._text_search_tasks(
+                    query, limit - len(results), filters
+                )
 
                 # Avoid duplicates
                 existing_ids = {r.task.id for r in results}
@@ -242,10 +249,7 @@ class TaskStore:
         return results[:limit]
 
     def _text_search_tasks(
-        self,
-        query: str,
-        limit: int,
-        filters: Optional[Dict[str, Any]] = None
+        self, query: str, limit: int, filters: Optional[Dict[str, Any]] = None
     ) -> List[TaskSearchResult]:
         """Perform text-based search on local task storage."""
         results = []
@@ -260,11 +264,13 @@ class TaskStore:
         for task in all_tasks:
             # Apply filters
             if filters:
-                if 'status' in filters and task.status.value != filters['status']:
+                if "status" in filters and task.status.value != filters["status"]:
                     continue
-                if 'category' in filters and (not task.category or task.category.value != filters['category']):
+                if "category" in filters and (
+                    not task.category or task.category.value != filters["category"]
+                ):
                     continue
-                if 'project' in filters and task.project != filters['project']:
+                if "project" in filters and task.project != filters["project"]:
                     continue
 
             # Check if query matches task content
@@ -289,11 +295,11 @@ class TaskStore:
                     break
 
             if score > 0:
-                results.append(TaskSearchResult(
-                    task=task,
-                    score=score,
-                    match_reason=", ".join(match_reasons)
-                ))
+                results.append(
+                    TaskSearchResult(
+                        task=task, score=score, match_reason=", ".join(match_reasons)
+                    )
+                )
 
         # Sort by score and return top results
         results.sort(key=lambda x: x.score, reverse=True)
@@ -311,19 +317,19 @@ class TaskStore:
             try:
                 self.client.delete(
                     collection_name=self.tasks_collection_name,
-                    points_selector=[task_id]
+                    points_selector=[task_id],
                 )
             except Exception:
                 pass  # Task might not exist in Qdrant
 
             # Delete from local storage
             for file_path in self.local_storage_path.glob("*_tasks.json"):
-                with open(file_path, 'r') as f:
+                with open(file_path, "r") as f:
                     tasks_data = json.load(f)
 
                 if task_id in tasks_data:
                     del tasks_data[task_id]
-                    with open(file_path, 'w') as f:
+                    with open(file_path, "w") as f:
                         json.dump(tasks_data, f, indent=2, default=str)
                     break
 
@@ -348,7 +354,7 @@ class TaskStore:
                 "tasks_by_category": {},
                 "tasks_by_project": {},
                 "tasks_by_priority": {},
-                "productivity_score": 0.0
+                "productivity_score": 0.0,
             }
 
         # Basic counts
@@ -370,7 +376,9 @@ class TaskStore:
                 if category not in tasks_by_category:
                     tasks_by_category[category] = {"count": 0, "time_minutes": 0}
                 tasks_by_category[category]["count"] += 1
-                tasks_by_category[category]["time_minutes"] += task.duration_minutes or 0
+                tasks_by_category[category]["time_minutes"] += (
+                    task.duration_minutes or 0
+                )
 
         # Project breakdown
         tasks_by_project = {}
@@ -393,7 +401,11 @@ class TaskStore:
 
         # Productivity score (0-1 based on completion rate and average confidence)
         completion_rate = completed_tasks / total_tasks if total_tasks > 0 else 0
-        average_confidence = sum(t.confidence_score for t in tasks) / total_tasks if total_tasks > 0 else 0
+        average_confidence = (
+            sum(t.confidence_score for t in tasks) / total_tasks
+            if total_tasks > 0
+            else 0
+        )
         productivity_score = (completion_rate * 0.7) + (average_confidence * 0.3)
 
         return {
@@ -407,7 +419,7 @@ class TaskStore:
             "tasks_by_category": tasks_by_category,
             "tasks_by_project": tasks_by_project,
             "tasks_by_priority": tasks_by_priority,
-            "productivity_score": round(productivity_score, 2)
+            "productivity_score": round(productivity_score, 2),
         }
 
     def get_recent_tasks(self, limit: int = 20) -> List[Task]:

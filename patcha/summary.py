@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 from collections import defaultdict, Counter
 from openai import OpenAI
 
-from patcha.db.models import Category, DailySummary, Task, DailyTaskSummary, TaskStatus, TaskPriority
+from patcha.db.models import Category, DailySummary, Task, DailyTaskSummary, TaskStatus
 from patcha.db.store import VectorStore
 from patcha.db.tasks import TaskStore
 from patcha.config import config
@@ -56,10 +56,7 @@ class DailySummarizer:
 
         # Generate overall summary
         overall_summary = self._generate_overall_summary(
-            target_date,
-            events_by_category,
-            len(events),
-            list(project_counter.keys())
+            target_date, events_by_category, len(events), list(project_counter.keys())
         )
 
         # Create summary object
@@ -68,9 +65,11 @@ class DailySummarizer:
             category_summaries=category_summaries,
             overall_summary=overall_summary,
             total_events=len(events),
-            events_by_category={cat: len(events) for cat, events in events_by_category.items()},
+            events_by_category={
+                cat: len(events) for cat, events in events_by_category.items()
+            },
             projects_worked_on=list(project_counter.keys()),
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         return daily_summary
@@ -81,7 +80,10 @@ class DailySummarizer:
 
         # Limit events to avoid token limits
         sample_events = events[:20]
-        summaries = [event.get("summary", event.get("raw_content", "")[:100]) for event in sample_events]
+        summaries = [
+            event.get("summary", event.get("raw_content", "")[:100])
+            for event in sample_events
+        ]
 
         user_prompt = render_user(
             "category_summary",
@@ -104,7 +106,9 @@ class DailySummarizer:
             print(f"Error generating {category.value} summary: {e}")
             return self._generate_fallback_category_summary(category, events)
 
-    def _generate_fallback_category_summary(self, category: Category, events: List[Dict]) -> str:
+    def _generate_fallback_category_summary(
+        self, category: Category, events: List[Dict]
+    ) -> str:
         count = len(events)
         projects = set(event.get("project") for event in events if event.get("project"))
 
@@ -115,10 +119,12 @@ class DailySummarizer:
             Category.LEARNING: f"Engaged in {count} learning activities.",
             Category.WRITING: f"Completed {count} writing tasks.",
             Category.COMMUNICATION: f"Participated in {count} communication activities.",
-            Category.OTHER: f"Completed {count} miscellaneous activities."
+            Category.OTHER: f"Completed {count} miscellaneous activities.",
         }
 
-        summary = fallback_templates.get(category, f"Completed {count} {category.value.lower()} activities.")
+        summary = fallback_templates.get(
+            category, f"Completed {count} {category.value.lower()} activities."
+        )
 
         if projects:
             project_list = ", ".join(list(projects)[:3])
@@ -133,18 +139,24 @@ class DailySummarizer:
         target_date: date,
         events_by_category: Dict[Category, List],
         total_events: int,
-        projects: List[str]
+        projects: List[str],
     ) -> str:
 
-        category_counts = {cat.value: len(events) for cat, events in events_by_category.items()}
-        top_categories = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+        category_counts = {
+            cat.value: len(events) for cat, events in events_by_category.items()
+        }
+        top_categories = sorted(
+            category_counts.items(), key=lambda x: x[1], reverse=True
+        )[:3]
 
-        projects_str = ', '.join(projects[:5]) + ("..." if len(projects) > 5 else "")
+        projects_str = ", ".join(projects[:5]) + ("..." if len(projects) > 5 else "")
         user_prompt = render_user(
             "overall_summary",
-            date_str=target_date.strftime('%B %d, %Y'),
+            date_str=target_date.strftime("%B %d, %Y"),
             total_events=total_events,
-            top_categories_str=', '.join([f"{cat} ({count})" for cat, count in top_categories]),
+            top_categories_str=", ".join(
+                [f"{cat} ({count})" for cat, count in top_categories]
+            ),
             projects_str=projects_str,
         )
 
@@ -159,13 +171,12 @@ class DailySummarizer:
             return response.choices[0].message.content.strip()
         except Exception as e:
             print(f"Error generating overall summary: {e}")
-            return self._generate_fallback_overall_summary(total_events, top_categories, projects)
+            return self._generate_fallback_overall_summary(
+                total_events, top_categories, projects
+            )
 
     def _generate_fallback_overall_summary(
-        self,
-        total_events: int,
-        top_categories: List[tuple],
-        projects: List[str]
+        self, total_events: int, top_categories: List[tuple], projects: List[str]
     ) -> str:
 
         if not top_categories:
@@ -186,7 +197,9 @@ class DailySummarizer:
 
         return summary
 
-    def save_summary(self, summary: DailySummary, output_dir: Optional[Path] = None) -> bool:
+    def save_summary(
+        self, summary: DailySummary, output_dir: Optional[Path] = None
+    ) -> bool:
         if output_dir is None:
             output_dir = config.data_dir / "summaries"
 
@@ -236,18 +249,18 @@ class DailySummarizer:
         if summary.projects_worked_on:
             md_content += "## Projects\n\n"
             for project in summary.projects_worked_on:
-                project_count = sum(
-                    1 for cat, events in summary.events_by_category.items()
-                    if events > 0  # This is a simplification - actual project counting would need event details
-                )
                 md_content += f"- **{project}**\n"
             md_content += "\n"
 
-        md_content += f"---\n*Generated on {summary.created_at.strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        md_content += (
+            f"---\n*Generated on {summary.created_at.strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        )
 
         return md_content
 
-    def load_summary(self, target_date: date, summaries_dir: Optional[Path] = None) -> Optional[DailySummary]:
+    def load_summary(
+        self, target_date: date, summaries_dir: Optional[Path] = None
+    ) -> Optional[DailySummary]:
         if summaries_dir is None:
             summaries_dir = config.data_dir / "summaries"
 
@@ -300,9 +313,7 @@ class TaskSummarizer:
         self.summaries_dir.mkdir(exist_ok=True)
 
     def generate_daily_task_summary(
-        self,
-        target_date: date,
-        save_to_file: bool = False
+        self, target_date: date, save_to_file: bool = False
     ) -> DailyTaskSummary:
         """Generate a comprehensive daily task summary."""
         # Get tasks for the date
@@ -319,7 +330,7 @@ class TaskSummarizer:
                 task_summaries={},
                 overall_summary="No tasks found for this date.",
                 total_time_minutes=0,
-                productivity_score=0.0
+                productivity_score=0.0,
             )
 
         # Calculate basic statistics
@@ -357,9 +368,17 @@ class TaskSummarizer:
 
         # Calculate productivity score
         completion_rate = completed_tasks / total_tasks if total_tasks > 0 else 0
-        avg_confidence = sum(t.confidence_score for t in tasks) / total_tasks if total_tasks > 0 else 0
-        task_diversity = len(set(t.category for t in tasks if t.category)) / 7  # Normalize by total categories
-        productivity_score = (completion_rate * 0.5) + (avg_confidence * 0.3) + (task_diversity * 0.2)
+        avg_confidence = (
+            sum(t.confidence_score for t in tasks) / total_tasks
+            if total_tasks > 0
+            else 0
+        )
+        task_diversity = (
+            len(set(t.category for t in tasks if t.category)) / 7
+        )  # Normalize by total categories
+        productivity_score = (
+            (completion_rate * 0.5) + (avg_confidence * 0.3) + (task_diversity * 0.2)
+        )
 
         # Create summary object
         summary = DailyTaskSummary(
@@ -372,7 +391,7 @@ class TaskSummarizer:
             task_summaries=task_summaries,
             overall_summary=overall_summary,
             total_time_minutes=total_time_minutes,
-            productivity_score=round(productivity_score, 2)
+            productivity_score=round(productivity_score, 2),
         )
 
         # Save to file if requested
@@ -382,10 +401,7 @@ class TaskSummarizer:
         return summary
 
     def generate_rich_daily_summary(
-        self,
-        target_date: date,
-        save_to_file: bool = False,
-        use_ai: bool = True
+        self, target_date: date, save_to_file: bool = False, use_ai: bool = True
     ) -> Dict[str, Any]:
         """Generate a rich narrative daily summary showing individual tasks."""
         # Get tasks for the date
@@ -397,7 +413,7 @@ class TaskSummarizer:
                 "overview": "No tasks found for this date.",
                 "total_tasks": 0,
                 "tasks": [],
-                "projects": []
+                "projects": [],
             }
 
         # Generate individual task summaries (limit AI calls to avoid timeout)
@@ -409,17 +425,19 @@ class TaskSummarizer:
                 # Generate simple summary without AI for remaining tasks
                 task_summary = f"{task.title} - {task.activity_count} activities over {task.duration_minutes or 0} minutes"
 
-            task_summaries.append({
-                "id": task.id,
-                "title": task.title,
-                "summary": task_summary,
-                "category": task.category.value if task.category else "Other",
-                "project": task.project,
-                "status": task.status.value,
-                "duration_minutes": task.duration_minutes or 0,
-                "activity_count": task.activity_count,
-                "confidence_score": task.confidence_score
-            })
+            task_summaries.append(
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "summary": task_summary,
+                    "category": task.category.value if task.category else "Other",
+                    "project": task.project,
+                    "status": task.status.value,
+                    "duration_minutes": task.duration_minutes or 0,
+                    "activity_count": task.activity_count,
+                    "confidence_score": task.confidence_score,
+                }
+            )
 
         # Sort tasks by duration (most time spent first)
         task_summaries.sort(key=lambda x: x["duration_minutes"], reverse=True)
@@ -427,11 +445,15 @@ class TaskSummarizer:
         # Generate overall day summary
         total_tasks = len(tasks)
         if use_ai:
-            overview = self._generate_task_based_overview(target_date, tasks, task_summaries)
+            overview = self._generate_task_based_overview(
+                target_date, tasks, task_summaries
+            )
         else:
             # Generate simple overview without AI
-            completed_tasks = len([t for t in tasks if t.status.value == 'completed'])
-            completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            completed_tasks = len([t for t in tasks if t.status.value == "completed"])
+            completion_rate = (
+                (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            )
             top_tasks = [t["title"] for t in task_summaries[:3]]
             overview = f"{target_date.strftime('%B %d, %Y')} was a productive day with {total_tasks} tasks completed ({completion_rate:.1f}% completion rate). Key tasks included: {', '.join(top_tasks)}."
 
@@ -444,7 +466,7 @@ class TaskSummarizer:
             "total_tasks": total_tasks,
             "tasks": task_summaries,
             "projects": projects,
-            "total_time_minutes": sum(t.duration_minutes or 0 for t in tasks)
+            "total_time_minutes": sum(t.duration_minutes or 0 for t in tasks),
         }
 
         if save_to_file:
@@ -461,12 +483,19 @@ class TaskSummarizer:
                 # Extract meaningful words from titles
                 title_words = task.title.lower().split()
                 for word in title_words:
-                    if len(word) > 3 and word not in ['task', 'work', 'other', 'general']:
+                    if len(word) > 3 and word not in [
+                        "task",
+                        "work",
+                        "other",
+                        "general",
+                    ]:
                         themes.add(word.title())
 
         return sorted(list(themes))[:5]  # Return top 5 themes
 
-    def _generate_category_summary(self, category: str, tasks: List[Task], themes: List[str]) -> str:
+    def _generate_category_summary(
+        self, category: str, tasks: List[Task], themes: List[str]
+    ) -> str:
         """Generate an AI summary for a category of tasks."""
         try:
             task_details = []
@@ -474,7 +503,6 @@ class TaskSummarizer:
                 detail = f"- {task.title} ({task.duration_minutes or 0}m, {task.activity_count} activities)"
                 task_details.append(detail)
 
-            task_list = "\n".join(task_details)
             themes_str = ", ".join(themes) if themes else "general activities"
 
             user_prompt = render_user(
@@ -500,24 +528,21 @@ class TaskSummarizer:
             return f"Completed {len(tasks)} {category.lower()} tasks{themes_str} totaling {sum(t.duration_minutes or 0 for t in tasks)} minutes."
 
     def _generate_rich_overview(
-        self,
-        target_date: date,
-        tasks: List[Task],
-        category_summaries: Dict[str, Any]
+        self, target_date: date, tasks: List[Task], category_summaries: Dict[str, Any]
     ) -> str:
         """Generate a rich narrative overview of the day."""
         try:
             # Prepare overview data
             total_tasks = len(tasks)
-            completed_tasks = len([t for t in tasks if t.status.value == 'completed'])
-            completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            completed_tasks = len([t for t in tasks if t.status.value == "completed"])
+            completion_rate = (
+                (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            )
             total_time_hours = sum(t.duration_minutes or 0 for t in tasks) / 60
 
             # Top categories by task count
             top_categories = sorted(
-                category_summaries.items(),
-                key=lambda x: x[1]['count'],
-                reverse=True
+                category_summaries.items(), key=lambda x: x[1]["count"], reverse=True
             )[:3]
 
             # Extract projects
@@ -525,13 +550,15 @@ class TaskSummarizer:
 
             user_prompt = render_user(
                 "task_rich_overview",
-                date_str=target_date.strftime('%B %d, %Y'),
+                date_str=target_date.strftime("%B %d, %Y"),
                 total_tasks=total_tasks,
                 completed_tasks=completed_tasks,
                 completion_rate=f"{completion_rate:.1f}",
                 total_time_hours=f"{total_time_hours:.1f}",
                 top_categories=top_categories,
-                projects_str=', '.join(projects) if projects else 'Various personal tasks',
+                projects_str=", ".join(projects)
+                if projects
+                else "Various personal tasks",
             )
 
             response = self.client.chat.completions.create(
@@ -545,21 +572,24 @@ class TaskSummarizer:
 
         except Exception as e:
             print(f"Error generating rich overview: {e}")
-            top_cat = max(category_summaries.items(), key=lambda x: x[1]['count'])[0] if category_summaries else "general"
+            top_cat = (
+                max(category_summaries.items(), key=lambda x: x[1]["count"])[0]
+                if category_summaries
+                else "general"
+            )
             return f"{target_date.strftime('%B %d, %Y')} was a productive day with {total_tasks} tasks completed, with primary focus on {top_cat.lower()} work."
 
     def _generate_task_based_overview(
-        self,
-        target_date: date,
-        tasks: List[Task],
-        task_summaries: List[Dict[str, Any]]
+        self, target_date: date, tasks: List[Task], task_summaries: List[Dict[str, Any]]
     ) -> str:
         """Generate an overview focused on individual tasks rather than categories."""
         try:
             # Prepare overview data
             total_tasks = len(tasks)
-            completed_tasks = len([t for t in tasks if t.status.value == 'completed'])
-            completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            completed_tasks = len([t for t in tasks if t.status.value == "completed"])
+            completion_rate = (
+                (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            )
             total_time_hours = sum(t.duration_minutes or 0 for t in tasks) / 60
 
             # Top tasks by time spent
@@ -571,13 +601,15 @@ class TaskSummarizer:
 
             user_prompt = render_user(
                 "task_based_overview",
-                date_str=target_date.strftime('%B %d, %Y'),
+                date_str=target_date.strftime("%B %d, %Y"),
                 total_tasks=total_tasks,
                 completed_tasks=completed_tasks,
                 completion_rate=f"{completion_rate:.1f}",
                 total_time_hours=f"{total_time_hours:.1f}",
                 top_task_titles=top_task_titles,
-                projects_str=', '.join(projects) if projects else 'Various personal tasks',
+                projects_str=", ".join(projects)
+                if projects
+                else "Various personal tasks",
             )
 
             response = self.client.chat.completions.create(
@@ -601,7 +633,7 @@ class TaskSummarizer:
             # Save JSON version
             date_str = summary["date"]
             json_file = self.summaries_dir / f"{date_str}_rich_task_summary.json"
-            with open(json_file, 'w') as f:
+            with open(json_file, "w") as f:
                 json.dump(summary, f, indent=2, default=str)
 
         except Exception as e:
@@ -646,12 +678,16 @@ class TaskSummarizer:
                 info = f"- {task.title} ({task.status.value}, {task.category.value if task.category else 'N/A'}, {task.duration_minutes or 0}m)"
                 task_info.append(info)
 
-            task_list = "\n".join(task_info)
-
             # Calculate key metrics
-            completion_rate = len([t for t in tasks if t.status == TaskStatus.COMPLETED]) / len(tasks) * 100
+            completion_rate = (
+                len([t for t in tasks if t.status == TaskStatus.COMPLETED])
+                / len(tasks)
+                * 100
+            )
             total_time_hours = sum(t.duration_minutes or 0 for t in tasks) / 60
-            main_categories = Counter(t.category.value for t in tasks if t.category).most_common(3)
+            main_categories = Counter(
+                t.category.value for t in tasks if t.category
+            ).most_common(3)
 
             user_prompt = render_user(
                 "task_daily_overall",
@@ -660,7 +696,9 @@ class TaskSummarizer:
                 total_tasks=len(tasks),
                 completion_rate=f"{completion_rate:.1f}",
                 total_time_hours=f"{total_time_hours:.1f}",
-                main_categories_str=', '.join([f'{cat} ({count})' for cat, count in main_categories]),
+                main_categories_str=", ".join(
+                    [f"{cat} ({count})" for cat, count in main_categories]
+                ),
             )
 
             response = self.client.chat.completions.create(
@@ -681,12 +719,12 @@ class TaskSummarizer:
         try:
             # Save JSON version
             json_file = self.summaries_dir / f"{summary.date}_task_summary.json"
-            with open(json_file, 'w') as f:
-                json.dump(summary.model_dump(mode='json'), f, indent=2, default=str)
+            with open(json_file, "w") as f:
+                json.dump(summary.model_dump(mode="json"), f, indent=2, default=str)
 
             # Save Markdown version
             md_file = self.summaries_dir / f"{summary.date}_task_summary.md"
-            with open(md_file, 'w') as f:
+            with open(md_file, "w") as f:
                 f.write(self._format_summary_as_markdown(summary))
 
         except Exception as e:
@@ -701,9 +739,9 @@ class TaskSummarizer:
 
 ## Key Metrics
 - **Total Tasks**: {summary.total_tasks}
-- **Completed**: {summary.completed_tasks} ({summary.completed_tasks/summary.total_tasks*100:.1f}% completion rate)
+- **Completed**: {summary.completed_tasks} ({summary.completed_tasks / summary.total_tasks * 100:.1f}% completion rate)
 - **Active**: {summary.active_tasks}
-- **Total Time**: {summary.total_time_minutes} minutes ({summary.total_time_minutes//60}h {summary.total_time_minutes%60}m)
+- **Total Time**: {summary.total_time_minutes} minutes ({summary.total_time_minutes // 60}h {summary.total_time_minutes % 60}m)
 - **Productivity Score**: {summary.productivity_score:.2f}/1.0
 
 """
@@ -711,15 +749,21 @@ class TaskSummarizer:
         # Tasks by Category
         if summary.tasks_by_category:
             md_content += "## Tasks by Category\n"
-            for category, count in sorted(summary.tasks_by_category.items(), key=lambda x: x[1], reverse=True):
+            for category, count in sorted(
+                summary.tasks_by_category.items(), key=lambda x: x[1], reverse=True
+            ):
                 percentage = count / summary.total_tasks * 100
-                md_content += f"- **{category.value}**: {count} tasks ({percentage:.1f}%)\n"
+                md_content += (
+                    f"- **{category.value}**: {count} tasks ({percentage:.1f}%)\n"
+                )
             md_content += "\n"
 
         # Tasks by Project
         if summary.tasks_by_project:
             md_content += "## Tasks by Project\n"
-            for project, count in sorted(summary.tasks_by_project.items(), key=lambda x: x[1], reverse=True)[:5]:
+            for project, count in sorted(
+                summary.tasks_by_project.items(), key=lambda x: x[1], reverse=True
+            )[:5]:
                 percentage = count / summary.total_tasks * 100
                 md_content += f"- **{project}**: {count} tasks ({percentage:.1f}%)\n"
             md_content += "\n"
@@ -731,14 +775,14 @@ class TaskSummarizer:
                 md_content += f"- {task_summary}\n"
             md_content += "\n"
 
-        md_content += f"*Generated on {summary.created_at.strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        md_content += (
+            f"*Generated on {summary.created_at.strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        )
 
         return md_content
 
     def generate_weekly_task_summary(
-        self,
-        start_date: date,
-        save_to_file: bool = False
+        self, start_date: date, save_to_file: bool = False
     ) -> Dict[str, Any]:
         """Generate a weekly task summary."""
         end_date = start_date + timedelta(days=6)
@@ -749,29 +793,37 @@ class TaskSummarizer:
                 "week_start": start_date.isoformat(),
                 "week_end": end_date.isoformat(),
                 "total_tasks": 0,
-                "summary": "No tasks found for this week."
+                "summary": "No tasks found for this week.",
             }
 
         # Generate daily summaries for the week
         daily_summaries = {}
         current_date = start_date
         while current_date <= end_date:
-            daily_tasks = [t for t in weekly_tasks if t.start_time.date() == current_date]
+            daily_tasks = [
+                t for t in weekly_tasks if t.start_time.date() == current_date
+            ]
             if daily_tasks:
-                daily_summary = self.generate_daily_task_summary(current_date, save_to_file=False)
+                daily_summary = self.generate_daily_task_summary(
+                    current_date, save_to_file=False
+                )
                 daily_summaries[current_date.isoformat()] = daily_summary
             current_date += timedelta(days=1)
 
         # Calculate weekly statistics
         total_tasks = len(weekly_tasks)
-        completed_tasks = len([t for t in weekly_tasks if t.status == TaskStatus.COMPLETED])
+        completed_tasks = len(
+            [t for t in weekly_tasks if t.status == TaskStatus.COMPLETED]
+        )
         total_time_minutes = sum(t.duration_minutes or 0 for t in weekly_tasks)
 
         # Category trends
         category_counts = Counter(t.category.value for t in weekly_tasks if t.category)
 
         # Generate weekly insights
-        weekly_insights = self._generate_weekly_insights(weekly_tasks, start_date, end_date)
+        weekly_insights = self._generate_weekly_insights(
+            weekly_tasks, start_date, end_date
+        )
 
         weekly_summary = {
             "week_start": start_date.isoformat(),
@@ -783,7 +835,7 @@ class TaskSummarizer:
             "daily_summaries": daily_summaries,
             "category_distribution": dict(category_counts),
             "weekly_insights": weekly_insights,
-            "generated_at": datetime.now().isoformat()
+            "generated_at": datetime.now().isoformat(),
         }
 
         if save_to_file:
@@ -792,10 +844,7 @@ class TaskSummarizer:
         return weekly_summary
 
     def _generate_weekly_insights(
-        self,
-        weekly_tasks: List[Task],
-        start_date: date,
-        end_date: date
+        self, weekly_tasks: List[Task], start_date: date, end_date: date
     ) -> str:
         """Generate AI insights for the week."""
         if not weekly_tasks:
@@ -822,22 +871,32 @@ class TaskSummarizer:
                 date: sum(rates) / len(rates) if rates else 0
                 for date, rates in daily_completion_rates.items()
             }
-            best_day = max(completion_rates.items(), key=lambda x: x[1]) if completion_rates else None
+            best_day = (
+                max(completion_rates.items(), key=lambda x: x[1])
+                if completion_rates
+                else None
+            )
 
-            main_categories = Counter(t.category.value for t in weekly_tasks if t.category).most_common(3)
+            main_categories = Counter(
+                t.category.value for t in weekly_tasks if t.category
+            ).most_common(3)
 
             user_prompt = render_user(
                 "task_weekly_insights",
                 start_date=str(start_date),
                 end_date=str(end_date),
                 total_tasks=len(weekly_tasks),
-                completed_tasks=len([t for t in weekly_tasks if t.status == TaskStatus.COMPLETED]),
+                completed_tasks=len(
+                    [t for t in weekly_tasks if t.status == TaskStatus.COMPLETED]
+                ),
                 busiest_day=str(busiest_day[0]),
                 busiest_day_count=busiest_day[1],
                 avg_daily_tasks=f"{avg_daily_tasks:.1f}",
-                best_day=str(best_day[0]) if best_day else 'N/A',
-                best_day_rate=f"{best_day[1]*100:.1f}" if best_day else '0.0',
-                main_categories_str=', '.join([f'{cat} ({count})' for cat, count in main_categories]),
+                best_day=str(best_day[0]) if best_day else "N/A",
+                best_day_rate=f"{best_day[1] * 100:.1f}" if best_day else "0.0",
+                main_categories_str=", ".join(
+                    [f"{cat} ({count})" for cat, count in main_categories]
+                ),
             )
 
             response = self.client.chat.completions.create(
@@ -859,19 +918,16 @@ class TaskSummarizer:
             week_start = summary["week_start"]
             json_file = self.summaries_dir / f"week_{week_start}_summary.json"
 
-            with open(json_file, 'w') as f:
+            with open(json_file, "w") as f:
                 json.dump(summary, f, indent=2, default=str)
 
         except Exception as e:
             print(f"Error saving weekly summary: {e}")
 
-    def get_productivity_trends(
-        self,
-        days: int = 30
-    ) -> Dict[str, Any]:
+    def get_productivity_trends(self, days: int = 30) -> Dict[str, Any]:
         """Analyze productivity trends over the specified number of days."""
         end_date = date.today()
-        start_date = end_date - timedelta(days=days-1)
+        start_date = end_date - timedelta(days=days - 1)
 
         all_tasks = self.task_store.get_tasks_by_date_range(start_date, end_date)
 
@@ -879,12 +935,9 @@ class TaskSummarizer:
             return {"error": "No tasks found in the specified period"}
 
         # Daily metrics
-        daily_metrics = defaultdict(lambda: {
-            "tasks": 0,
-            "completed": 0,
-            "time_minutes": 0,
-            "categories": set()
-        })
+        daily_metrics = defaultdict(
+            lambda: {"tasks": 0, "completed": 0, "time_minutes": 0, "categories": set()}
+        )
 
         for task in all_tasks:
             task_date = task.start_time.date()
@@ -904,7 +957,9 @@ class TaskSummarizer:
             current_date = start_date + timedelta(days=i)
             metrics = daily_metrics[current_date]
 
-            completion_rate = metrics["completed"] / metrics["tasks"] if metrics["tasks"] > 0 else 0
+            completion_rate = (
+                metrics["completed"] / metrics["tasks"] if metrics["tasks"] > 0 else 0
+            )
             completion_rates.append(completion_rate)
             daily_task_counts.append(metrics["tasks"])
             daily_time_spent.append(metrics["time_minutes"])
@@ -918,21 +973,27 @@ class TaskSummarizer:
             "period": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "days_analyzed": days
+                "days_analyzed": days,
             },
             "averages": {
                 "completion_rate": round(avg_completion_rate, 3),
                 "daily_tasks": round(avg_daily_tasks, 1),
-                "daily_time_minutes": round(avg_daily_time, 1)
+                "daily_time_minutes": round(avg_daily_time, 1),
             },
             "trends": {
                 "completion_rates": completion_rates,
                 "daily_task_counts": daily_task_counts,
-                "daily_time_spent": daily_time_spent
+                "daily_time_spent": daily_time_spent,
             },
             "total_tasks": len(all_tasks),
-            "total_completed": len([t for t in all_tasks if t.status == TaskStatus.COMPLETED]),
-            "most_productive_day": max(daily_metrics.items(), key=lambda x: x[1]["completed"])[0].isoformat() if daily_metrics else None
+            "total_completed": len(
+                [t for t in all_tasks if t.status == TaskStatus.COMPLETED]
+            ),
+            "most_productive_day": max(
+                daily_metrics.items(), key=lambda x: x[1]["completed"]
+            )[0].isoformat()
+            if daily_metrics
+            else None,
         }
 
 
@@ -943,15 +1004,14 @@ class RAGTaskSummarizer(TaskSummarizer):
         super().__init__(task_store)
         self.vector_store = vector_store
         from patcha.process import EventPreprocessor
+
         self.preprocessor = EventPreprocessor()
         from patcha.db.retrieval.rag import RAGSystem
+
         self.rag_system = RAGSystem(vector_store, self.preprocessor)
 
     def generate_rich_daily_summary_with_rag(
-        self,
-        target_date: date,
-        save_to_file: bool = False,
-        use_ai: bool = True
+        self, target_date: date, save_to_file: bool = False, use_ai: bool = True
     ) -> Dict[str, Any]:
         """
         Generate a rich daily summary enhanced with RAG contextual insights.
@@ -1006,9 +1066,7 @@ class RAGTaskSummarizer(TaskSummarizer):
             return base_summary
 
     def generate_contextual_project_summary(
-        self,
-        project_name: str,
-        days_back: int = 30
+        self, project_name: str, days_back: int = 30
     ) -> Dict[str, Any]:
         """
         Generate a project-focused summary with RAG insights about progression and patterns.
@@ -1032,7 +1090,8 @@ class RAGTaskSummarizer(TaskSummarizer):
 
             # Filter for project activities
             day_project_activities = [
-                activity for activity in day_activities
+                activity
+                for activity in day_activities
                 if activity["payload"].get("project") == project_name
             ]
 
@@ -1044,14 +1103,16 @@ class RAGTaskSummarizer(TaskSummarizer):
             return {
                 "project": project_name,
                 "error": "No activities found for this project in the specified timeframe",
-                "days_searched": days_back
+                "days_searched": days_back,
             }
 
         # Convert to events and get RAG context
         events = self._convert_to_events(project_activities)
 
         # Get contextual insights
-        context = self.rag_system.retrieve_context_for_task_analysis(events, context_limit=20)
+        context = self.rag_system.retrieve_context_for_task_analysis(
+            events, context_limit=20
+        )
 
         # Generate project summary
         summary = {
@@ -1062,17 +1123,16 @@ class RAGTaskSummarizer(TaskSummarizer):
             "date_range": f"{min(project_dates)} to {max(project_dates)}",
             "patterns": context.get("common_patterns", []),
             "insights": context.get("category_insights", []),
-            "productivity_trends": self._analyze_project_productivity(events, project_dates),
+            "productivity_trends": self._analyze_project_productivity(
+                events, project_dates
+            ),
             "focus_areas": context.get("tool_usage", []),
-            "recommendations": self._generate_project_recommendations(events, context)
+            "recommendations": self._generate_project_recommendations(events, context),
         }
 
         return summary
 
-    def generate_weekly_productivity_report(
-        self,
-        week_start: date
-    ) -> Dict[str, Any]:
+    def generate_weekly_productivity_report(self, week_start: date) -> Dict[str, Any]:
         """
         Generate a weekly productivity report with RAG-enhanced insights.
 
@@ -1092,23 +1152,27 @@ class RAGTaskSummarizer(TaskSummarizer):
 
             if day_activities:
                 week_activities.extend(day_activities)
-                daily_summaries.append({
-                    "date": current_date.isoformat(),
-                    "activity_count": len(day_activities),
-                    "day_name": current_date.strftime("%A")
-                })
+                daily_summaries.append(
+                    {
+                        "date": current_date.isoformat(),
+                        "activity_count": len(day_activities),
+                        "day_name": current_date.strftime("%A"),
+                    }
+                )
 
         if not week_activities:
             return {
                 "week_start": week_start.isoformat(),
-                "error": "No activities found for this week"
+                "error": "No activities found for this week",
             }
 
         # Convert to events
         events = self._convert_to_events(week_activities)
 
         # Get comprehensive context
-        task_context = self.rag_system.retrieve_context_for_task_analysis(events, context_limit=25)
+        task_context = self.rag_system.retrieve_context_for_task_analysis(
+            events, context_limit=25
+        )
         summary_context = self.rag_system.retrieve_context_for_summary(
             week_start, events, context_limit=20
         )
@@ -1120,28 +1184,26 @@ class RAGTaskSummarizer(TaskSummarizer):
             "total_activities": len(week_activities),
             "active_days": len(daily_summaries),
             "daily_breakdown": daily_summaries,
-
             # RAG-enhanced insights
             "productivity_patterns": summary_context.get("productivity_patterns", {}),
             "focus_trends": task_context.get("category_insights", []),
             "workflow_patterns": task_context.get("common_patterns", []),
             "project_distribution": self._analyze_weekly_projects(events),
             "time_usage_insights": self._analyze_weekly_time_patterns(events),
-
             # Comparative analysis
-            "vs_previous_weeks": self._compare_with_previous_weeks(week_start, len(week_activities)),
-
+            "vs_previous_weeks": self._compare_with_previous_weeks(
+                week_start, len(week_activities)
+            ),
             # Forward-looking
-            "recommendations": self._generate_weekly_recommendations(events, task_context)
+            "recommendations": self._generate_weekly_recommendations(
+                events, task_context
+            ),
         }
 
         return weekly_report
 
     def contextual_search_with_insights(
-        self,
-        query: str,
-        date_filter: Optional[date] = None,
-        limit: int = 10
+        self, query: str, date_filter: Optional[date] = None, limit: int = 10
     ) -> Dict[str, Any]:
         """
         Perform contextual search with RAG-enhanced insights about the results.
@@ -1155,6 +1217,7 @@ class RAGTaskSummarizer(TaskSummarizer):
             Search results with contextual insights
         """
         from patcha.db.models import Event as EventModel
+
         # Use RAG system for contextual search
         search_results = self.rag_system.contextual_search(
             query, expand_context=True, limit=limit
@@ -1164,7 +1227,7 @@ class RAGTaskSummarizer(TaskSummarizer):
             return {
                 "query": query,
                 "results": [],
-                "insights": "No matching activities found"
+                "insights": "No matching activities found",
             }
 
         # Convert results to events for analysis
@@ -1180,10 +1243,10 @@ class RAGTaskSummarizer(TaskSummarizer):
                     raw_content=payload.get("raw_content", ""),
                     summary=payload.get("summary"),
                     category=payload.get("category"),
-                    embedding=result.get("vector")
+                    embedding=result.get("vector"),
                 )
                 result_events.append(event)
-            except Exception as e:
+            except Exception:
                 continue
 
         # Generate insights about the search results
@@ -1196,7 +1259,7 @@ class RAGTaskSummarizer(TaskSummarizer):
                 "patterns_found": context.get("common_patterns", []),
                 "related_projects": context.get("project_context", []),
                 "time_patterns": context.get("time_patterns", []),
-                "categories_involved": context.get("category_insights", [])
+                "categories_involved": context.get("category_insights", []),
             }
         else:
             insights = {}
@@ -1206,12 +1269,13 @@ class RAGTaskSummarizer(TaskSummarizer):
             "results": search_results,
             "result_count": len(search_results),
             "contextual_insights": insights,
-            "search_enhanced": True
+            "search_enhanced": True,
         }
 
     def _convert_to_events(self, activities_data: List[Dict[str, Any]]) -> List:
         """Convert activity data to Event objects."""
         from patcha.db.models import Event as EventModel
+
         events = []
         for activity_data in activities_data:
             try:
@@ -1224,17 +1288,15 @@ class RAGTaskSummarizer(TaskSummarizer):
                     raw_content=payload.get("raw_content", ""),
                     summary=payload.get("summary"),
                     category=payload.get("category"),
-                    embedding=activity_data.get("vector")
+                    embedding=activity_data.get("vector"),
                 )
                 events.append(event)
-            except Exception as e:
+            except Exception:
                 continue
         return events
 
     def _analyze_project_productivity(
-        self,
-        events: List,
-        project_dates: List[date]
+        self, events: List, project_dates: List[date]
     ) -> Dict[str, Any]:
         """Analyze productivity trends for a project."""
         if not events or not project_dates:
@@ -1248,6 +1310,7 @@ class RAGTaskSummarizer(TaskSummarizer):
         category_distribution = {}
         if categories:
             from collections import Counter
+
             category_counter = Counter(categories)
             total_categorized = sum(category_counter.values())
             category_distribution = {
@@ -1259,7 +1322,11 @@ class RAGTaskSummarizer(TaskSummarizer):
             "activities_per_day": round(activities_per_day, 1),
             "total_active_days": len(project_dates),
             "category_distribution": category_distribution,
-            "intensity": "High" if activities_per_day > 10 else "Medium" if activities_per_day > 5 else "Low"
+            "intensity": "High"
+            if activities_per_day > 10
+            else "Medium"
+            if activities_per_day > 5
+            else "Low",
         }
 
     def _analyze_weekly_projects(self, events: List) -> Dict[str, Any]:
@@ -1269,12 +1336,15 @@ class RAGTaskSummarizer(TaskSummarizer):
             return {"message": "No project information available"}
 
         from collections import Counter
+
         project_counter = Counter(projects)
 
         return {
             "total_projects": len(project_counter),
             "project_breakdown": dict(project_counter.most_common()),
-            "primary_project": project_counter.most_common(1)[0] if project_counter else None
+            "primary_project": project_counter.most_common(1)[0]
+            if project_counter
+            else None,
         }
 
     def _analyze_weekly_time_patterns(self, events: List) -> List[str]:
@@ -1304,9 +1374,7 @@ class RAGTaskSummarizer(TaskSummarizer):
         return patterns
 
     def _compare_with_previous_weeks(
-        self,
-        current_week_start: date,
-        current_activity_count: int
+        self, current_week_start: date, current_activity_count: int
     ) -> Dict[str, Any]:
         """Compare current week with previous weeks."""
         comparison = {"available": False}
@@ -1333,9 +1401,11 @@ class RAGTaskSummarizer(TaskSummarizer):
                     "available": True,
                     "current_week_activities": current_activity_count,
                     "average_previous_weeks": round(avg_previous, 1),
-                    "trend": "above_average" if current_activity_count > avg_previous * 1.1
-                            else "below_average" if current_activity_count < avg_previous * 0.9
-                            else "consistent"
+                    "trend": "above_average"
+                    if current_activity_count > avg_previous * 1.1
+                    else "below_average"
+                    if current_activity_count < avg_previous * 0.9
+                    else "consistent",
                 }
 
         except Exception as e:
@@ -1344,9 +1414,7 @@ class RAGTaskSummarizer(TaskSummarizer):
         return comparison
 
     def _generate_project_recommendations(
-        self,
-        events: List,
-        context: Dict[str, Any]
+        self, events: List, context: Dict[str, Any]
     ) -> List[str]:
         """Generate recommendations based on project analysis."""
         recommendations = []
@@ -1354,22 +1422,26 @@ class RAGTaskSummarizer(TaskSummarizer):
         # Pattern-based recommendations
         patterns = context.get("common_patterns", [])
         if any("browser" in pattern.lower() for pattern in patterns):
-            recommendations.append("Consider consolidating research sessions for better focus")
+            recommendations.append(
+                "Consider consolidating research sessions for better focus"
+            )
 
         # Category insights
         insights = context.get("category_insights", [])
         if any("coding" in insight.lower() for insight in insights):
-            recommendations.append("Maintain coding momentum - strong development patterns detected")
+            recommendations.append(
+                "Maintain coding momentum - strong development patterns detected"
+            )
 
         if not recommendations:
-            recommendations.append("Continue current work patterns - maintaining good project engagement")
+            recommendations.append(
+                "Continue current work patterns - maintaining good project engagement"
+            )
 
         return recommendations
 
     def _generate_weekly_recommendations(
-        self,
-        events: List,
-        context: Dict[str, Any]
+        self, events: List, context: Dict[str, Any]
     ) -> List[str]:
         """Generate weekly productivity recommendations."""
         recommendations = []
@@ -1378,11 +1450,16 @@ class RAGTaskSummarizer(TaskSummarizer):
         categories = [e.category.value for e in events if e.category]
         if categories:
             from collections import Counter
+
             cat_counter = Counter(categories)
             if len(cat_counter) > 5:
-                recommendations.append("Consider focusing on fewer categories for deeper work")
+                recommendations.append(
+                    "Consider focusing on fewer categories for deeper work"
+                )
             elif len(cat_counter) <= 2:
-                recommendations.append("Good focus maintained - consider this pattern for future weeks")
+                recommendations.append(
+                    "Good focus maintained - consider this pattern for future weeks"
+                )
 
         # Time patterns
         time_patterns = context.get("time_patterns", [])
@@ -1391,7 +1468,9 @@ class RAGTaskSummarizer(TaskSummarizer):
 
         return recommendations or ["Maintain current productivity patterns"]
 
-    def _save_enhanced_summary(self, target_date: date, summary: Dict[str, Any]) -> None:
+    def _save_enhanced_summary(
+        self, target_date: date, summary: Dict[str, Any]
+    ) -> None:
         """Save RAG-enhanced summary to file."""
         try:
             # Save in both regular and RAG-enhanced formats
@@ -1404,11 +1483,11 @@ class RAGTaskSummarizer(TaskSummarizer):
                 "contextual_overview": summary.get("contextual_overview"),
                 "enhancement_timestamp": summary.get("enhancement_timestamp"),
                 "productivity_patterns": summary.get("productivity_patterns"),
-                "historical_context": summary.get("historical_context")
+                "historical_context": summary.get("historical_context"),
             }
 
             rag_file = self.data_dir / f"{target_date.isoformat()}_rag_insights.json"
-            with open(rag_file, 'w') as f:
+            with open(rag_file, "w") as f:
                 json.dump(rag_insights, f, indent=2, default=str)
 
         except Exception as e:

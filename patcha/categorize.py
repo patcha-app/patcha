@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from collections import Counter
 from datetime import datetime, timedelta
 from openai import OpenAI
@@ -22,7 +22,7 @@ class EnhancedCategorizer:
         event: Event,
         k: int = 5,
         confidence_threshold: float = 0.7,
-        fallback_to_ai: bool = True
+        fallback_to_ai: bool = True,
     ) -> Tuple[Category, float, Dict[str, Any]]:
         if not event.embedding:
             summary = self.preprocessor.generate_summary(event)
@@ -35,17 +35,26 @@ class EnhancedCategorizer:
             return category, 0.0, {"method": "fallback", "reason": "no_embedding"}
 
         similar_events = self.vector_store.search_events(
-            query_vector=event.embedding,
-            limit=k
+            query_vector=event.embedding, limit=k
         )
 
         if not similar_events:
             if fallback_to_ai:
-                category = self.preprocessor.categorize_event(event, event.summary or "")
-                return category, 0.5, {"method": "ai_fallback", "reason": "no_similar_events"}
+                category = self.preprocessor.categorize_event(
+                    event, event.summary or ""
+                )
+                return (
+                    category,
+                    0.5,
+                    {"method": "ai_fallback", "reason": "no_similar_events"},
+                )
             else:
                 category = self.preprocessor._categorize_fallback(event)
-                return category, 0.0, {"method": "fallback", "reason": "no_similar_events"}
+                return (
+                    category,
+                    0.0,
+                    {"method": "fallback", "reason": "no_similar_events"},
+                )
 
         categories = []
         scores = []
@@ -59,11 +68,21 @@ class EnhancedCategorizer:
 
         if not categories:
             if fallback_to_ai:
-                category = self.preprocessor.categorize_event(event, event.summary or "")
-                return category, 0.5, {"method": "ai_fallback", "reason": "no_categories_in_similar"}
+                category = self.preprocessor.categorize_event(
+                    event, event.summary or ""
+                )
+                return (
+                    category,
+                    0.5,
+                    {"method": "ai_fallback", "reason": "no_categories_in_similar"},
+                )
             else:
                 category = self.preprocessor._categorize_fallback(event)
-                return category, 0.0, {"method": "fallback", "reason": "no_categories_in_similar"}
+                return (
+                    category,
+                    0.0,
+                    {"method": "fallback", "reason": "no_categories_in_similar"},
+                )
 
         category_scores = {}
         total_weight = 0
@@ -88,46 +107,57 @@ class EnhancedCategorizer:
         confidence += agreement_boost
 
         if confidence >= confidence_threshold:
-            return predicted_category, confidence, {
-                "method": "rag",
-                "similar_events_count": len(similar_events),
-                "category_distribution": dict(category_counts),
-                "top_similar_scores": scores[:3],
-                "confidence_breakdown": {
-                    "base_confidence": best_category[1],
-                    "agreement_boost": agreement_boost
-                }
-            }
+            return (
+                predicted_category,
+                confidence,
+                {
+                    "method": "rag",
+                    "similar_events_count": len(similar_events),
+                    "category_distribution": dict(category_counts),
+                    "top_similar_scores": scores[:3],
+                    "confidence_breakdown": {
+                        "base_confidence": best_category[1],
+                        "agreement_boost": agreement_boost,
+                    },
+                },
+            )
         elif fallback_to_ai:
             ai_category = self._categorize_with_context(
-                event,
-                similar_summaries[:3],
-                list(category_counts.keys())
+                event, similar_summaries[:3], list(category_counts.keys())
             )
-            return ai_category, confidence + 0.3, {
-                "method": "rag_enhanced_ai",
-                "rag_confidence": confidence,
-                "similar_categories": list(category_counts.keys()),
-                "similar_summaries_used": len(similar_summaries[:3])
-            }
+            return (
+                ai_category,
+                confidence + 0.3,
+                {
+                    "method": "rag_enhanced_ai",
+                    "rag_confidence": confidence,
+                    "similar_categories": list(category_counts.keys()),
+                    "similar_summaries_used": len(similar_summaries[:3]),
+                },
+            )
         else:
-            return predicted_category, confidence, {
-                "method": "rag_low_confidence",
-                "similar_events_count": len(similar_events),
-                "category_distribution": dict(category_counts),
-                "warning": "Low confidence RAG result"
-            }
+            return (
+                predicted_category,
+                confidence,
+                {
+                    "method": "rag_low_confidence",
+                    "similar_events_count": len(similar_events),
+                    "category_distribution": dict(category_counts),
+                    "warning": "Low confidence RAG result",
+                },
+            )
 
     def _categorize_with_context(
         self,
         event: Event,
         similar_summaries: List[str],
-        suggested_categories: List[str]
+        suggested_categories: List[str],
     ) -> Category:
         context = ""
         if similar_summaries:
-            context = f"\n\nSimilar activities in the past were:\n" + \
-                     "\n".join([f"- {summary}" for summary in similar_summaries])
+            context = "\n\nSimilar activities in the past were:\n" + "\n".join(
+                [f"- {summary}" for summary in similar_summaries]
+            )
 
         if suggested_categories:
             context += f"\n\nBased on similar activities, likely categories are: {', '.join(suggested_categories)}"
@@ -168,10 +198,7 @@ class EnhancedCategorizer:
             return self.preprocessor._categorize_fallback(event)
 
     def batch_categorize_with_rag(
-        self,
-        events: List[Event],
-        k: int = 5,
-        confidence_threshold: float = 0.7
+        self, events: List[Event], k: int = 5, confidence_threshold: float = 0.7
     ) -> List[Tuple[Event, Category, float, Dict[str, Any]]]:
         results = []
 
@@ -184,10 +211,7 @@ class EnhancedCategorizer:
 
         return results
 
-    def analyze_categorization_performance(
-        self,
-        num_days: int = 7
-    ) -> Dict[str, Any]:
+    def analyze_categorization_performance(self, num_days: int = 7) -> Dict[str, Any]:
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=num_days)
 
@@ -202,10 +226,10 @@ class EnhancedCategorizer:
             return {
                 "error": "Not enough events for analysis",
                 "events_found": len(all_events),
-                "recommendation": "Need at least 10 events for meaningful analysis"
+                "recommendation": "Need at least 10 events for meaningful analysis",
             }
 
-        sample_events = all_events[:min(50, len(all_events))]
+        sample_events = all_events[: min(50, len(all_events))]
 
         rag_results = []
         ai_results = []
@@ -220,7 +244,7 @@ class EnhancedCategorizer:
                 source=payload["source"],
                 raw_content=payload.get("raw_content", ""),
                 summary=payload.get("summary", ""),
-                metadata=payload.get("metadata", {})
+                metadata=payload.get("metadata", {}),
             )
 
             if not test_event.summary:
@@ -233,21 +257,24 @@ class EnhancedCategorizer:
                 test_event, fallback_to_ai=False
             )
 
-            ai_category = self.preprocessor.categorize_event(test_event, test_event.summary)
+            ai_category = self.preprocessor.categorize_event(
+                test_event, test_event.summary
+            )
 
             original_category = payload.get("category")
 
-            rag_results.append({
-                "category": rag_category.value,
-                "confidence": rag_confidence,
-                "method": rag_metadata.get("method"),
-                "original": original_category
-            })
+            rag_results.append(
+                {
+                    "category": rag_category.value,
+                    "confidence": rag_confidence,
+                    "method": rag_metadata.get("method"),
+                    "original": original_category,
+                }
+            )
 
-            ai_results.append({
-                "category": ai_category.value,
-                "original": original_category
-            })
+            ai_results.append(
+                {"category": ai_category.value, "original": original_category}
+            )
 
             if rag_category == ai_category:
                 agreement_count += 1
@@ -271,48 +298,59 @@ class EnhancedCategorizer:
             "analysis_period": {
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "days": num_days
+                "days": num_days,
             },
             "sample_size": len(sample_events),
             "rag_vs_ai_agreement": {
                 "total_agreements": agreement_count,
                 "agreement_rate": agreement_count / len(sample_events),
-                "disagreements": len(sample_events) - agreement_count
+                "disagreements": len(sample_events) - agreement_count,
             },
             "rag_performance": {
                 "avg_confidence": float(rag_avg_confidence),
                 "method_distribution": dict(rag_methods),
-                "accuracy_vs_original": rag_accuracy / events_with_original if events_with_original > 0 else None
+                "accuracy_vs_original": rag_accuracy / events_with_original
+                if events_with_original > 0
+                else None,
             },
             "ai_performance": {
-                "accuracy_vs_original": ai_accuracy / events_with_original if events_with_original > 0 else None
+                "accuracy_vs_original": ai_accuracy / events_with_original
+                if events_with_original > 0
+                else None
             },
             "events_with_original_categories": events_with_original,
             "recommendations": self._generate_categorization_recommendations(
                 rag_methods, rag_avg_confidence, agreement_count / len(sample_events)
-            )
+            ),
         }
 
     def _generate_categorization_recommendations(
-        self,
-        rag_methods: Counter,
-        rag_avg_confidence: float,
-        agreement_rate: float
+        self, rag_methods: Counter, rag_avg_confidence: float, agreement_rate: float
     ) -> List[str]:
         recommendations = []
 
         if rag_avg_confidence < 0.5:
-            recommendations.append("RAG confidence is low. Consider increasing the number of similar events (k parameter) or lowering confidence threshold.")
+            recommendations.append(
+                "RAG confidence is low. Consider increasing the number of similar events (k parameter) or lowering confidence threshold."
+            )
 
         if rag_methods.get("fallback", 0) > rag_methods.get("rag", 0):
-            recommendations.append("RAG is falling back to basic categorization frequently. You may need more historical data.")
+            recommendations.append(
+                "RAG is falling back to basic categorization frequently. You may need more historical data."
+            )
 
         if agreement_rate < 0.7:
-            recommendations.append("RAG and AI categorization disagree frequently. This suggests room for improvement in both approaches.")
+            recommendations.append(
+                "RAG and AI categorization disagree frequently. This suggests room for improvement in both approaches."
+            )
         elif agreement_rate > 0.9:
-            recommendations.append("High agreement between RAG and AI. RAG is working well and could be used as the primary method.")
+            recommendations.append(
+                "High agreement between RAG and AI. RAG is working well and could be used as the primary method."
+            )
 
         if rag_methods.get("rag", 0) > 10:
-            recommendations.append("RAG is successfully using historical patterns for categorization. Consider increasing confidence threshold.")
+            recommendations.append(
+                "RAG is successfully using historical patterns for categorization. Consider increasing confidence threshold."
+            )
 
         return recommendations

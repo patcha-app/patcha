@@ -18,7 +18,7 @@ class BrowserCollector:
         if "youtube.com/watch" not in url and "youtu.be/" not in url:
             return title
 
-        video_id_match = re.search(r'(?:v=|youtu\.be/|embed/)([a-zA-Z0-9_-]+)', url)
+        video_id_match = re.search(r"(?:v=|youtu\.be/|embed/)([a-zA-Z0-9_-]+)", url)
         if not video_id_match:
             return title
 
@@ -28,7 +28,7 @@ class BrowserCollector:
                 return f"YouTube: {title}"
             else:
                 return f"YouTube Video (ID: {video_id})"
-        if not title.lower().startswith(('youtube', 'yt:')):
+        if not title.lower().startswith(("youtube", "yt:")):
             return f"YouTube: {title}"
 
         return title
@@ -54,23 +54,34 @@ class BrowserCollector:
             LIMIT 1000
             """
 
-            since_chrome = int((since or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)).timestamp() * 1000000) + 11644473600000000
+            since_chrome = (
+                int(
+                    (
+                        since
+                        or datetime.now(timezone.utc).replace(
+                            hour=0, minute=0, second=0
+                        )
+                    ).timestamp()
+                    * 1000000
+                )
+                + 11644473600000000
+            )
             cursor.execute(query, (since_chrome,))
 
             for title, url, last_visit_time, visit_count in cursor.fetchall():
                 timestamp = datetime.fromtimestamp(
-                    (last_visit_time - 11644473600000000) / 1000000,
-                    tz=timezone.utc
+                    (last_visit_time - 11644473600000000) / 1000000, tz=timezone.utc
                 )
 
-                domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
+                domain = (
+                    url.split("//")[-1].split("/")[0]
+                    if "//" in url
+                    else url.split("/")[0]
+                )
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
-                    title=enhanced_title,
-                    url=url,
-                    timestamp=timestamp,
-                    domain=domain
+                    title=enhanced_title, url=url, timestamp=timestamp, domain=domain
                 )
 
                 event = Event(
@@ -81,8 +92,8 @@ class BrowserCollector:
                     metadata={
                         "domain": domain,
                         "visit_count": visit_count,
-                        "browser": "chrome"
-                    }
+                        "browser": "chrome",
+                    },
                 )
                 events.append(event)
 
@@ -116,19 +127,22 @@ class BrowserCollector:
             LIMIT 1000
             """
 
-            since_safari = (since or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)).timestamp()
+            since_safari = (
+                since or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+            ).timestamp()
             cursor.execute(query, (since_safari,))
 
             for title, url, visit_time in cursor.fetchall():
                 timestamp = datetime.fromtimestamp(visit_time, tz=timezone.utc)
-                domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
+                domain = (
+                    url.split("//")[-1].split("/")[0]
+                    if "//" in url
+                    else url.split("/")[0]
+                )
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
-                    title=enhanced_title,
-                    url=url,
-                    timestamp=timestamp,
-                    domain=domain
+                    title=enhanced_title, url=url, timestamp=timestamp, domain=domain
                 )
 
                 event = Event(
@@ -136,10 +150,7 @@ class BrowserCollector:
                     type=EventType.BROWSER,
                     source="safari",
                     raw_content=json.dumps(browser_activity.model_dump(), default=str),
-                    metadata={
-                        "domain": domain,
-                        "browser": "safari"
-                    }
+                    metadata={"domain": domain, "browser": "safari"},
                 )
                 events.append(event)
 
@@ -172,25 +183,36 @@ class BrowserCollector:
             LIMIT 1000
             """
 
-            since_chrome = int((since or datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)).timestamp() * 1000000) + 11644473600000000
+            since_chrome = (
+                int(
+                    (
+                        since
+                        or datetime.now(timezone.utc).replace(
+                            hour=0, minute=0, second=0
+                        )
+                    ).timestamp()
+                    * 1000000
+                )
+                + 11644473600000000
+            )
             cursor.execute(query, (since_chrome,))
 
             for title, url, last_visit_time, visit_count in cursor.fetchall():
                 timestamp = datetime.fromtimestamp(
-                    (last_visit_time - 11644473600000000) / 1000000,
-                    tz=timezone.utc
+                    (last_visit_time - 11644473600000000) / 1000000, tz=timezone.utc
                 )
 
-                domain = url.split("//")[-1].split("/")[0] if "//" in url else url.split("/")[0]
+                domain = (
+                    url.split("//")[-1].split("/")[0]
+                    if "//" in url
+                    else url.split("/")[0]
+                )
 
                 # Enhance title, especially for YouTube videos
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
-                    title=enhanced_title,
-                    url=url,
-                    timestamp=timestamp,
-                    domain=domain
+                    title=enhanced_title, url=url, timestamp=timestamp, domain=domain
                 )
 
                 event = Event(
@@ -201,8 +223,8 @@ class BrowserCollector:
                     metadata={
                         "domain": domain,
                         "visit_count": visit_count,
-                        "browser": "arc"
-                    }
+                        "browser": "arc",
+                    },
                 )
                 events.append(event)
 

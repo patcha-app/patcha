@@ -75,7 +75,9 @@ class EventPreprocessor:
     def process_event(self, event: Event) -> List[Event]:
         log.debug("processing event type=%s source=%s", event.type, event.source)
         text = _build_embedding_text(event)
-        chunks = chunk_text(text, config.max_embedding_tokens, config.embedding_chunk_overlap)
+        chunks = chunk_text(
+            text, config.max_embedding_tokens, config.embedding_chunk_overlap
+        )
 
         if len(chunks) == 1:
             event.embedding = self.generate_embedding(chunks[0])
@@ -85,7 +87,11 @@ class EventPreprocessor:
         results = []
         for i, chunk in enumerate(chunks):
             chunk_event = event.model_copy(deep=True)
-            chunk_event.metadata = {**event.metadata, "chunk_index": i, "total_chunks": len(chunks)}
+            chunk_event.metadata = {
+                **event.metadata,
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+            }
             if event.source_doc_id:
                 chunk_event.source_doc_id = f"{event.source_doc_id}::chunk::{i}"
             chunk_event.embedding = self.generate_embedding(chunk)

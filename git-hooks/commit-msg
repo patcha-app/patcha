@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+commit_msg=$(cat "$1")
+pattern="^(feat|fix|chore)(\(.+\))?: .+"
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+    echo "Commit message must start with feat:, fix:, or chore: (optionally with a scope, e.g. feat(cli): ...)"
+    echo "Got: $commit_msg"
+    exit 1
+fi

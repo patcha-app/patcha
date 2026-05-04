@@ -87,7 +87,9 @@ class WindowCollector:
                 duration = int((ts - session_start).total_seconds())
                 if duration >= 30:
                     events.append(
-                        self._make_event(session_start, session_app, session_title, duration)
+                        self._make_event(
+                            session_start, session_app, session_title, duration
+                        )
                     )
                 session_start, session_app, session_title = ts, app, title
 

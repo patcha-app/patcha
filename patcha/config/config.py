@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -28,7 +27,7 @@ class Config(BaseModel):
         "chrome": "~/Library/Application Support/Google/Chrome/Default/History",
         "arc": "~/Library/Application Support/Arc/User Data/Default/History",
         "firefox": "~/Library/Application Support/Firefox/Profiles/*/places.sqlite",
-        "safari": "~/Library/Safari/History.db"
+        "safari": "~/Library/Safari/History.db",
     }
 
     @classmethod
@@ -36,9 +35,11 @@ class Config(BaseModel):
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-            qdrant_path=Path(os.getenv("QDRANT_PATH", str(_DEFAULT_patcha_DIR / "qdrant_storage"))),
+            qdrant_path=Path(
+                os.getenv("QDRANT_PATH", str(_DEFAULT_patcha_DIR / "qdrant_storage"))
+            ),
             data_dir=Path(os.getenv("DATA_DIR", str(_DEFAULT_patcha_DIR / "data"))),
-            log_level=os.getenv("LOG_LEVEL", "INFO")
+            log_level=os.getenv("LOG_LEVEL", "INFO"),
         )
 
 

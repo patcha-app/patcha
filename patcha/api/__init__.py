@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,12 @@ app = FastAPI(title="patcha API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -146,7 +151,9 @@ async def get_categories(date_filter: Optional[str] = Query(None)):
                 if category:
                     category_counts[category] = category_counts.get(category, 0) + 1
         else:
-            category_counts = {cat.value: count for cat, count in summary.events_by_category.items()}
+            category_counts = {
+                cat.value: count for cat, count in summary.events_by_category.items()
+            }
 
         color_map = {
             "Coding": "#3b82f6",
@@ -155,19 +162,21 @@ async def get_categories(date_filter: Optional[str] = Query(None)):
             "Learning": "#8b5cf6",
             "Writing": "#f59e0b",
             "Communication": "#06b6d4",
-            "Other": "#6b7280"
+            "Other": "#6b7280",
         }
 
         nodes = []
         for category, count in category_counts.items():
             if count > 0:
-                nodes.append(CategoryNode(
-                    id=category,
-                    name=category,
-                    category=category,
-                    event_count=count,
-                    color=color_map.get(category, "#6b7280")
-                ))
+                nodes.append(
+                    CategoryNode(
+                        id=category,
+                        name=category,
+                        category=category,
+                        event_count=count,
+                        color=color_map.get(category, "#6b7280"),
+                    )
+                )
 
         return nodes
 
@@ -178,8 +187,7 @@ async def get_categories(date_filter: Optional[str] = Query(None)):
 
 @app.get("/api/category/{category_name}", response_model=CategoryDetails)
 async def get_category_details(
-    category_name: str,
-    date_filter: Optional[str] = Query(None)
+    category_name: str, date_filter: Optional[str] = Query(None)
 ):
     try:
         try:
@@ -194,9 +202,13 @@ async def get_category_details(
         summary = summarizer.generate_daily_summary(target_date)
 
         if not summary:
-            raise HTTPException(status_code=404, detail="No data found for the specified date")
+            raise HTTPException(
+                status_code=404, detail="No data found for the specified date"
+            )
 
-        category_summary = summary.category_summaries.get(category, "No summary available")
+        category_summary = summary.category_summaries.get(
+            category, "No summary available"
+        )
         event_count = summary.events_by_category.get(category, 0)
 
         if event_count == 0:
@@ -204,26 +216,29 @@ async def get_category_details(
                 category=category.value,
                 summary=category_summary,
                 event_count=0,
-                events=[]
+                events=[],
             )
 
         all_events_data = vector_store.get_events_by_date(target_date)
         events_data = [
-            event for event in all_events_data
+            event
+            for event in all_events_data
             if event.get("payload", {}).get("category") == category.value
         ]
 
         events = []
         for event_data in events_data[:20]:
             payload = event_data["payload"]
-            events.append({
-                "id": event_data["id"],
-                "timestamp": payload.get("timestamp"),
-                "type": payload.get("type"),
-                "summary": payload.get("summary", "No summary"),
-                "project": payload.get("project"),
-                "source": payload.get("source")
-            })
+            events.append(
+                {
+                    "id": event_data["id"],
+                    "timestamp": payload.get("timestamp"),
+                    "type": payload.get("type"),
+                    "summary": payload.get("summary", "No summary"),
+                    "project": payload.get("project"),
+                    "source": payload.get("source"),
+                }
+            )
 
         events.sort(key=lambda x: x["timestamp"], reverse=True)
 
@@ -231,7 +246,7 @@ async def get_category_details(
             category=category.value,
             summary=category_summary,
             event_count=event_count,
-            events=events
+            events=events,
         )
 
     except HTTPException:
@@ -252,18 +267,15 @@ async def health_check():
             "vector_store": {
                 "connected": True,
                 "collection": info.get("name", "unknown"),
-                "points_count": info.get("points_count", 0)
+                "points_count": info.get("points_count", 0),
             },
             "config": {
                 "qdrant_url": config.qdrant_url,
-                "openai_api_configured": bool(config.openai_api_key)
-            }
+                "openai_api_configured": bool(config.openai_api_key),
+            },
         }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
 
 
 @app.post("/api/search", response_model=GraphSearchResponse)
@@ -275,15 +287,18 @@ async def search_activities(request: SearchRequest):
         entity_extractor = EntityExtractor()
 
         if request.use_graph:
-            graph_rag = GraphRAGSystem(vector_store, preprocessor, knowledge_graph, entity_extractor)
+            graph_rag = GraphRAGSystem(
+                vector_store, preprocessor, knowledge_graph, entity_extractor
+            )
 
             query_embedding = preprocessor.generate_embedding(request.query)
             if not query_embedding:
-                raise HTTPException(status_code=400, detail="Failed to generate query embedding")
+                raise HTTPException(
+                    status_code=400, detail="Failed to generate query embedding"
+                )
 
             vector_results = vector_store.search_events(
-                query_vector=query_embedding,
-                limit=request.limit * 2
+                query_vector=query_embedding, limit=request.limit * 2
             )
 
             if not vector_results:
@@ -292,94 +307,108 @@ async def search_activities(request: SearchRequest):
                     results=[],
                     graph_context={},
                     total_results=0,
-                    search_stats={"vector_results": 0, "graph_results": 0}
+                    search_stats={"vector_results": 0, "graph_results": 0},
                 )
 
             query_activities = []
             for result in vector_results[:5]:
                 event = Event(
                     type=EventType(result.get("type", "browser")),
-                    timestamp=datetime.fromisoformat(result.get("timestamp", datetime.now().isoformat())),
+                    timestamp=datetime.fromisoformat(
+                        result.get("timestamp", datetime.now().isoformat())
+                    ),
                     source=result.get("source", "unknown"),
                     raw_content=result.get("content", ""),
                     summary=result.get("summary", ""),
                     project=result.get("project"),
-                    metadata=result
+                    metadata=result,
                 )
                 query_activities.append(event)
 
             enhanced_context = graph_rag.retrieve_enhanced_context(
-                query_activities,
-                context_limit=request.limit
+                query_activities, context_limit=request.limit
             )
 
             results = []
             for i, activity in enumerate(enhanced_context["activities"]):
                 if isinstance(activity, dict):
                     payload = activity.get("payload", activity)
-                    results.append(SearchResult(
-                        id=activity.get("id", f"result_{i}"),
-                        timestamp=payload.get("timestamp", ""),
-                        type=payload.get("type", "unknown"),
-                        summary=payload.get("summary", "No summary"),
-                        score=0.8,
-                        source=payload.get("source", "unknown"),
-                        category=payload.get("category"),
-                        project=payload.get("project")
-                    ))
+                    results.append(
+                        SearchResult(
+                            id=activity.get("id", f"result_{i}"),
+                            timestamp=payload.get("timestamp", ""),
+                            type=payload.get("type", "unknown"),
+                            summary=payload.get("summary", "No summary"),
+                            score=0.8,
+                            source=payload.get("source", "unknown"),
+                            category=payload.get("category"),
+                            project=payload.get("project"),
+                        )
+                    )
                 else:
-                    results.append(SearchResult(
-                        id=f"event_{i}",
-                        timestamp=activity.timestamp.isoformat(),
-                        type=activity.type.value if hasattr(activity.type, 'value') else str(activity.type),
-                        summary=activity.summary or "No summary",
-                        score=0.8,
-                        source=activity.source,
-                        category=activity.category.value if activity.category else None,
-                        project=activity.project
-                    ))
+                    results.append(
+                        SearchResult(
+                            id=f"event_{i}",
+                            timestamp=activity.timestamp.isoformat(),
+                            type=activity.type.value
+                            if hasattr(activity.type, "value")
+                            else str(activity.type),
+                            summary=activity.summary or "No summary",
+                            score=0.8,
+                            source=activity.source,
+                            category=activity.category.value
+                            if activity.category
+                            else None,
+                            project=activity.project,
+                        )
+                    )
 
             return GraphSearchResponse(
                 query=request.query,
                 results=results,
                 graph_context={
                     "entities": len(enhanced_context["graph_context"].query_entities),
-                    "relationships": len(enhanced_context["graph_context"].relationships),
-                    "context_strength": enhanced_context["graph_strength"]
+                    "relationships": len(
+                        enhanced_context["graph_context"].relationships
+                    ),
+                    "context_strength": enhanced_context["graph_strength"],
                 },
                 total_results=len(results),
-                search_stats=enhanced_context["source_breakdown"]
+                search_stats=enhanced_context["source_breakdown"],
             )
 
         else:
             query_embedding = preprocessor.generate_embedding(request.query)
             if not query_embedding:
-                raise HTTPException(status_code=400, detail="Failed to generate query embedding")
+                raise HTTPException(
+                    status_code=400, detail="Failed to generate query embedding"
+                )
 
             vector_results = vector_store.search_events(
-                query_vector=query_embedding,
-                limit=request.limit
+                query_vector=query_embedding, limit=request.limit
             )
 
             results = []
             for i, result in enumerate(vector_results):
-                results.append(SearchResult(
-                    id=result.get("id", f"result_{i}"),
-                    timestamp=result.get("timestamp", ""),
-                    type=result.get("type", "unknown"),
-                    summary=result.get("summary", "No summary"),
-                    score=result.get("score", 0.0),
-                    source=result.get("source", "unknown"),
-                    category=result.get("category"),
-                    project=result.get("project")
-                ))
+                results.append(
+                    SearchResult(
+                        id=result.get("id", f"result_{i}"),
+                        timestamp=result.get("timestamp", ""),
+                        type=result.get("type", "unknown"),
+                        summary=result.get("summary", "No summary"),
+                        score=result.get("score", 0.0),
+                        source=result.get("source", "unknown"),
+                        category=result.get("category"),
+                        project=result.get("project"),
+                    )
+                )
 
             return GraphSearchResponse(
                 query=request.query,
                 results=results,
                 graph_context={},
                 total_results=len(results),
-                search_stats={"vector_results": len(results), "graph_results": 0}
+                search_stats={"vector_results": len(results), "graph_results": 0},
             )
 
     except Exception as e:
@@ -388,13 +417,14 @@ async def search_activities(request: SearchRequest):
 
 
 @app.get("/api/dashboard", response_model=DashboardStats)
-async def get_dashboard_stats(days: int = Query(7, description="Number of days to include in stats")):
+async def get_dashboard_stats(
+    days: int = Query(7, description="Number of days to include in stats"),
+):
     try:
         vector_store = VectorStore()
         knowledge_graph = KnowledgeGraph()
 
         end_date = date.today()
-        start_date = end_date - timedelta(days=days)
 
         today_events = vector_store.get_events_by_date(end_date)
 
@@ -409,21 +439,31 @@ async def get_dashboard_stats(days: int = Query(7, description="Number of days t
             category = payload.get("category", "Other")
             category_counts[category] = category_counts.get(category, 0) + 1
 
-            recent_activities.append(ActivityEvent(
-                id=event_data.get("id", "unknown"),
-                timestamp=payload.get("timestamp", ""),
-                type=payload.get("type", "unknown"),
-                summary=payload.get("summary", "No summary"),
-                content=payload.get("content", "")[:200] + "..." if len(payload.get("content", "")) > 200 else payload.get("content", ""),
-                category=category,
-                project=payload.get("project"),
-                source=payload.get("source", "unknown"),
-                metadata=payload.get("metadata", {})
-            ))
+            recent_activities.append(
+                ActivityEvent(
+                    id=event_data.get("id", "unknown"),
+                    timestamp=payload.get("timestamp", ""),
+                    type=payload.get("type", "unknown"),
+                    summary=payload.get("summary", "No summary"),
+                    content=payload.get("content", "")[:200] + "..."
+                    if len(payload.get("content", "")) > 200
+                    else payload.get("content", ""),
+                    category=category,
+                    project=payload.get("project"),
+                    source=payload.get("source", "unknown"),
+                    metadata=payload.get("metadata", {}),
+                )
+            )
 
         top_categories = [
-            {"name": cat, "count": count, "percentage": round(count/total_activities*100, 1)}
-            for cat, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
+            {
+                "name": cat,
+                "count": count,
+                "percentage": round(count / total_activities * 100, 1),
+            }
+            for cat, count in sorted(
+                category_counts.items(), key=lambda x: x[1], reverse=True
+            )
         ]
 
         kg_stats = knowledge_graph.get_graph_stats()
@@ -434,7 +474,7 @@ async def get_dashboard_stats(days: int = Query(7, description="Number of days t
             categories_active=len(category_counts),
             top_categories=top_categories,
             recent_activities=recent_activities,
-            knowledge_graph_stats=kg_stats
+            knowledge_graph_stats=kg_stats,
         )
 
     except Exception as e:
@@ -443,58 +483,69 @@ async def get_dashboard_stats(days: int = Query(7, description="Number of days t
 
 
 @app.get("/api/knowledge-graph", response_model=KnowledgeGraphData)
-async def get_knowledge_graph_data(limit: int = Query(50, description="Max entities to return")):
+async def get_knowledge_graph_data(
+    limit: int = Query(50, description="Max entities to return"),
+):
     try:
         knowledge_graph = KnowledgeGraph()
 
         all_entities = list(knowledge_graph.entities.values())
         all_relationships = list(knowledge_graph.relationships.values())
 
-        top_entities = sorted(all_entities, key=lambda e: e.mention_count, reverse=True)[:limit]
+        top_entities = sorted(
+            all_entities, key=lambda e: e.mention_count, reverse=True
+        )[:limit]
 
         entities = []
         entity_ids = set()
 
         for entity in top_entities:
-            entities.append(EntityNode(
-                id=entity.id,
-                name=entity.name,
-                type=entity.type.value,
-                confidence=entity.confidence,
-                mention_count=entity.mention_count,
-                last_seen=entity.last_seen.isoformat()
-            ))
+            entities.append(
+                EntityNode(
+                    id=entity.id,
+                    name=entity.name,
+                    type=entity.type.value,
+                    confidence=entity.confidence,
+                    mention_count=entity.mention_count,
+                    last_seen=entity.last_seen.isoformat(),
+                )
+            )
             entity_ids.add(entity.id)
 
         relationships = []
         for rel in all_relationships:
-            if rel.source_entity_id in entity_ids and rel.target_entity_id in entity_ids:
-                relationships.append(RelationshipEdge(
-                    source=rel.source_entity_id,
-                    target=rel.target_entity_id,
-                    type=rel.relationship_type.value,
-                    strength=rel.strength,
-                    confidence=rel.confidence
-                ))
+            if (
+                rel.source_entity_id in entity_ids
+                and rel.target_entity_id in entity_ids
+            ):
+                relationships.append(
+                    RelationshipEdge(
+                        source=rel.source_entity_id,
+                        target=rel.target_entity_id,
+                        type=rel.relationship_type.value,
+                        strength=rel.strength,
+                        confidence=rel.confidence,
+                    )
+                )
 
         stats = knowledge_graph.get_graph_stats()
 
         return KnowledgeGraphData(
-            entities=entities,
-            relationships=relationships,
-            stats=stats
+            entities=entities, relationships=relationships, stats=stats
         )
 
     except Exception as e:
         print(f"Error getting knowledge graph data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch knowledge graph data")
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch knowledge graph data"
+        )
 
 
 @app.get("/api/activities", response_model=List[ActivityEvent])
 async def get_activities(
     date_filter: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    limit: int = Query(20)
+    limit: int = Query(20),
 ):
     try:
         vector_store = VectorStore()
@@ -504,24 +555,27 @@ async def get_activities(
 
         if category:
             events_data = [
-                event for event in events_data
+                event
+                for event in events_data
                 if event.get("payload", {}).get("category") == category
             ]
 
         activities = []
         for event_data in events_data[:limit]:
             payload = event_data.get("payload", {})
-            activities.append(ActivityEvent(
-                id=event_data.get("id", "unknown"),
-                timestamp=payload.get("timestamp", ""),
-                type=payload.get("type", "unknown"),
-                summary=payload.get("summary", "No summary"),
-                content=payload.get("content", ""),
-                category=payload.get("category"),
-                project=payload.get("project"),
-                source=payload.get("source", "unknown"),
-                metadata=payload.get("metadata", {})
-            ))
+            activities.append(
+                ActivityEvent(
+                    id=event_data.get("id", "unknown"),
+                    timestamp=payload.get("timestamp", ""),
+                    type=payload.get("type", "unknown"),
+                    summary=payload.get("summary", "No summary"),
+                    content=payload.get("content", ""),
+                    category=payload.get("category"),
+                    project=payload.get("project"),
+                    source=payload.get("source", "unknown"),
+                    metadata=payload.get("metadata", {}),
+                )
+            )
 
         activities.sort(key=lambda x: x.timestamp, reverse=True)
 
@@ -539,7 +593,7 @@ async def get_tasks():
             ["uv", "run", "patcha", "tasks", "--format", "json"],
             capture_output=True,
             text=True,
-            check=False
+            check=False,
         )
 
         if result.returncode != 0:
@@ -553,12 +607,14 @@ async def get_tasks():
             if isinstance(tasks_data, list):
                 for task in tasks_data:
                     if isinstance(task, dict):
-                        tasks.append(TaskItem(
-                            content=task.get('content', ''),
-                            status=task.get('status', 'pending'),
-                            activeForm=task.get('activeForm', ''),
-                            timestamp=task.get('timestamp')
-                        ))
+                        tasks.append(
+                            TaskItem(
+                                content=task.get("content", ""),
+                                status=task.get("status", "pending"),
+                                activeForm=task.get("activeForm", ""),
+                                timestamp=task.get("timestamp"),
+                            )
+                        )
 
             return tasks
 

@@ -1,10 +1,10 @@
 """Task-aware search functionality that searches both tasks and activities."""
 
 from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 from openai import OpenAI
 
-from patcha.db.models import Task, Event, TaskSearchResult, Category
+from patcha.db.models import Task, TaskSearchResult, Category
 from patcha.db.tasks import TaskStore
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
@@ -16,7 +16,7 @@ class TaskAwareSearchService:
         self,
         task_store: TaskStore,
         vector_store: VectorStore,
-        preprocessor: EventPreprocessor
+        preprocessor: EventPreprocessor,
     ):
         self.task_store = task_store
         self.vector_store = vector_store
@@ -31,7 +31,7 @@ class TaskAwareSearchService:
         limit: int = 10,
         date_filter: Optional[date] = None,
         category_filter: Optional[Category] = None,
-        project_filter: Optional[str] = None
+        project_filter: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform task-aware search across tasks and activities.
@@ -53,12 +53,12 @@ class TaskAwareSearchService:
         # Build filters
         filters = {}
         if date_filter:
-            filters['date_from'] = date_filter.isoformat()
-            filters['date_to'] = date_filter.isoformat()
+            filters["date_from"] = date_filter.isoformat()
+            filters["date_to"] = date_filter.isoformat()
         if category_filter:
-            filters['category'] = category_filter.value
+            filters["category"] = category_filter.value
         if project_filter:
-            filters['project'] = project_filter
+            filters["project"] = project_filter
 
         results = {
             "query": query,
@@ -70,19 +70,18 @@ class TaskAwareSearchService:
             "search_metadata": {
                 "filters_applied": filters,
                 "has_embedding": query_embedding is not None,
-                "timestamp": datetime.now().isoformat()
-            }
+                "timestamp": datetime.now().isoformat(),
+            },
         }
 
         # Search tasks
         if search_type in ["tasks", "both"]:
             task_results = self.task_store.search_tasks(
-                query=query,
-                query_vector=query_embedding,
-                limit=limit,
-                filters=filters
+                query=query, query_vector=query_embedding, limit=limit, filters=filters
             )
-            results["task_results"] = [self._format_task_result(tr) for tr in task_results]
+            results["task_results"] = [
+                self._format_task_result(tr) for tr in task_results
+            ]
 
         # Search activities
         if search_type in ["activities", "both"]:
@@ -94,14 +93,12 @@ class TaskAwareSearchService:
         # Combine and rank results if searching both
         if search_type == "both":
             combined_results = self._combine_and_rank_results(
-                results["task_results"],
-                results["activity_results"],
-                limit
+                results["task_results"], results["activity_results"], limit
             )
             results["combined_results"] = combined_results
 
-        results["total_results"] = (
-            len(results["task_results"]) + len(results["activity_results"])
+        results["total_results"] = len(results["task_results"]) + len(
+            results["activity_results"]
         )
 
         return results
@@ -111,36 +108,40 @@ class TaskAwareSearchService:
         query: str,
         query_vector: Optional[List[float]],
         limit: int,
-        filters: Dict[str, Any]
+        filters: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Search activities using the vector store."""
         try:
             # Build Qdrant-style date filter
-            date_from = filters.get('date_from')
-            date_to = filters.get('date_to')
+            date_from = filters.get("date_from")
+            date_to = filters.get("date_to")
 
             activity_results = self.vector_store.search_events(
                 query=query if not query_vector else None,
                 query_vector=query_vector,
                 limit=limit,
                 date=date_from if date_from == date_to else None,
-                category=filters.get('category'),
-                project=filters.get('project')
+                category=filters.get("category"),
+                project=filters.get("project"),
             )
 
             formatted_results = []
             for result in activity_results:
-                formatted_results.append({
-                    "type": "activity",
-                    "score": result.get("score", 0.0),
-                    "event_data": result["payload"],
-                    "match_reason": "vector_similarity" if query_vector else "text_match",
-                    "task_id": result["payload"].get("task_id"),
-                    "summary": result["payload"].get("summary", ""),
-                    "category": result["payload"].get("category"),
-                    "project": result["payload"].get("project"),
-                    "timestamp": result["payload"].get("timestamp")
-                })
+                formatted_results.append(
+                    {
+                        "type": "activity",
+                        "score": result.get("score", 0.0),
+                        "event_data": result["payload"],
+                        "match_reason": "vector_similarity"
+                        if query_vector
+                        else "text_match",
+                        "task_id": result["payload"].get("task_id"),
+                        "summary": result["payload"].get("summary", ""),
+                        "category": result["payload"].get("category"),
+                        "project": result["payload"].get("project"),
+                        "timestamp": result["payload"].get("timestamp"),
+                    }
+                )
 
             return formatted_results
 
@@ -168,14 +169,14 @@ class TaskAwareSearchService:
             "confidence_score": task.confidence_score,
             "tags": task.tags,
             "match_reason": task_result.match_reason,
-            "matching_activities": task_result.matching_activities
+            "matching_activities": task_result.matching_activities,
         }
 
     def _combine_and_rank_results(
         self,
         task_results: List[Dict[str, Any]],
         activity_results: List[Dict[str, Any]],
-        limit: int
+        limit: int,
     ) -> List[Dict[str, Any]]:
         """Combine task and activity results and rank them by relevance."""
         all_results = []
@@ -193,7 +194,9 @@ class TaskAwareSearchService:
             task_id = result.get("task_id")
             if task_id:
                 task_already_included = any(
-                    r.get("task_id") == task_id for r in all_results if r["type"] == "task"
+                    r.get("task_id") == task_id
+                    for r in all_results
+                    if r["type"] == "task"
                 )
                 if task_already_included:
                     continue
@@ -205,10 +208,7 @@ class TaskAwareSearchService:
         return all_results[:limit]
 
     def search_tasks_by_content(
-        self,
-        query: str,
-        include_activities: bool = True,
-        limit: int = 10
+        self, query: str, include_activities: bool = True, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Search for tasks and optionally include their activity details.
@@ -218,9 +218,7 @@ class TaskAwareSearchService:
 
         # Search tasks
         task_results = self.task_store.search_tasks(
-            query=query,
-            query_vector=query_embedding,
-            limit=limit
+            query=query, query_vector=query_embedding, limit=limit
         )
 
         enriched_results = []
@@ -249,28 +247,26 @@ class TaskAwareSearchService:
                 query=None,
                 query_vector=None,
                 limit=100,  # Get all activities for the task
-                filters={"task_id": task.id}
+                filters={"task_id": task.id},
             )
 
             for activity_data in task_activities:
-                activities.append({
-                    "type": activity_data["payload"].get("type"),
-                    "timestamp": activity_data["payload"].get("timestamp"),
-                    "summary": activity_data["payload"].get("summary"),
-                    "category": activity_data["payload"].get("category"),
-                    "source": activity_data["payload"].get("source")
-                })
+                activities.append(
+                    {
+                        "type": activity_data["payload"].get("type"),
+                        "timestamp": activity_data["payload"].get("timestamp"),
+                        "summary": activity_data["payload"].get("summary"),
+                        "category": activity_data["payload"].get("category"),
+                        "source": activity_data["payload"].get("source"),
+                    }
+                )
 
         except Exception as e:
             print(f"Error getting activities for task {task.id}: {e}")
 
         return activities
 
-    def get_related_tasks(
-        self,
-        task: Task,
-        limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    def get_related_tasks(self, task: Task, limit: int = 5) -> List[Dict[str, Any]]:
         """Find tasks related to the given task."""
         if not task.embedding:
             return []
@@ -280,7 +276,7 @@ class TaskAwareSearchService:
             similar_tasks = self.task_store.search_tasks(
                 query="",  # Empty query, rely on vector search
                 query_vector=task.embedding,
-                limit=limit + 1  # +1 because the original task might be included
+                limit=limit + 1,  # +1 because the original task might be included
             )
 
             # Remove the original task from results
@@ -300,16 +296,16 @@ class TaskAwareSearchService:
         start_date: date,
         end_date: date,
         query: Optional[str] = None,
-        search_type: str = "both"
+        search_type: str = "both",
     ) -> Dict[str, Any]:
         """Search within a specific time range."""
         results = {
             "time_range": {
                 "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat()
+                "end_date": end_date.isoformat(),
             },
             "tasks": [],
-            "activities": []
+            "activities": [],
         }
 
         # Get tasks in date range
@@ -321,9 +317,13 @@ class TaskAwareSearchService:
                 query_lower = query.lower()
                 filtered_tasks = []
                 for task in tasks:
-                    if (query_lower in task.title.lower() or
-                        (task.description and query_lower in task.description.lower()) or
-                        any(query_lower in tag.lower() for tag in task.tags)):
+                    if (
+                        query_lower in task.title.lower()
+                        or (
+                            task.description and query_lower in task.description.lower()
+                        )
+                        or any(query_lower in tag.lower() for tag in task.tags)
+                    ):
                         filtered_tasks.append(task)
                 tasks = filtered_tasks
 
@@ -336,7 +336,7 @@ class TaskAwareSearchService:
                     "category": task.category.value if task.category else None,
                     "start_time": task.start_time.isoformat(),
                     "duration_minutes": task.duration_minutes,
-                    "activity_count": task.activity_count
+                    "activity_count": task.activity_count,
                 }
                 for task in tasks
             ]
@@ -360,14 +360,16 @@ class TaskAwareSearchService:
 
                 # Add to results
                 for activity in daily_activities:
-                    results["activities"].append({
-                        "type": activity["payload"].get("type"),
-                        "timestamp": activity["payload"].get("timestamp"),
-                        "summary": activity["payload"].get("summary"),
-                        "category": activity["payload"].get("category"),
-                        "project": activity["payload"].get("project"),
-                        "task_id": activity["payload"].get("task_id")
-                    })
+                    results["activities"].append(
+                        {
+                            "type": activity["payload"].get("type"),
+                            "timestamp": activity["payload"].get("timestamp"),
+                            "summary": activity["payload"].get("summary"),
+                            "category": activity["payload"].get("category"),
+                            "project": activity["payload"].get("project"),
+                            "task_id": activity["payload"].get("task_id"),
+                        }
+                    )
 
                 current_date += timedelta(days=1)
 

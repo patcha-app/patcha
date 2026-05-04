@@ -26,15 +26,15 @@ class GitCollector:
         git_repos = []
 
         try:
-            if (search_path / '.git').exists():
+            if (search_path / ".git").exists():
                 git_repos.append(search_path)
 
             for depth in range(1, 4):
-                pattern = '/'.join(['*'] * depth) + '/.git'
+                pattern = "/".join(["*"] * depth) + "/.git"
                 for git_dir in search_path.glob(pattern):
                     repo_path = git_dir.parent
                     rel_parts = repo_path.relative_to(search_path).parts
-                    if any(part.startswith('.') for part in rel_parts):
+                    if any(part.startswith(".") for part in rel_parts):
                         continue
                     if repo_path not in git_repos:
                         git_repos.append(repo_path)
@@ -58,12 +58,18 @@ class GitCollector:
                 # If since is provided, only get commits after that time
                 if since:
                     # Use git log with --since parameter for efficiency
-                    commits = list(repo.iter_commits(since=since.strftime('%Y-%m-%d %H:%M:%S')))
+                    commits = list(
+                        repo.iter_commits(since=since.strftime("%Y-%m-%d %H:%M:%S"))
+                    )
                 else:
-                    commits = list(repo.iter_commits(max_count=50))  # Limit to recent 50 commits for performance
+                    commits = list(
+                        repo.iter_commits(max_count=50)
+                    )  # Limit to recent 50 commits for performance
 
                 for commit in commits:
-                    commit_time = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
+                    commit_time = datetime.fromtimestamp(
+                        commit.committed_date, tz=timezone.utc
+                    )
 
                     # Double-check the timestamp (since git --since might be inclusive)
                     if since and commit_time < since:
@@ -78,7 +84,9 @@ class GitCollector:
 
                     try:
                         if commit.parents:
-                            diff_text = repo.git.diff(commit.parents[0].hexsha, commit.hexsha)
+                            diff_text = repo.git.diff(
+                                commit.parents[0].hexsha, commit.hexsha
+                            )
                         else:
                             diff_text = ""
                     except Exception:
@@ -106,8 +114,9 @@ class GitCollector:
                         metadata={
                             "repo_path": str(repo_path),
                             "files_count": len(all_files_changed),
-                            "lines_changed": git_commit.insertions + git_commit.deletions,
-                        }
+                            "lines_changed": git_commit.insertions
+                            + git_commit.deletions,
+                        },
                     )
                     events.append(event)
 
@@ -138,16 +147,18 @@ class GitCollector:
 
                 try:
                     stash_info = repo.git.stash("show", "--stat", stash_name)
-                    files_changed = [line.split("|")[0].strip()
-                                   for line in stash_info.split("\n")[:-1]]
-                except:
+                    files_changed = [
+                        line.split("|")[0].strip()
+                        for line in stash_info.split("\n")[:-1]
+                    ]
+                except Exception:
                     files_changed = []
 
                 git_stash = GitStash(
                     name=stash_name,
                     message=stash_message,
                     timestamp=datetime.now(timezone.utc),
-                    files_changed=files_changed
+                    files_changed=files_changed,
                 )
 
                 event = Event(
@@ -158,8 +169,8 @@ class GitCollector:
                     raw_content=json.dumps(git_stash.model_dump(), default=str),
                     metadata={
                         "repo_path": str(self.repo_path),
-                        "files_count": len(files_changed)
-                    }
+                        "files_count": len(files_changed),
+                    },
                 )
                 events.append(event)
 
@@ -251,7 +262,11 @@ class GitCollector:
                     project = Path(repo).name
                     all_staged = sorted(curr_staged)
                     file_list = ", ".join(all_staged[:10])
-                    suffix = f" (+{len(all_staged) - 10} more)" if len(all_staged) > 10 else ""
+                    suffix = (
+                        f" (+{len(all_staged) - 10} more)"
+                        if len(all_staged) > 10
+                        else ""
+                    )
 
                     parts = []
                     if newly_staged:
@@ -269,20 +284,22 @@ class GitCollector:
                         f"{diff_section}"
                     )
 
-                    events.append(Event(
-                        timestamp=ts,
-                        type=EventType.GIT_STAGED,
-                        source="git",
-                        project=project,
-                        raw_content=raw,
-                        metadata={
-                            "repo_path": repo,
-                            "staged_files": all_staged,
-                            "newly_staged": sorted(newly_staged),
-                            "newly_unstaged": sorted(newly_unstaged),
-                            "unstaged_files": entry.get("unstaged", []),
-                        },
-                    ))
+                    events.append(
+                        Event(
+                            timestamp=ts,
+                            type=EventType.GIT_STAGED,
+                            source="git",
+                            project=project,
+                            raw_content=raw,
+                            metadata={
+                                "repo_path": repo,
+                                "staged_files": all_staged,
+                                "newly_staged": sorted(newly_staged),
+                                "newly_unstaged": sorted(newly_unstaged),
+                                "unstaged_files": entry.get("unstaged", []),
+                            },
+                        )
+                    )
 
                 prev_staged = curr_staged
 

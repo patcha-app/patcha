@@ -4,9 +4,7 @@ import sys
 import os
 import json
 import logging
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Optional
+from datetime import datetime, timezone
 
 from patcha.collectors.git import GitCollector
 from patcha.collectors.browser import BrowserCollector
@@ -53,11 +51,15 @@ class ActivityDaemon:
         self.start_time = datetime.now(timezone.utc)
         self.last_collection_time = self.start_time
 
-        self.logger.info(f"Starting Activity Daemon (poll interval: {self.poll_interval}s)")
+        self.logger.info(
+            f"Starting Activity Daemon (poll interval: {self.poll_interval}s)"
+        )
         self.logger.info(f"Will only collect events after: {self.start_time}")
 
         if not config.openai_api_key:
-            self.logger.error("OPENAI_API_KEY not set. Please configure your .env file.")
+            self.logger.error(
+                "OPENAI_API_KEY not set. Please configure your .env file."
+            )
             return
 
         config.data_dir.mkdir(exist_ok=True)
@@ -66,9 +68,9 @@ class ActivityDaemon:
         daemon_info = {
             "pid": os.getpid(),
             "start_time": self.start_time.isoformat(),
-            "last_collection_time": self.last_collection_time.isoformat()
+            "last_collection_time": self.last_collection_time.isoformat(),
         }
-        with open(pid_file, 'w') as f:
+        with open(pid_file, "w") as f:
             json.dump(daemon_info, f)
 
         self.accessibility_collector.start_recording()
@@ -92,7 +94,9 @@ class ActivityDaemon:
             since = self.last_collection_time
             current_time = datetime.now(timezone.utc)
 
-            self.logger.info(f"Collecting activities since {since.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            self.logger.info(
+                f"Collecting activities since {since.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            )
 
             all_events = []
 
@@ -121,7 +125,9 @@ class ActivityDaemon:
                     if source_name == "git":
                         stash_events = self.git_collector.collect_stashes(since)
                         events.extend(stash_events)
-                        self.logger.debug(f"Collected {len(stash_events)} stash events from git")
+                        self.logger.debug(
+                            f"Collected {len(stash_events)} stash events from git"
+                        )
 
                     if source_name == "accessibility":
                         events = [
@@ -131,12 +137,16 @@ class ActivityDaemon:
                                 source=e.get("source", "accessibility"),
                                 raw_content=e.get("raw_content", ""),
                                 metadata=e.get("metadata", {}),
-                            ) if isinstance(e, dict) else e
+                            )
+                            if isinstance(e, dict)
+                            else e
                             for e in events
                         ]
 
                     all_events.extend(events)
-                    self.logger.info(f"Collected {len(events)} events from {source_name}")
+                    self.logger.info(
+                        f"Collected {len(events)} events from {source_name}"
+                    )
 
                 except Exception as e:
                     self.logger.error(f"Error collecting from {source_name}: {e}")
@@ -147,11 +157,13 @@ class ActivityDaemon:
                 self.last_collection_time = current_time
                 return
 
-            self.logger.info(f"Processing {len(all_events)} events in batches of {self.batch_size}")
+            self.logger.info(
+                f"Processing {len(all_events)} events in batches of {self.batch_size}"
+            )
 
             total_stored = 0
             for i in range(0, len(all_events), self.batch_size):
-                batch = all_events[i:i + self.batch_size]
+                batch = all_events[i : i + self.batch_size]
 
                 processed_events = []
                 for event in batch:
@@ -170,7 +182,9 @@ class ActivityDaemon:
                         self.logger.error(f"Error storing batch: {e}")
                         continue
 
-            self.logger.info(f"Successfully processed and stored {total_stored}/{len(all_events)} events")
+            self.logger.info(
+                f"Successfully processed and stored {total_stored}/{len(all_events)} events"
+            )
 
             try:
                 self.daily_compactor.maybe_compact_previous_days()
@@ -182,10 +196,10 @@ class ActivityDaemon:
             pid_file = config.data_dir / "daemon.pid"
             if pid_file.exists():
                 try:
-                    with open(pid_file, 'r') as f:
+                    with open(pid_file, "r") as f:
                         daemon_info = json.load(f)
                     daemon_info["last_collection_time"] = current_time.isoformat()
-                    with open(pid_file, 'w') as f:
+                    with open(pid_file, "w") as f:
                         json.dump(daemon_info, f)
                 except Exception as e:
                     self.logger.warning(f"Error updating PID file: {e}")
@@ -199,7 +213,7 @@ class ActivityDaemon:
             return {"running": False, "pid": None}
 
         try:
-            with open(pid_file, 'r') as f:
+            with open(pid_file, "r") as f:
                 content = f.read().strip()
 
             try:
@@ -213,6 +227,7 @@ class ActivityDaemon:
                 last_collection = None
 
             import psutil
+
             if psutil.pid_exists(pid):
                 status = {"running": True, "pid": pid}
                 if start_time:

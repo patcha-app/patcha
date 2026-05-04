@@ -8,8 +8,7 @@ def init_logging(level=logging.INFO):
     log_dir.mkdir(parents=True, exist_ok=True)
 
     fmt = logging.Formatter(
-        "%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S"
+        "%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%dT%H:%M:%S"
     )
 
     file_handler = logging.handlers.RotatingFileHandler(

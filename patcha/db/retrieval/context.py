@@ -67,7 +67,9 @@ def _format_line(payload: dict) -> str:
     return f"[{hhmm}] {event_type}: {detail}"
 
 
-def _dedup_by_similarity(rows: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
+def _dedup_by_similarity(
+    rows: List[Dict[str, Any]], threshold: float
+) -> List[Dict[str, Any]]:
     # rows must be sorted ascending by timestamp
     last_vector: dict[str, List[float]] = {}
     kept = []
@@ -144,15 +146,19 @@ def _format_detail(payload: dict) -> str:
     if event_type == "git_staged":
         raw = payload.get("raw_content", "")
         if "Diff:\n" in raw:
-            return base + "\n" + raw[raw.index("Diff:\n"):]
+            return base + "\n" + raw[raw.index("Diff:\n") :]
     return base
 
 
-def search_activity(store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5) -> str:
+def search_activity(
+    store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5
+) -> str:
     try:
         embedding = preprocessor.generate_embedding(query)
     except Exception as e:
-        return f'# Search results for "{query}"\nEmbedding failed: {type(e).__name__}: {e}'
+        return (
+            f'# Search results for "{query}"\nEmbedding failed: {type(e).__name__}: {e}'
+        )
     if not embedding:
         return f'# Search results for "{query}"\nEmbedding failed — no vector returned.'
 

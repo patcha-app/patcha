@@ -1,17 +1,15 @@
-import asyncio
 import logging
 import os
 import signal
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import click
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
-from rich.markdown import Markdown
 
 from patcha.collectors.git import GitCollector
 from patcha.collectors.browser import BrowserCollector
@@ -27,13 +25,13 @@ from patcha.daemon import ActivityDaemon
 from patcha.db.retrieval.cluster import ActivityClusterer
 from patcha.categorize import EnhancedCategorizer
 from patcha.db.graph import KnowledgeGraph
-from patcha.db.entities import EntityExtractor
 from patcha.db.retrieval.graphrag import GraphRAGSystem
 
 console = Console()
 
 try:
     from importlib.metadata import version as _pkg_version
+
     _VERSION = _pkg_version("patcha")
 except Exception:
     _VERSION = "0.1.0"
@@ -41,7 +39,13 @@ except Exception:
 _preprocessor: Optional[EventPreprocessor] = None
 _vector_store: Optional[VectorStore] = None
 
-_COMMANDS_WITHOUT_KEY = {"start-daemon", "stop-daemon", "daemon-status", "status", "config"}
+_COMMANDS_WITHOUT_KEY = {
+    "start-daemon",
+    "stop-daemon",
+    "daemon-status",
+    "status",
+    "config",
+}
 
 
 def _ensure_api_key() -> None:
@@ -79,25 +83,41 @@ def _get_vector_store() -> VectorStore:
 def cli(ctx, debug):
     """patcha - AI-powered memory and activity tracking system."""
     from patcha.utils.logging import init_logging
+
     init_logging(level=logging.DEBUG if debug else logging.INFO)
     if ctx.invoked_subcommand not in _COMMANDS_WITHOUT_KEY:
         _ensure_api_key()
 
 
 @cli.command()
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to collect activities for (default: today)")
-@click.option("--sources", "-s", multiple=True,
-              type=click.Choice(["git", "browser", "terminal", "window", "accessibility"]),
-              default=["git", "browser", "terminal", "window", "accessibility"],
-              help="Sources to collect from")
-@click.option("--repo-path", "-r", type=click.Path(exists=True),
-              help="Git repository path (default: current directory)")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to collect activities for (default: today)",
+)
+@click.option(
+    "--sources",
+    "-s",
+    multiple=True,
+    type=click.Choice(["git", "browser", "terminal", "window", "accessibility"]),
+    default=["git", "browser", "terminal", "window", "accessibility"],
+    help="Sources to collect from",
+)
+@click.option(
+    "--repo-path",
+    "-r",
+    type=click.Path(exists=True),
+    help="Git repository path (default: current directory)",
+)
 def collect(date: Optional[datetime], sources: tuple, repo_path: Optional[str]):
     """Collect activities from various sources."""
 
     target_date = date.date() if date else datetime.now().date()
-    since = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    since = datetime.combine(target_date, datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
 
     console.print(f"Collecting activities for {target_date}")
 
@@ -108,7 +128,6 @@ def collect(date: Optional[datetime], sources: tuple, repo_path: Optional[str]):
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-
         if "git" in sources:
             task = progress.add_task("Collecting git activities...", total=None)
             git_collector = GitCollector(repo_path)
@@ -122,28 +141,36 @@ def collect(date: Optional[datetime], sources: tuple, repo_path: Optional[str]):
             browser_collector = BrowserCollector()
             events = browser_collector.collect_all(since)
             all_events.extend(events)
-            progress.update(task, description=f"Collected {len(events)} browser activities")
+            progress.update(
+                task, description=f"Collected {len(events)} browser activities"
+            )
 
         if "terminal" in sources:
             task = progress.add_task("Collecting terminal activities...", total=None)
             terminal_collector = TerminalCollector()
             events = terminal_collector.collect_all(since)
             all_events.extend(events)
-            progress.update(task, description=f"Collected {len(events)} terminal activities")
+            progress.update(
+                task, description=f"Collected {len(events)} terminal activities"
+            )
 
         if "window" in sources:
             task = progress.add_task("Collecting window sessions...", total=None)
             window_collector = WindowCollector()
             events = window_collector.collect_windows(since)
             all_events.extend(events)
-            progress.update(task, description=f"Collected {len(events)} window sessions")
+            progress.update(
+                task, description=f"Collected {len(events)} window sessions"
+            )
 
         if "accessibility" in sources:
             task = progress.add_task("Collecting accessibility text...", total=None)
             accessibility_collector = AccessibilityCollector()
             events = accessibility_collector.collect_screen_text(since)
             all_events.extend(events)
-            progress.update(task, description=f"Collected {len(events)} accessibility events")
+            progress.update(
+                task, description=f"Collected {len(events)} accessibility events"
+            )
 
         if all_events:
             task = progress.add_task("Processing events...", total=len(all_events))
@@ -160,29 +187,50 @@ def collect(date: Optional[datetime], sources: tuple, repo_path: Optional[str]):
             stored_count = vector_store.store_events(processed_events)
             progress.update(task, description=f"Stored {stored_count} events")
 
-    console.print(f"[green]Successfully collected and stored {len(all_events)} activities![/green]")
+    console.print(
+        f"[green]Successfully collected and stored {len(all_events)} activities![/green]"
+    )
 
 
 @cli.command()
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to observe (default: today)")
-@click.option("--repo-path", "-r", type=click.Path(exists=True),
-              help="Git repository path (default: current directory)")
-@click.option("--min-cluster-size", default=3, show_default=True,
-              help="Minimum events per cluster")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to observe (default: today)",
+)
+@click.option(
+    "--repo-path",
+    "-r",
+    type=click.Path(exists=True),
+    help="Git repository path (default: current directory)",
+)
+@click.option(
+    "--min-cluster-size",
+    default=3,
+    show_default=True,
+    help="Minimum events per cluster",
+)
 def observe(date: Optional[datetime], repo_path: Optional[str], min_cluster_size: int):
     """Observability layer: collect + cluster activities without LLM or Qdrant."""
     from patcha.db.retrieval.cluster import cluster_raw
 
     target_date = date.date() if date else datetime.now().date()
-    since = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    since = datetime.combine(target_date, datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
 
-    console.print(f"Observing activities for [bold]{target_date}[/bold] (no LLM required)")
+    console.print(
+        f"Observing activities for [bold]{target_date}[/bold] (no LLM required)"
+    )
 
     all_events = []
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  console=console) as progress:
-
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
         for label, collector_fn in [
             ("git", lambda: _collect_git(repo_path, since)),
             ("browser", lambda: BrowserCollector().collect_all(since)),
@@ -194,9 +242,13 @@ def observe(date: Optional[datetime], repo_path: Optional[str], min_cluster_size
             try:
                 events = collector_fn()
                 all_events.extend(events)
-                progress.update(task, description=f"[green]{label}[/] - {len(events)} events")
+                progress.update(
+                    task, description=f"[green]{label}[/] - {len(events)} events"
+                )
             except Exception as exc:
-                progress.update(task, description=f"[yellow]{label}[/] - skipped ({exc})")
+                progress.update(
+                    task, description=f"[yellow]{label}[/] - skipped ({exc})"
+                )
 
     if not all_events:
         console.print("[yellow]No events collected.[/yellow]")
@@ -206,8 +258,10 @@ def observe(date: Optional[datetime], repo_path: Optional[str], min_cluster_size
     real = [c for c in clusters if not c["noise"]]
     noise = next((c for c in clusters if c["noise"]), None)
 
-    console.print(f"\nFound [bold]{len(real)}[/bold] activity clusters "
-                  f"from [bold]{len(all_events)}[/bold] events\n")
+    console.print(
+        f"\nFound [bold]{len(real)}[/bold] activity clusters "
+        f"from [bold]{len(all_events)}[/bold] events\n"
+    )
 
     table = Table(show_header=True, header_style="bold cyan", box=None, pad_edge=False)
     table.add_column("#", style="dim", width=3)
@@ -220,7 +274,9 @@ def observe(date: Optional[datetime], repo_path: Optional[str], min_cluster_size
     for i, c in enumerate(real, 1):
         start = c["start_time"][11:16]
         end = c["end_time"][11:16]
-        breakdown = "  ".join(f"{s}:{n}" for s, n in sorted(c["source_breakdown"].items()))
+        breakdown = "  ".join(
+            f"{s}:{n}" for s, n in sorted(c["source_breakdown"].items())
+        )
         table.add_row(
             str(i),
             f"{start} - {end}",
@@ -244,11 +300,17 @@ def _collect_git(repo_path: Optional[str], since: datetime):
 
 
 @cli.command()
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to summarize (default: today)")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to summarize (default: today)",
+)
 @click.option("--save", "-s", is_flag=True, help="Save summary to file")
-@click.option("--output-dir", "-o", type=click.Path(),
-              help="Output directory for summaries")
+@click.option(
+    "--output-dir", "-o", type=click.Path(), help="Output directory for summaries"
+)
 def summarize(date: Optional[datetime], save: bool, output_dir: Optional[str]):
     """Generate daily summary for activities."""
 
@@ -263,15 +325,17 @@ def summarize(date: Optional[datetime], save: bool, output_dir: Optional[str]):
         console.print(f"[yellow]No activities found for {target_date}[/yellow]")
         return
 
-    console.print(Panel.fit(
-        f"Daily Summary - {datetime.fromisoformat(summary.date).strftime('%B %d, %Y')}",
-        style="bold blue"
-    ))
+    console.print(
+        Panel.fit(
+            f"Daily Summary - {datetime.fromisoformat(summary.date).strftime('%B %d, %Y')}",
+            style="bold blue",
+        )
+    )
 
-    console.print(f"\n[bold]Overview:[/bold]")
+    console.print("\n[bold]Overview:[/bold]")
     console.print(summary.overall_summary)
 
-    console.print(f"\n[bold]Statistics:[/bold]")
+    console.print("\n[bold]Statistics:[/bold]")
     console.print(f"Total Activities: {summary.total_events}")
     console.print(f"Projects: {len(summary.projects_worked_on)}")
 
@@ -283,12 +347,18 @@ def summarize(date: Optional[datetime], save: bool, output_dir: Optional[str]):
     for category, count in summary.events_by_category.items():
         if count > 0:
             category_summary = summary.category_summaries.get(category, "No summary")
-            table.add_row(category.value, str(count), category_summary[:100] + "..." if len(category_summary) > 100 else category_summary)
+            table.add_row(
+                category.value,
+                str(count),
+                category_summary[:100] + "..."
+                if len(category_summary) > 100
+                else category_summary,
+            )
 
     console.print(table)
 
     if summary.projects_worked_on:
-        console.print(f"\n[bold]Projects Worked On:[/bold]")
+        console.print("\n[bold]Projects Worked On:[/bold]")
         for project in summary.projects_worked_on:
             console.print(f"- {project}")
 
@@ -307,12 +377,26 @@ def summarize(date: Optional[datetime], save: bool, output_dir: Optional[str]):
 @cli.command()
 @click.argument("query")
 @click.option("--limit", "-l", default=10, help="Number of results to return")
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              help="Filter by specific date")
-@click.option("--category", "-c", type=click.Choice([cat.value for cat in Category]),
-              help="Filter by category")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Filter by specific date",
+)
+@click.option(
+    "--category",
+    "-c",
+    type=click.Choice([cat.value for cat in Category]),
+    help="Filter by category",
+)
 @click.option("--project", "-p", help="Filter by project")
-def search(query: str, limit: int, date: Optional[datetime], category: Optional[str], project: Optional[str]):
+def search(
+    query: str,
+    limit: int,
+    date: Optional[datetime],
+    category: Optional[str],
+    project: Optional[str],
+):
     """Search activities using semantic search."""
 
     with console.status("Searching activities..."):
@@ -333,7 +417,7 @@ def search(query: str, limit: int, date: Optional[datetime], category: Optional[
             limit=limit,
             date_filter=date_filter,
             category_filter=category_filter,
-            project_filter=project
+            project_filter=project,
         )
 
     if not results:
@@ -346,21 +430,31 @@ def search(query: str, limit: int, date: Optional[datetime], category: Optional[
         payload = result["payload"]
         score = result["score"]
 
-        console.print(Panel(
-            f"[bold]{payload.get('type', 'unknown').upper()}[/bold] - Score: {score:.3f}\n"
-            f"[dim]{payload.get('timestamp', 'unknown')}[/dim]\n"
-            f"Project: {payload.get('project', 'N/A')} | Category: {payload.get('category', 'N/A')}\n\n"
-            f"{payload.get('summary', payload.get('raw_content', 'No content')[:200])}",
-            title=f"Result {i}",
-            expand=False
-        ))
+        console.print(
+            Panel(
+                f"[bold]{payload.get('type', 'unknown').upper()}[/bold] - Score: {score:.3f}\n"
+                f"[dim]{payload.get('timestamp', 'unknown')}[/dim]\n"
+                f"Project: {payload.get('project', 'N/A')} | Category: {payload.get('category', 'N/A')}\n\n"
+                f"{payload.get('summary', payload.get('raw_content', 'No content')[:200])}",
+                title=f"Result {i}",
+                expand=False,
+            )
+        )
 
 
 @cli.command()
-@click.option("--start-date", "-s", type=click.DateTime(formats=["%Y-%m-%d"]),
-              help="Start date for review")
-@click.option("--end-date", "-e", type=click.DateTime(formats=["%Y-%m-%d"]),
-              help="End date for review")
+@click.option(
+    "--start-date",
+    "-s",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Start date for review",
+)
+@click.option(
+    "--end-date",
+    "-e",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="End date for review",
+)
 @click.option("--days", "-d", default=7, help="Number of days to review (default: 7)")
 def review(start_date: Optional[datetime], end_date: Optional[datetime], days: int):
     """Review activities over a date range."""
@@ -386,19 +480,23 @@ def review(start_date: Optional[datetime], end_date: Optional[datetime], days: i
             summary = summarizer.load_summary(current_date)
 
         if summary:
-            console.print(Panel(
-                f"[bold]{datetime.fromisoformat(summary.date).strftime('%A, %B %d')}[/bold]\n"
-                f"Activities: {summary.total_events} | "
-                f"Projects: {len(summary.projects_worked_on)}\n\n"
-                f"{summary.overall_summary}",
-                style="blue"
-            ))
+            console.print(
+                Panel(
+                    f"[bold]{datetime.fromisoformat(summary.date).strftime('%A, %B %d')}[/bold]\n"
+                    f"Activities: {summary.total_events} | "
+                    f"Projects: {len(summary.projects_worked_on)}\n\n"
+                    f"{summary.overall_summary}",
+                    style="blue",
+                )
+            )
         else:
-            console.print(Panel(
-                f"[bold]{current_date.strftime('%A, %B %d')}[/bold]\n"
-                "[dim]No summary available[/dim]",
-                style="dim"
-            ))
+            console.print(
+                Panel(
+                    f"[bold]{current_date.strftime('%A, %B %d')}[/bold]\n"
+                    "[dim]No summary available[/dim]",
+                    style="dim",
+                )
+            )
 
         current_date += timedelta(days=1)
 
@@ -424,14 +522,18 @@ def status():
 
         table.add_row("Qdrant URL", config.qdrant_url)
         table.add_row("Data Directory", str(config.data_dir))
-        table.add_row("OpenAI API", "Configured" if config.openai_api_key else "Not configured")
+        table.add_row(
+            "OpenAI API", "Configured" if config.openai_api_key else "Not configured"
+        )
 
         console.print(table)
 
         summaries_dir = config.data_dir / "summaries"
         if summaries_dir.exists():
             summary_count = len(list(summaries_dir.glob("*.json")))
-            console.print(f"\n[bold]Summaries:[/bold] {summary_count} daily summaries saved")
+            console.print(
+                f"\n[bold]Summaries:[/bold] {summary_count} daily summaries saved"
+            )
 
     except Exception as e:
         console.print(f"[red]Error getting system status: {e}[/red]")
@@ -450,7 +552,9 @@ def config_cmd(config_key: str, config_value: Optional[str]):
         if value:
             console.print(f"{config_key}: {value}")
         else:
-            console.print(f"[yellow]Configuration key '{config_key}' not found[/yellow]")
+            console.print(
+                f"[yellow]Configuration key '{config_key}' not found[/yellow]"
+            )
     else:
         lines = []
         key_found = False
@@ -475,12 +579,22 @@ def config_cmd(config_key: str, config_value: Optional[str]):
 
 
 @cli.command("compact-day")
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to compact (default: yesterday)")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Preview without writing or deleting anything")
-@click.option("--force", is_flag=True, default=False,
-              help="Re-compact even if already done")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to compact (default: yesterday)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview without writing or deleting anything",
+)
+@click.option(
+    "--force", is_flag=True, default=False, help="Re-compact even if already done"
+)
 def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
     """Compact raw activities for a day into tasks, then delete the raw events."""
     from patcha.compaction import DailyCompactor
@@ -499,11 +613,13 @@ def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
         result = compactor.compact_day(target, dry_run=dry_run, force=force)
 
     if result.get("skipped"):
-        console.print(Panel(
-            f"[yellow]Skipped:[/yellow] {result.get('reason', 'unknown')}\n"
-            f"Date: {result.get('date', target)}",
-            title="compact-day",
-        ))
+        console.print(
+            Panel(
+                f"[yellow]Skipped:[/yellow] {result.get('reason', 'unknown')}\n"
+                f"Date: {result.get('date', target)}",
+                title="compact-day",
+            )
+        )
         return
 
     table = Table(show_header=False, box=None)
@@ -521,7 +637,9 @@ def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
 @cli.command()
 @click.option("--poll-interval", "-p", default=60, help="Poll interval in seconds")
 @click.option("--batch-size", "-b", default=50, help="Batch size for processing events")
-@click.option("--foreground", "-f", is_flag=True, help="Run in foreground (don't daemonize)")
+@click.option(
+    "--foreground", "-f", is_flag=True, help="Run in foreground (don't daemonize)"
+)
 def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
     """Start the background activity collection daemon."""
 
@@ -529,7 +647,9 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
     status = daemon.get_status()
 
     if status["running"]:
-        console.print(f"[yellow]Daemon is already running (PID: {status['pid']})[/yellow]")
+        console.print(
+            f"[yellow]Daemon is already running (PID: {status['pid']})[/yellow]"
+        )
         return
 
     console.print(f"Starting daemon with {poll_interval}s poll interval...")
@@ -565,7 +685,9 @@ def stop_daemon():
         os.kill(pid, signal.SIGTERM)
         console.print(f"[green]Daemon stopped (PID: {pid})[/green]")
     except ProcessLookupError:
-        console.print("[yellow]Daemon process not found (may have already stopped)[/yellow]")
+        console.print(
+            "[yellow]Daemon process not found (may have already stopped)[/yellow]"
+        )
         pid_file = config.data_dir / "daemon.pid"
         if pid_file.exists():
             pid_file.unlink()
@@ -581,7 +703,7 @@ def daemon_status():
     status = daemon.get_status()
 
     if status["running"]:
-        console.print(f"[green]Daemon is running[/green]")
+        console.print("[green]Daemon is running[/green]")
         console.print(f"PID: {status['pid']}")
 
         if "start_time" in status:
@@ -590,13 +712,15 @@ def daemon_status():
 
         if "last_collection" in status:
             last_collection = datetime.fromisoformat(status["last_collection"])
-            console.print(f"Last collection: {last_collection.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            console.print(
+                f"Last collection: {last_collection.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+            )
 
         log_file = config.data_dir / "daemon.log"
         if log_file.exists():
             console.print("\n[bold]Recent log entries:[/bold]")
             try:
-                with open(log_file, 'r') as f:
+                with open(log_file, "r") as f:
                     lines = f.readlines()[-10:]
                     for line in lines:
                         console.print(line.rstrip())
@@ -609,17 +733,37 @@ def daemon_status():
 
 
 @cli.command()
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to cluster activities for (default: today)")
-@click.option("--method", "-m", type=click.Choice(["dbscan", "hdbscan", "kmeans"]),
-              default="hdbscan", help="Clustering method")
-@click.option("--eps", type=float, default=0.3,
-              help="DBSCAN eps parameter (max distance for clustering)")
-@click.option("--min-samples", type=int, default=2,
-              help="Minimum samples per cluster")
-@click.option("--min-cluster-size", type=int, default=3,
-              help="HDBSCAN minimum cluster size")
-def cluster(date: Optional[datetime], method: str, eps: float, min_samples: int, min_cluster_size: int):
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to cluster activities for (default: today)",
+)
+@click.option(
+    "--method",
+    "-m",
+    type=click.Choice(["dbscan", "hdbscan", "kmeans"]),
+    default="hdbscan",
+    help="Clustering method",
+)
+@click.option(
+    "--eps",
+    type=float,
+    default=0.3,
+    help="DBSCAN eps parameter (max distance for clustering)",
+)
+@click.option("--min-samples", type=int, default=2, help="Minimum samples per cluster")
+@click.option(
+    "--min-cluster-size", type=int, default=3, help="HDBSCAN minimum cluster size"
+)
+def cluster(
+    date: Optional[datetime],
+    method: str,
+    eps: float,
+    min_samples: int,
+    min_cluster_size: int,
+):
     """Cluster activities by similarity for a specific date."""
 
     target_date = date.date() if date else datetime.now().date()
@@ -630,22 +774,28 @@ def cluster(date: Optional[datetime], method: str, eps: float, min_samples: int,
 
         console.print(f"[blue]Clustering activities for {target_date}...[/blue]")
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-            task = progress.add_task("Analyzing activity patterns...", total=None)
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
+            progress.add_task("Analyzing activity patterns...", total=None)
 
             results = clusterer.cluster_activities_by_similarity(
                 target_date=target_date,
                 method=method,
                 eps=eps,
                 min_samples=min_samples,
-                min_cluster_size=min_cluster_size
+                min_cluster_size=min_cluster_size,
             )
 
         if not results["clusters"]:
-            console.print(f"[yellow]{results.get('message', 'No clusters found')}[/yellow]")
+            console.print(
+                f"[yellow]{results.get('message', 'No clusters found')}[/yellow]"
+            )
             return
 
-        console.print(f"\n[green]Found {results['num_clusters']} clusters from {results['total_events']} events[/green]")
+        console.print(
+            f"\n[green]Found {results['num_clusters']} clusters from {results['total_events']} events[/green]"
+        )
 
         for cluster in results["clusters"]:
             cluster_info = f"**Size:** {cluster['size']} activities\n"
@@ -661,36 +811,51 @@ def cluster(date: Optional[datetime], method: str, eps: float, min_samples: int,
             if len(cluster["events"]) > 3:
                 cluster_info += f"- ... and {len(cluster['events']) - 3} more\n"
 
-            console.print(Panel(
-                cluster_info,
-                title=f"Cluster: {cluster['name']}",
-                border_style="blue" if cluster["cluster_id"] != -1 else "dim"
-            ))
+            console.print(
+                Panel(
+                    cluster_info,
+                    title=f"Cluster: {cluster['name']}",
+                    border_style="blue" if cluster["cluster_id"] != -1 else "dim",
+                )
+            )
 
         if results.get("num_noise", 0) > 0:
-            console.print(f"\n[dim]{results['num_noise']} activities didn't fit into clear patterns[/dim]")
+            console.print(
+                f"\n[dim]{results['num_noise']} activities didn't fit into clear patterns[/dim]"
+            )
 
     except Exception as e:
         console.print(f"[red]Error clustering activities: {e}[/red]")
 
 
 @cli.command()
-@click.option("--start-date", "-s", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Start date for pattern analysis")
-@click.option("--end-date", "-e", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="End date for pattern analysis")
-@click.option("--days", "-n", type=int, default=7,
-              help="Number of days to analyze (default: 7)")
+@click.option(
+    "--start-date",
+    "-s",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Start date for pattern analysis",
+)
+@click.option(
+    "--end-date",
+    "-e",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="End date for pattern analysis",
+)
+@click.option(
+    "--days", "-n", type=int, default=7, help="Number of days to analyze (default: 7)"
+)
 def patterns(start_date: Optional[datetime], end_date: Optional[datetime], days: int):
     """Find recurring activity patterns across multiple days."""
 
     if not start_date:
         end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days-1)
+        start_date = end_date - timedelta(days=days - 1)
     else:
         start_date = start_date.date()
         if not end_date:
-            end_date = start_date + timedelta(days=days-1)
+            end_date = start_date + timedelta(days=days - 1)
         else:
             end_date = end_date.date()
 
@@ -698,14 +863,17 @@ def patterns(start_date: Optional[datetime], end_date: Optional[datetime], days:
         vector_store = _get_vector_store()
         clusterer = ActivityClusterer(vector_store)
 
-        console.print(f"[blue]Analyzing activity patterns from {start_date} to {end_date}...[/blue]")
+        console.print(
+            f"[blue]Analyzing activity patterns from {start_date} to {end_date}...[/blue]"
+        )
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-            task = progress.add_task("Finding recurring patterns...", total=None)
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
+            progress.add_task("Finding recurring patterns...", total=None)
 
             results = clusterer.find_activity_patterns(
-                start_date=start_date,
-                end_date=end_date
+                start_date=start_date, end_date=end_date
             )
 
         found_patterns = results["recurring_patterns"]
@@ -714,7 +882,9 @@ def patterns(start_date: Optional[datetime], end_date: Optional[datetime], days:
             console.print("[yellow]No recurring patterns found[/yellow]")
             return
 
-        console.print(f"\n[green]Found {len(found_patterns)} recurring patterns[/green]")
+        console.print(
+            f"\n[green]Found {len(found_patterns)} recurring patterns[/green]"
+        )
 
         table = Table(title="Recurring Activity Patterns")
         table.add_column("Pattern", style="cyan")
@@ -727,7 +897,7 @@ def patterns(start_date: Optional[datetime], end_date: Optional[datetime], days:
                 pattern["pattern_id"],
                 str(pattern["frequency"]),
                 pattern["dominant_category"],
-                pattern["description"]
+                pattern["description"],
             )
 
         console.print(table)
@@ -735,25 +905,36 @@ def patterns(start_date: Optional[datetime], end_date: Optional[datetime], days:
         for pattern in found_patterns[:3]:
             pattern_info = f"**Frequency:** {pattern['frequency']} occurrences\n"
             pattern_info += f"**Average cluster size:** {pattern['avg_cluster_size']:.1f} activities\n"
-            pattern_info += f"**Example names:**\n"
+            pattern_info += "**Example names:**\n"
             for name in pattern["example_names"]:
                 pattern_info += f"- {name}\n"
 
-            console.print(Panel(
-                pattern_info,
-                title=f"Pattern: {pattern['dominant_category']} Activities",
-                border_style="green"
-            ))
+            console.print(
+                Panel(
+                    pattern_info,
+                    title=f"Pattern: {pattern['dominant_category']} Activities",
+                    border_style="green",
+                )
+            )
 
     except Exception as e:
         console.print(f"[red]Error analyzing patterns: {e}[/red]")
 
 
 @cli.command()
-@click.option("--days", "-n", type=int, default=7,
-              help="Number of recent days to analyze (default: 7)")
-@click.option("--sample-size", type=int, default=50,
-              help="Maximum number of events to analyze (default: 50)")
+@click.option(
+    "--days",
+    "-n",
+    type=int,
+    default=7,
+    help="Number of recent days to analyze (default: 7)",
+)
+@click.option(
+    "--sample-size",
+    type=int,
+    default=50,
+    help="Maximum number of events to analyze (default: 50)",
+)
 def categorization_analysis(days: int, sample_size: int):
     """Analyze the performance of RAG vs AI categorization."""
 
@@ -762,12 +943,18 @@ def categorization_analysis(days: int, sample_size: int):
         preprocessor = _get_preprocessor()
         enhanced_categorizer = EnhancedCategorizer(vector_store, preprocessor)
 
-        console.print(f"[blue]Analyzing categorization performance over the last {days} days...[/blue]")
+        console.print(
+            f"[blue]Analyzing categorization performance over the last {days} days...[/blue]"
+        )
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-            task = progress.add_task("Comparing categorization methods...", total=None)
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
+            progress.add_task("Comparing categorization methods...", total=None)
 
-            results = enhanced_categorizer.analyze_categorization_performance(num_days=days)
+            results = enhanced_categorizer.analyze_categorization_performance(
+                num_days=days
+            )
 
         if "error" in results:
             console.print(f"[red]{results['error']}[/red]")
@@ -776,9 +963,11 @@ def categorization_analysis(days: int, sample_size: int):
 
         analysis = results
 
-        console.print(f"\n[green]Categorization Analysis Results[/green]")
+        console.print("\n[green]Categorization Analysis Results[/green]")
         console.print(f"Sample size: {analysis['sample_size']} events")
-        console.print(f"Period: {analysis['analysis_period']['start_date']} to {analysis['analysis_period']['end_date']}")
+        console.print(
+            f"Period: {analysis['analysis_period']['start_date']} to {analysis['analysis_period']['end_date']}"
+        )
 
         agreement = analysis["rag_vs_ai_agreement"]
         console.print(f"\n**RAG vs AI Agreement:** {agreement['agreement_rate']:.1%}")
@@ -786,15 +975,17 @@ def categorization_analysis(days: int, sample_size: int):
         console.print(f"- Disagreements: {agreement['disagreements']}")
 
         rag_perf = analysis["rag_performance"]
-        console.print(f"\n**RAG Performance:**")
+        console.print("\n**RAG Performance:**")
         console.print(f"- Average confidence: {rag_perf['avg_confidence']:.2f}")
         console.print(f"- Method distribution: {rag_perf['method_distribution']}")
 
         if rag_perf["accuracy_vs_original"]:
-            console.print(f"- Accuracy vs original: {rag_perf['accuracy_vs_original']:.1%}")
+            console.print(
+                f"- Accuracy vs original: {rag_perf['accuracy_vs_original']:.1%}"
+            )
 
         if analysis["recommendations"]:
-            console.print(f"\n[yellow]Recommendations:[/yellow]")
+            console.print("\n[yellow]Recommendations:[/yellow]")
             for rec in analysis["recommendations"]:
                 console.print(f"- {rec}")
 
@@ -803,10 +994,18 @@ def categorization_analysis(days: int, sample_size: int):
 
 
 @cli.command()
-@click.option("--use-rag", is_flag=True, default=False,
-              help="Use RAG-based categorization for new events")
-@click.option("--confidence-threshold", type=float, default=0.7,
-              help="Confidence threshold for RAG categorization")
+@click.option(
+    "--use-rag",
+    is_flag=True,
+    default=False,
+    help="Use RAG-based categorization for new events",
+)
+@click.option(
+    "--confidence-threshold",
+    type=float,
+    default=0.7,
+    help="Confidence threshold for RAG categorization",
+)
 def collect_enhanced(use_rag: bool, confidence_threshold: float):
     """Collect activities with enhanced categorization (RAG-based)."""
 
@@ -815,7 +1014,9 @@ def collect_enhanced(use_rag: bool, confidence_threshold: float):
     try:
         vector_store = _get_vector_store()
         preprocessor = _get_preprocessor()
-        enhanced_categorizer = EnhancedCategorizer(vector_store, preprocessor) if use_rag else None
+        enhanced_categorizer = (
+            EnhancedCategorizer(vector_store, preprocessor) if use_rag else None
+        )
 
         git_collector = GitCollector()
         browser_collector = BrowserCollector()
@@ -823,11 +1024,17 @@ def collect_enhanced(use_rag: bool, confidence_threshold: float):
 
         all_events = []
 
-        console.print(f"[blue]Collecting activities for {target_date} with enhanced categorization...[/blue]")
+        console.print(
+            f"[blue]Collecting activities for {target_date} with enhanced categorization...[/blue]"
+        )
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
             task = progress.add_task("Collecting git activities...", total=None)
-            since = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            since = datetime.combine(target_date, datetime.min.time()).replace(
+                tzinfo=timezone.utc
+            )
             all_events.extend(git_collector.collect_commits(since))
             all_events.extend(git_collector.collect_stashes(since))
 
@@ -843,38 +1050,50 @@ def collect_enhanced(use_rag: bool, confidence_threshold: float):
                 console.print("[yellow]No activities found for today[/yellow]")
                 return
 
-            progress.update(task, description=f"Processing {len(today_events)} events with enhanced categorization...")
+            progress.update(
+                task,
+                description=f"Processing {len(today_events)} events with enhanced categorization...",
+            )
 
             processed_events = preprocessor.process_events_with_rag(
-                today_events,
-                enhanced_categorizer
+                today_events, enhanced_categorizer
             )
 
             progress.update(task, description="Storing events...")
             stored_count = vector_store.store_events(processed_events)
 
-        console.print(f"\n[green]Successfully processed and stored {stored_count} events[/green]")
+        console.print(
+            f"\n[green]Successfully processed and stored {stored_count} events[/green]"
+        )
 
         if use_rag:
             method_counts = {}
             for event in processed_events:
-                if hasattr(event, 'metadata') and event.metadata and 'categorization' in event.metadata:
-                    method = event.metadata['categorization'].get('method', 'unknown')
+                if (
+                    hasattr(event, "metadata")
+                    and event.metadata
+                    and "categorization" in event.metadata
+                ):
+                    method = event.metadata["categorization"].get("method", "unknown")
                     method_counts[method] = method_counts.get(method, 0) + 1
 
             if method_counts:
-                console.print(f"\n**Categorization Methods Used:**")
+                console.print("\n**Categorization Methods Used:**")
                 for method, count in method_counts.items():
                     console.print(f"- {method}: {count} events")
 
         category_counts = {}
         for event in processed_events:
             if event.category:
-                category_counts[event.category.value] = category_counts.get(event.category.value, 0) + 1
+                category_counts[event.category.value] = (
+                    category_counts.get(event.category.value, 0) + 1
+                )
 
         if category_counts:
-            console.print(f"\n**Category Distribution:**")
-            for category, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True):
+            console.print("\n**Category Distribution:**")
+            for category, count in sorted(
+                category_counts.items(), key=lambda x: x[1], reverse=True
+            ):
                 console.print(f"- {category}: {count} events")
 
     except Exception as e:
@@ -882,18 +1101,27 @@ def collect_enhanced(use_rag: bool, confidence_threshold: float):
 
 
 @cli.command()
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              default=datetime.now().strftime('%Y-%m-%d'),
-              help='Date to list tasks for (default: today)')
-@click.option('--status', type=click.Choice(['active', 'completed', 'paused', 'abandoned']),
-              help='Filter by task status')
-@click.option('--category', type=click.Choice([c.value for c in Category]),
-              help='Filter by category')
-@click.option('--project', help='Filter by project')
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=datetime.now().strftime("%Y-%m-%d"),
+    help="Date to list tasks for (default: today)",
+)
+@click.option(
+    "--status",
+    type=click.Choice(["active", "completed", "paused", "abandoned"]),
+    help="Filter by task status",
+)
+@click.option(
+    "--category",
+    type=click.Choice([c.value for c in Category]),
+    help="Filter by category",
+)
+@click.option("--project", help="Filter by project")
 def tasks(date, status, category, project):
     """List tasks for a specific date with optional filters."""
     from patcha.db.tasks import TaskStore
-    from patcha.db.models import TaskStatus
 
     task_store = TaskStore()
     target_date = date.date()
@@ -903,7 +1131,9 @@ def tasks(date, status, category, project):
     if status:
         tasks_list = [t for t in tasks_list if t.status.value == status]
     if category:
-        tasks_list = [t for t in tasks_list if t.category and t.category.value == category]
+        tasks_list = [
+            t for t in tasks_list if t.category and t.category.value == category
+        ]
     if project:
         tasks_list = [t for t in tasks_list if t.project == project]
 
@@ -924,7 +1154,7 @@ def tasks(date, status, category, project):
             "active": "green",
             "completed": "blue",
             "paused": "yellow",
-            "abandoned": "red"
+            "abandoned": "red",
         }.get(task.status.value, "white")
 
         table.add_row(
@@ -933,18 +1163,17 @@ def tasks(date, status, category, project):
             task.category.value if task.category else "None",
             f"{task.duration_minutes or 0}m",
             str(task.activity_count),
-            task.priority.value
+            task.priority.value,
         )
 
     console.print(table)
 
 
-@cli.command('task-details')
-@click.argument('task_id')
+@cli.command("task-details")
+@click.argument("task_id")
 def task_details(task_id):
     """Show detailed information about a specific task."""
     from patcha.db.tasks import TaskStore
-    from patcha.db.retrieval.search import TaskAwareSearchService
 
     task_store = TaskStore()
     task = task_store.get_task(task_id)
@@ -960,12 +1189,18 @@ def task_details(task_id):
     details_table.add_column("Value")
 
     details_table.add_row("ID", task.id)
-    details_table.add_row("Status", f"[{task.status.value}]{task.status.value.upper()}[/{task.status.value}]")
+    details_table.add_row(
+        "Status",
+        f"[{task.status.value}]{task.status.value.upper()}[/{task.status.value}]",
+    )
     details_table.add_row("Priority", task.priority.value)
     details_table.add_row("Category", task.category.value if task.category else "None")
     details_table.add_row("Project", task.project or "None")
     details_table.add_row("Start Time", task.start_time.strftime("%Y-%m-%d %H:%M:%S"))
-    details_table.add_row("End Time", task.end_time.strftime("%Y-%m-%d %H:%M:%S") if task.end_time else "Ongoing")
+    details_table.add_row(
+        "End Time",
+        task.end_time.strftime("%Y-%m-%d %H:%M:%S") if task.end_time else "Ongoing",
+    )
     details_table.add_row("Duration", f"{task.duration_minutes or 0} minutes")
     details_table.add_row("Activities", str(task.activity_count))
     details_table.add_row("Confidence", f"{task.confidence_score:.2f}")
@@ -984,11 +1219,15 @@ def task_details(task_id):
             console.print(f"  ... and {len(task.activities) - 5} more")
 
 
-@cli.command('task-summary')
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              default=datetime.now().strftime('%Y-%m-%d'),
-              help='Date to summarize tasks for (default: today)')
-@click.option('-s', '--save', is_flag=True, help='Save summary to file')
+@cli.command("task-summary")
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=datetime.now().strftime("%Y-%m-%d"),
+    help="Date to summarize tasks for (default: today)",
+)
+@click.option("-s", "--save", is_flag=True, help="Save summary to file")
 def task_summary(date, save):
     """Generate a task-focused daily summary with rich narrative."""
     from patcha.db.tasks import TaskStore
@@ -998,22 +1237,30 @@ def task_summary(date, save):
     task_summarizer = TaskSummarizer(task_store)
     target_date = date.date()
 
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-        task = progress.add_task("Generating task summary...", total=None)
+    with Progress(
+        SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+    ) as progress:
+        progress.add_task("Generating task summary...", total=None)
 
-        rich_summary = task_summarizer.generate_rich_daily_summary(target_date, save_to_file=save, use_ai=True)
+        rich_summary = task_summarizer.generate_rich_daily_summary(
+            target_date, save_to_file=save, use_ai=True
+        )
 
     if rich_summary["total_tasks"] == 0:
         console.print(f"[yellow]No tasks found for {target_date}[/yellow]")
         return
 
-    console.print(Panel(f"[bold cyan]Daily Task Summary - {target_date.strftime('%B %d, %Y')}[/bold cyan]"))
+    console.print(
+        Panel(
+            f"[bold cyan]Daily Task Summary - {target_date.strftime('%B %d, %Y')}[/bold cyan]"
+        )
+    )
 
-    console.print(f"\n[bold]Overview:[/bold]")
+    console.print("\n[bold]Overview:[/bold]")
     console.print(rich_summary["overview"])
 
     total_hours = rich_summary["total_time_minutes"] / 60
-    console.print(f"\n[bold]Statistics:[/bold]")
+    console.print("\n[bold]Statistics:[/bold]")
     console.print(f"Total Tasks: {rich_summary['total_tasks']}")
     console.print(f"Projects: {len(rich_summary['projects'])}")
     console.print(f"Time Spent: {total_hours:.1f} hours")
@@ -1042,25 +1289,33 @@ def task_summary(date, save):
                 category,
                 f"{task_data['duration_minutes']}m",
                 str(task_data["activity_count"]),
-                summary
+                summary,
             )
 
         console.print(tasks_table)
 
     if rich_summary["projects"]:
-        console.print(f"\n[bold]Projects Worked On:[/bold]")
+        console.print("\n[bold]Projects Worked On:[/bold]")
         for project in rich_summary["projects"]:
             console.print(f"- {project}")
 
 
-@cli.command('search-tasks')
-@click.argument('query')
-@click.option('-l', '--limit', default=5, help='Number of results to return')
-@click.option('--category', type=click.Choice([c.value for c in Category]),
-              help='Filter by category')
-@click.option('--project', help='Filter by project')
-@click.option('--type', 'search_type', type=click.Choice(['tasks', 'activities', 'both']),
-              default='both', help='What to search')
+@cli.command("search-tasks")
+@click.argument("query")
+@click.option("-l", "--limit", default=5, help="Number of results to return")
+@click.option(
+    "--category",
+    type=click.Choice([c.value for c in Category]),
+    help="Filter by category",
+)
+@click.option("--project", help="Filter by project")
+@click.option(
+    "--type",
+    "search_type",
+    type=click.Choice(["tasks", "activities", "both"]),
+    default="both",
+    help="What to search",
+)
 def search_tasks(query, limit, category, project, search_type):
     """Search tasks and activities using semantic search."""
     from patcha.db.retrieval.search import TaskAwareSearchService
@@ -1082,14 +1337,16 @@ def search_tasks(query, limit, category, project, search_type):
             search_type=search_type,
             limit=limit,
             category_filter=category_filter,
-            project_filter=project
+            project_filter=project,
         )
 
     if results["total_results"] == 0:
         console.print(f"[yellow]No results found for: {query}[/yellow]")
         return
 
-    console.print(f"Found {results['total_results']} results for: [cyan]{query}[/cyan]\n")
+    console.print(
+        f"Found {results['total_results']} results for: [cyan]{query}[/cyan]\n"
+    )
 
     if search_type == "both" and results["combined_results"]:
         for i, result in enumerate(results["combined_results"], 1):
@@ -1117,7 +1374,9 @@ def _display_search_result(result, index):
         category = result.get("category", "None")
         status = result["status"]
         console.print(f"{index}. [{result_type}] {title}")
-        console.print(f"   Score: {score:.3f} | Status: {status} | Category: {category}")
+        console.print(
+            f"   Score: {score:.3f} | Status: {status} | Category: {category}"
+        )
         if result.get("description"):
             console.print(f"   {result['description'][:100]}...")
     else:
@@ -1125,13 +1384,15 @@ def _display_search_result(result, index):
         category = result.get("category", "None")
         timestamp = result.get("timestamp", "")
         console.print(f"{index}. [{result_type}] {summary[:60]}...")
-        console.print(f"   Score: {score:.3f} | Category: {category} | Time: {timestamp}")
+        console.print(
+            f"   Score: {score:.3f} | Category: {category} | Time: {timestamp}"
+        )
 
     console.print()
 
 
-@cli.command('complete-task')
-@click.argument('task_id')
+@cli.command("complete-task")
+@click.argument("task_id")
 def complete_task(task_id):
     """Mark a task as completed."""
     from patcha.db.tasks import TaskStore
@@ -1149,14 +1410,18 @@ def complete_task(task_id):
         console.print(f"[green]Task completed: {task.title}[/green]")
         console.print(f"Duration: {task.duration_minutes} minutes")
     else:
-        console.print(f"[red]Error updating task[/red]")
+        console.print("[red]Error updating task[/red]")
 
 
-@cli.command('rag-summary')
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              default=datetime.now().strftime('%Y-%m-%d'),
-              help='Date to generate RAG-enhanced summary for (default: today)')
-@click.option('--save', is_flag=True, help='Save summary to file')
+@cli.command("rag-summary")
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=datetime.now().strftime("%Y-%m-%d"),
+    help="Date to generate RAG-enhanced summary for (default: today)",
+)
+@click.option("--save", is_flag=True, help="Save summary to file")
 def rag_enhanced_summary(date, save):
     """Generate RAG-enhanced daily summary with historical context and insights."""
     from patcha.summary import RAGTaskSummarizer
@@ -1173,7 +1438,7 @@ def rag_enhanced_summary(date, save):
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Analyzing with historical context...")
 
@@ -1187,31 +1452,35 @@ def rag_enhanced_summary(date, save):
         console.print(Panel("[bold green]RAG-Enhanced Daily Summary[/bold green]"))
 
         if summary.get("contextual_overview"):
-            console.print(f"\n[bold]Contextual Overview:[/bold]")
+            console.print("\n[bold]Contextual Overview:[/bold]")
             console.print(summary["contextual_overview"])
 
         if summary.get("productivity_patterns"):
             patterns = summary["productivity_patterns"]
-            console.print(f"\n[bold]Productivity Insights:[/bold]")
+            console.print("\n[bold]Productivity Insights:[/bold]")
             console.print(f"Focus Score: {patterns.get('focus_score', 0):.1f}/1.0")
             if patterns.get("productivity_indicators"):
                 for indicator in patterns["productivity_indicators"]:
                     console.print(f"- {indicator}")
 
     else:
-        console.print(Panel(f"[bold cyan]Daily Summary - {target_date.strftime('%B %d, %Y')}[/bold cyan]"))
+        console.print(
+            Panel(
+                f"[bold cyan]Daily Summary - {target_date.strftime('%B %d, %Y')}[/bold cyan]"
+            )
+        )
 
         if summary.get("overview"):
-            console.print(f"\n[bold]Overview:[/bold]")
+            console.print("\n[bold]Overview:[/bold]")
             console.print(summary["overview"])
 
     if summary.get("tasks"):
         console.print(f"\n[dim]Generated from {len(summary['tasks'])} tasks[/dim]")
 
 
-@cli.command('project-analysis')
-@click.option('-p', '--project', required=True, help='Project name to analyze')
-@click.option('--days', default=30, help='Number of days to look back (default: 30)')
+@cli.command("project-analysis")
+@click.option("-p", "--project", required=True, help="Project name to analyze")
+@click.option("--days", default=30, help="Number of days to look back (default: 30)")
 def rag_project_analysis(project, days):
     """Generate RAG-enhanced project analysis with progression insights."""
     from patcha.summary import RAGTaskSummarizer
@@ -1226,7 +1495,7 @@ def rag_project_analysis(project, days):
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Gathering project data...")
 
@@ -1240,38 +1509,45 @@ def rag_project_analysis(project, days):
 
     console.print(Panel(f"[bold cyan]Project Analysis: {project}[/bold cyan]"))
 
-    console.print(f"\n[bold]Project Overview:[/bold]")
+    console.print("\n[bold]Project Overview:[/bold]")
     console.print(f"Timeframe: {analysis['timeframe']}")
     console.print(f"Total Activities: {analysis['total_activities']}")
     console.print(f"Active Days: {analysis['active_days']}")
     console.print(f"Date Range: {analysis['date_range']}")
 
     if analysis.get("patterns"):
-        console.print(f"\n[bold]Common Patterns:[/bold]")
+        console.print("\n[bold]Common Patterns:[/bold]")
         for pattern in analysis["patterns"]:
             console.print(f"- {pattern}")
 
     if analysis.get("productivity_trends"):
         trends = analysis["productivity_trends"]
-        console.print(f"\n[bold]Productivity Trends:[/bold]")
+        console.print("\n[bold]Productivity Trends:[/bold]")
         console.print(f"Activities per day: {trends.get('activities_per_day', 0)}")
         console.print(f"Intensity: {trends.get('intensity', 'Unknown')}")
 
         if trends.get("category_distribution"):
-            console.print(f"Category distribution:")
+            console.print("Category distribution:")
             for cat, pct in trends["category_distribution"].items():
                 console.print(f"  - {cat}: {pct}%")
 
     if analysis.get("recommendations"):
-        console.print(f"\n[bold]Recommendations:[/bold]")
+        console.print("\n[bold]Recommendations:[/bold]")
         for rec in analysis["recommendations"]:
             console.print(f"- {rec}")
 
 
-@cli.command('contextual-search')
-@click.argument('query')
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']), help='Filter by specific date')
-@click.option('-l', '--limit', default=10, help='Maximum number of results (default: 10)')
+@cli.command("contextual-search")
+@click.argument("query")
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Filter by specific date",
+)
+@click.option(
+    "-l", "--limit", default=10, help="Maximum number of results (default: 10)"
+)
 def contextual_search(query, date, limit):
     """Perform RAG-enhanced contextual search with insights."""
     from patcha.summary import RAGTaskSummarizer
@@ -1301,7 +1577,9 @@ def contextual_search(query, date, limit):
         payload = result["payload"]
         timestamp = datetime.fromisoformat(payload["timestamp"])
 
-        console.print(f"\n[bold]{i}. {payload['type']} - {timestamp.strftime('%Y-%m-%d %H:%M')}[/bold]")
+        console.print(
+            f"\n[bold]{i}. {payload['type']} - {timestamp.strftime('%Y-%m-%d %H:%M')}[/bold]"
+        )
 
         if payload.get("project"):
             console.print(f"   Project: {payload['project']}")
@@ -1314,7 +1592,7 @@ def contextual_search(query, date, limit):
 
     if results.get("contextual_insights"):
         insights = results["contextual_insights"]
-        console.print(f"\n[bold]Contextual Insights:[/bold]")
+        console.print("\n[bold]Contextual Insights:[/bold]")
 
         if insights.get("patterns_found"):
             console.print("Patterns found:")
@@ -1327,21 +1605,39 @@ def contextual_search(query, date, limit):
                 console.print(f"  - {project}")
 
 
-@cli.command('identify-tasks')
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              default=datetime.now().strftime('%Y-%m-%d'),
-              help='Date to identify tasks for (default: today)')
-@click.option('--batch-size', default=50, help='Batch size for processing')
-@click.option('--no-ai', is_flag=True, help='Skip AI enhancement to avoid timeouts')
-@click.option('--similarity', default=0.91, help='Similarity threshold for clustering (default: 0.91)')
-@click.option('--workers', default=6, help='Number of parallel workers for LLM analysis (default: 6)')
-@click.option('--max-activities', default=30, help='Maximum activities per task (default: 30)')
-@click.option('--use-rag', is_flag=True, help='Use RAG for enhanced contextual analysis')
-def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities, use_rag):
+@cli.command("identify-tasks")
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=datetime.now().strftime("%Y-%m-%d"),
+    help="Date to identify tasks for (default: today)",
+)
+@click.option("--batch-size", default=50, help="Batch size for processing")
+@click.option("--no-ai", is_flag=True, help="Skip AI enhancement to avoid timeouts")
+@click.option(
+    "--similarity",
+    default=0.91,
+    help="Similarity threshold for clustering (default: 0.91)",
+)
+@click.option(
+    "--workers",
+    default=6,
+    help="Number of parallel workers for LLM analysis (default: 6)",
+)
+@click.option(
+    "--max-activities", default=30, help="Maximum activities per task (default: 30)"
+)
+@click.option(
+    "--use-rag", is_flag=True, help="Use RAG for enhanced contextual analysis"
+)
+def identify_tasks(
+    date, batch_size, no_ai, similarity, workers, max_activities, use_rag
+):
     """Identify tasks from existing activities for a specific date."""
     from patcha.compaction import TaskIdentifier
     from patcha.db.tasks import TaskStore
-    from patcha.db.models import Event, EventType
+    from patcha.db.models import Event
 
     target_date = date.date()
 
@@ -1349,8 +1645,7 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
     preprocessor = _get_preprocessor()
 
     task_identifier = TaskIdentifier(
-        preprocessor,
-        vector_store=vector_store if use_rag else None
+        preprocessor, vector_store=vector_store if use_rag else None
     )
     task_store = TaskStore()
 
@@ -1359,7 +1654,7 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Loading activities...")
 
@@ -1369,7 +1664,9 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
             console.print(f"[yellow]No activities found for {target_date}[/yellow]")
             return
 
-        progress.update(task, description=f"Processing {len(activities_data)} activities...")
+        progress.update(
+            task, description=f"Processing {len(activities_data)} activities..."
+        )
 
         events = []
         for activity_data in activities_data:
@@ -1383,7 +1680,7 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
                     raw_content=payload.get("raw_content", ""),
                     summary=payload.get("summary"),
                     category=payload.get("category"),
-                    embedding=activity_data.get("vector")
+                    embedding=activity_data.get("vector"),
                 )
                 events.append(event)
             except Exception as e:
@@ -1397,7 +1694,7 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
             similarity_threshold=similarity,
             use_ai_enhancement=not no_ai,
             max_workers=workers,
-            max_activities_per_task=max_activities
+            max_activities_per_task=max_activities,
         )
 
         progress.update(task, description="Storing identified tasks...")
@@ -1407,21 +1704,33 @@ def identify_tasks(date, batch_size, no_ai, similarity, workers, max_activities,
             if task_store.store_task(task_obj):
                 stored_count += 1
 
-    console.print(f"\n[green]Successfully identified and stored {stored_count} tasks from {len(events)} activities[/green]")
+    console.print(
+        f"\n[green]Successfully identified and stored {stored_count} tasks from {len(events)} activities[/green]"
+    )
 
     if identified_tasks:
         console.print("\n[bold]Identified Tasks:[/bold]")
         for i, task_obj in enumerate(identified_tasks, 1):
-            console.print(f"{i}. {task_obj.title} ({task_obj.activity_count} activities, {task_obj.duration_minutes}m)")
+            console.print(
+                f"{i}. {task_obj.title} ({task_obj.activity_count} activities, {task_obj.duration_minutes}m)"
+            )
 
 
-@cli.command('migrate-to-tasks')
-@click.option('--start-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              required=True, help='Start date for migration')
-@click.option('--end-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              required=True, help='End date for migration')
-@click.option('--batch-size', default=50, help='Batch size for processing')
-@click.option('--dry-run', is_flag=True, help='Analyze migration without storing data')
+@cli.command("migrate-to-tasks")
+@click.option(
+    "--start-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    required=True,
+    help="Start date for migration",
+)
+@click.option(
+    "--end-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    required=True,
+    help="End date for migration",
+)
+@click.option("--batch-size", default=50, help="Batch size for processing")
+@click.option("--dry-run", is_flag=True, help="Analyze migration without storing data")
 def migrate_to_tasks(start_date, end_date, batch_size, dry_run):
     """Migrate existing activities to task-first architecture."""
     from patcha.db.migrations.migrate import DataMigration
@@ -1432,8 +1741,12 @@ def migrate_to_tasks(start_date, end_date, batch_size, dry_run):
     end = end_date.date()
 
     if not dry_run:
-        console.print(f"[bold red]This will migrate activities from {start} to {end} to task format.[/bold red]")
-        console.print("[yellow]This process may take a while and will create new task records.[/yellow]")
+        console.print(
+            f"[bold red]This will migrate activities from {start} to {end} to task format.[/bold red]"
+        )
+        console.print(
+            "[yellow]This process may take a while and will create new task records.[/yellow]"
+        )
 
         if not click.confirm("Do you want to continue?"):
             console.print("Migration cancelled.")
@@ -1443,17 +1756,26 @@ def migrate_to_tasks(start_date, end_date, batch_size, dry_run):
 
     if click.confirm("Save migration report to file?"):
         import json
+
         report_file = config.data_dir / f"migration_report_{start}_{end}.json"
-        with open(report_file, 'w') as f:
+        with open(report_file, "w") as f:
             json.dump(report, f, indent=2, default=str)
         console.print(f"[green]Report saved to {report_file}[/green]")
 
 
-@cli.command('analyze-migration')
-@click.option('--start-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              required=True, help='Start date for analysis')
-@click.option('--end-date', type=click.DateTime(formats=['%Y-%m-%d']),
-              required=True, help='End date for analysis')
+@cli.command("analyze-migration")
+@click.option(
+    "--start-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    required=True,
+    help="Start date for analysis",
+)
+@click.option(
+    "--end-date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    required=True,
+    help="End date for analysis",
+)
 def analyze_migration(start_date, end_date):
     """Analyze migration feasibility for a date range."""
     from patcha.db.migrations.migrate import DataMigration
@@ -1467,15 +1789,20 @@ def analyze_migration(start_date, end_date):
 
     if click.confirm("Save analysis report to file?"):
         import json
+
         report_file = config.data_dir / f"migration_analysis_{start}_{end}.json"
-        with open(report_file, 'w') as f:
+        with open(report_file, "w") as f:
             json.dump(analysis, f, indent=2, default=str)
         console.print(f"[green]Analysis saved to {report_file}[/green]")
 
 
-@cli.command('cleanup-duplicate-tasks')
-@click.option('-d', '--date', type=click.DateTime(formats=['%Y-%m-%d']),
-              help='Date to clean up (default: last 30 days)')
+@cli.command("cleanup-duplicate-tasks")
+@click.option(
+    "-d",
+    "--date",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    help="Date to clean up (default: last 30 days)",
+)
 def cleanup_duplicate_tasks(date):
     """Clean up duplicate tasks created during migration."""
     from patcha.db.migrations.migrate import DataMigration
@@ -1484,9 +1811,13 @@ def cleanup_duplicate_tasks(date):
     target_date = date.date() if date else None
 
     if target_date:
-        console.print(f"[yellow]This will analyze and remove duplicate tasks for {target_date}[/yellow]")
+        console.print(
+            f"[yellow]This will analyze and remove duplicate tasks for {target_date}[/yellow]"
+        )
     else:
-        console.print("[yellow]This will analyze and remove duplicate tasks from the last 30 days[/yellow]")
+        console.print(
+            "[yellow]This will analyze and remove duplicate tasks from the last 30 days[/yellow]"
+        )
 
     if not click.confirm("Do you want to continue?"):
         console.print("Cleanup cancelled.")
@@ -1494,19 +1825,21 @@ def cleanup_duplicate_tasks(date):
 
     report = migration.cleanup_duplicate_tasks(target_date)
 
-    console.print(f"\n[bold]Cleanup Summary:[/bold]")
+    console.print("\n[bold]Cleanup Summary:[/bold]")
     console.print(f"Tasks analyzed: {report['analyzed_tasks']}")
     console.print(f"Duplicate pairs found: {report['duplicates_found']}")
     console.print(f"Duplicate tasks removed: {report['duplicates_removed']}")
 
-    if report['duplicate_pairs']:
-        console.print(f"\n[bold]Sample duplicate pairs removed:[/bold]")
-        for i, pair in enumerate(report['duplicate_pairs'][:5], 1):
-            console.print(f"{i}. '{pair['task1']['title']}' vs '{pair['task2']['title']}' (similarity: {pair['similarity']:.2f})")
+    if report["duplicate_pairs"]:
+        console.print("\n[bold]Sample duplicate pairs removed:[/bold]")
+        for i, pair in enumerate(report["duplicate_pairs"][:5], 1):
+            console.print(
+                f"{i}. '{pair['task1']['title']}' vs '{pair['task2']['title']}' (similarity: {pair['similarity']:.2f})"
+            )
 
 
-@cli.command('task-stats')
-@click.option('--days', default=7, help='Number of days to analyze')
+@cli.command("task-stats")
+@click.option("--days", default=7, help="Number of days to analyze")
 def task_stats(days):
     """Show task-based productivity statistics."""
     from patcha.summary import TaskSummarizer
@@ -1515,7 +1848,9 @@ def task_stats(days):
     task_store = TaskStore()
     summarizer = TaskSummarizer(task_store)
 
-    console.print(f"[bold cyan]Task Productivity Analysis - Last {days} days[/bold cyan]")
+    console.print(
+        f"[bold cyan]Task Productivity Analysis - Last {days} days[/bold cyan]"
+    )
 
     trends = summarizer.get_productivity_trends(days)
 
@@ -1526,24 +1861,34 @@ def task_stats(days):
     period = trends["period"]
     averages = trends["averages"]
 
-    console.print(f"\n[bold]Period:[/bold] {period['start_date']} to {period['end_date']}")
+    console.print(
+        f"\n[bold]Period:[/bold] {period['start_date']} to {period['end_date']}"
+    )
     console.print(f"[bold]Total Tasks:[/bold] {trends['total_tasks']}")
-    console.print(f"[bold]Total Completed:[/bold] {trends['total_completed']} ({trends['total_completed']/trends['total_tasks']*100:.1f}%)")
+    console.print(
+        f"[bold]Total Completed:[/bold] {trends['total_completed']} ({trends['total_completed'] / trends['total_tasks'] * 100:.1f}%)"
+    )
 
-    console.print(f"\n[bold]Daily Averages:[/bold]")
+    console.print("\n[bold]Daily Averages:[/bold]")
     console.print(f"Tasks per day: {averages['daily_tasks']:.1f}")
     console.print(f"Completion rate: {averages['completion_rate']:.1%}")
-    console.print(f"Time per day: {averages['daily_time_minutes']:.1f} minutes ({averages['daily_time_minutes']/60:.1f} hours)")
+    console.print(
+        f"Time per day: {averages['daily_time_minutes']:.1f} minutes ({averages['daily_time_minutes'] / 60:.1f} hours)"
+    )
 
-    if trends.get('most_productive_day'):
+    if trends.get("most_productive_day"):
         console.print(f"Most productive day: {trends['most_productive_day']}")
 
-    recent_completion_rates = trends['trends']['completion_rates'][-7:]
-    recent_task_counts = trends['trends']['daily_task_counts'][-7:]
+    recent_completion_rates = trends["trends"]["completion_rates"][-7:]
+    recent_task_counts = trends["trends"]["daily_task_counts"][-7:]
 
-    console.print(f"\n[bold]Recent Trends (Last 7 days):[/bold]")
-    console.print(f"Average completion rate: {sum(recent_completion_rates)/len(recent_completion_rates):.1%}")
-    console.print(f"Average daily tasks: {sum(recent_task_counts)/len(recent_task_counts):.1f}")
+    console.print("\n[bold]Recent Trends (Last 7 days):[/bold]")
+    console.print(
+        f"Average completion rate: {sum(recent_completion_rates) / len(recent_completion_rates):.1%}"
+    )
+    console.print(
+        f"Average daily tasks: {sum(recent_task_counts) / len(recent_task_counts):.1f}"
+    )
 
     if len(recent_completion_rates) >= 4:
         early_avg = sum(recent_completion_rates[:3]) / 3
@@ -1557,17 +1902,27 @@ def task_stats(days):
 
 
 @cli.command()
-@click.option("--date", "-d", type=click.DateTime(formats=["%Y-%m-%d"]),
-              default=None, help="Date to analyze (default: today)")
-@click.option("--use-graph", "-g", is_flag=True,
-              help="Use graph RAG for enhanced context")
+@click.option(
+    "--date",
+    "-d",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=None,
+    help="Date to analyze (default: today)",
+)
+@click.option(
+    "--use-graph", "-g", is_flag=True, help="Use graph RAG for enhanced context"
+)
 def analyze_graph(date: Optional[datetime], use_graph: bool):
     """Analyze activities using graph RAG for enhanced insights."""
     target_date = date.date() if date else datetime.now().date()
 
     try:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-            task = progress.add_task("Analyzing activities with graph RAG...", total=None)
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
+            task = progress.add_task(
+                "Analyzing activities with graph RAG...", total=None
+            )
 
             vector_store = _get_vector_store()
             preprocessor = _get_preprocessor()
@@ -1580,39 +1935,50 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
                 console.print(f"[yellow]No activities found for {target_date}[/yellow]")
                 return
 
-            progress.update(task, description="Converting activities to Event objects...")
+            progress.update(
+                task, description="Converting activities to Event objects..."
+            )
 
             from patcha.db.models import Event, EventType
+
             activities = []
             for activity_data in activities_data:
                 try:
-                    payload = activity_data.get('payload', {})
+                    payload = activity_data.get("payload", {})
                     event = Event(
-                        type=EventType(payload.get('type', 'browser')),
-                        timestamp=datetime.fromisoformat(payload.get('timestamp', datetime.now().isoformat())),
-                        source=payload.get('source', 'unknown'),
-                        raw_content=payload.get('content', ''),
-                        summary=payload.get('summary', ''),
-                        project=payload.get('project'),
-                        metadata=payload
+                        type=EventType(payload.get("type", "browser")),
+                        timestamp=datetime.fromisoformat(
+                            payload.get("timestamp", datetime.now().isoformat())
+                        ),
+                        source=payload.get("source", "unknown"),
+                        raw_content=payload.get("content", ""),
+                        summary=payload.get("summary", ""),
+                        project=payload.get("project"),
+                        metadata=payload,
                     )
-                    if 'vector' in activity_data:
-                        event.embedding = activity_data['vector']
+                    if "vector" in activity_data:
+                        event.embedding = activity_data["vector"]
                     activities.append(event)
                 except Exception as e:
                     print(f"Error converting activity data: {e}")
-                    activities.append(activity_data['payload'])
+                    activities.append(activity_data["payload"])
 
-            progress.update(task, description="Extracting entities and relationships...")
+            progress.update(
+                task, description="Extracting entities and relationships..."
+            )
 
             enhanced_activities = graph_rag.enhance_activity_processing(activities)
 
             progress.update(task, description="Generating enhanced summary...")
 
             if use_graph:
-                summary = graph_rag.generate_enhanced_summary_with_graph(enhanced_activities, target_date)
+                summary = graph_rag.generate_enhanced_summary_with_graph(
+                    enhanced_activities, target_date
+                )
             else:
-                summaries = [activity.summary or "No summary" for activity in enhanced_activities]
+                summaries = [
+                    activity.summary or "No summary" for activity in enhanced_activities
+                ]
                 summary = f"Completed {len(enhanced_activities)} activities: {'; '.join(summaries[:5])}"
 
             progress.update(task, description="Getting knowledge graph insights...")
@@ -1622,11 +1988,11 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
         console.print(f"\n[bold]Activity Analysis for {target_date}[/bold]")
         console.print("=" * 50)
 
-        console.print(f"\n[bold cyan]Enhanced Summary:[/bold cyan]")
+        console.print("\n[bold cyan]Enhanced Summary:[/bold cyan]")
         console.print(Panel(summary, expand=False))
 
         stats = insights["stats"]
-        console.print(f"\n[bold cyan]Knowledge Graph Statistics:[/bold cyan]")
+        console.print("\n[bold cyan]Knowledge Graph Statistics:[/bold cyan]")
 
         stats_table = Table(show_header=True, header_style="bold magenta")
         stats_table.add_column("Metric", style="cyan")
@@ -1641,7 +2007,7 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
         console.print(stats_table)
 
         if insights["most_connected_entities"]:
-            console.print(f"\n[bold cyan]Most Connected Entities:[/bold cyan]")
+            console.print("\n[bold cyan]Most Connected Entities:[/bold cyan]")
 
             entities_table = Table(show_header=True, header_style="bold magenta")
             entities_table.add_column("Entity", style="cyan")
@@ -1650,15 +2016,13 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
 
             for entity in insights["most_connected_entities"][:5]:
                 entities_table.add_row(
-                    entity["name"],
-                    entity["type"].title(),
-                    str(entity["connections"])
+                    entity["name"], entity["type"].title(), str(entity["connections"])
                 )
 
             console.print(entities_table)
 
         if insights["recent_entities"]:
-            console.print(f"\n[bold cyan]Recently Mentioned Entities:[/bold cyan]")
+            console.print("\n[bold cyan]Recently Mentioned Entities:[/bold cyan]")
 
             recent_table = Table(show_header=True, header_style="bold magenta")
             recent_table.add_column("Entity", style="cyan")
@@ -1667,12 +2031,14 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
             recent_table.add_column("Last Seen", style="blue")
 
             for entity in insights["recent_entities"][:5]:
-                last_seen = datetime.fromisoformat(entity["last_seen"]).strftime("%Y-%m-%d %H:%M")
+                last_seen = datetime.fromisoformat(entity["last_seen"]).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
                 recent_table.add_row(
                     entity["name"],
                     entity["type"].title(),
                     str(entity["mentions"]),
-                    last_seen
+                    last_seen,
                 )
 
             console.print(recent_table)
@@ -1688,7 +2054,9 @@ def analyze_graph(date: Optional[datetime], use_graph: bool):
 def search_graph(query: str, limit: int, date_range: int):
     """Search activities using graph RAG for enhanced context."""
     try:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
             task = progress.add_task("Searching with graph RAG...", total=None)
 
             vector_store = _get_vector_store()
@@ -1705,7 +2073,9 @@ def search_graph(query: str, limit: int, date_range: int):
 
             progress.update(task, description="Searching vector database...")
 
-            vector_results = vector_store.search_events(query_embedding, limit=limit * 2)
+            vector_results = vector_store.search_events(
+                query_embedding, limit=limit * 2
+            )
 
             if not vector_results:
                 console.print(f"[yellow]No results found for query: {query}[/yellow]")
@@ -1717,14 +2087,16 @@ def search_graph(query: str, limit: int, date_range: int):
             for result in vector_results[:5]:
                 event = Event(
                     type=EventType(result.get("type", "browser")),
-                    timestamp=datetime.fromisoformat(result.get("timestamp", datetime.now().isoformat())),
+                    timestamp=datetime.fromisoformat(
+                        result.get("timestamp", datetime.now().isoformat())
+                    ),
                     source=result.get("source", "unknown"),
                     raw_content=result.get("content", ""),
                     summary=result.get("summary", ""),
                     project=result.get("project"),
-                    metadata=result
+                    metadata=result,
                 )
-                if hasattr(result, 'vector'):
+                if hasattr(result, "vector"):
                     event.embedding = result.vector
                 query_activities.append(event)
 
@@ -1761,31 +2133,46 @@ def search_graph(query: str, limit: int, date_range: int):
                 results_table.add_row(
                     date_str,
                     activity.get("type", "Unknown"),
-                    activity.get("summary", "No summary")[:60] + ("..." if len(activity.get("summary", "")) > 60 else ""),
-                    activity.get("project", "None") or "None"
+                    activity.get("summary", "No summary")[:60]
+                    + ("..." if len(activity.get("summary", "")) > 60 else ""),
+                    activity.get("project", "None") or "None",
                 )
 
             console.print(results_table)
 
-            console.print(f"\n[bold cyan]Context Information:[/bold cyan]")
+            console.print("\n[bold cyan]Context Information:[/bold cyan]")
             context_info = Table(show_header=False)
             context_info.add_column("Metric", style="cyan")
             context_info.add_column("Value", style="green")
 
-            context_info.add_row("Vector Results", str(len(enhanced_context.get("activities", []))))
-            context_info.add_row("Graph Entities", str(len(graph_context.related_entities) if graph_context else 0))
-            context_info.add_row("Graph Relationships", str(len(graph_context.relationships) if graph_context else 0))
-            context_info.add_row("Combined Score", f"{enhanced_context.get('combined_score', 0.0):.3f}")
+            context_info.add_row(
+                "Vector Results", str(len(enhanced_context.get("activities", [])))
+            )
+            context_info.add_row(
+                "Graph Entities",
+                str(len(graph_context.related_entities) if graph_context else 0),
+            )
+            context_info.add_row(
+                "Graph Relationships",
+                str(len(graph_context.relationships) if graph_context else 0),
+            )
+            context_info.add_row(
+                "Combined Score", f"{enhanced_context.get('combined_score', 0.0):.3f}"
+            )
 
             source_breakdown = enhanced_context.get("source_breakdown", {})
-            context_info.add_row("Vector Sources", str(source_breakdown.get("vector", 0)))
+            context_info.add_row(
+                "Vector Sources", str(source_breakdown.get("vector", 0))
+            )
             context_info.add_row("Graph Sources", str(source_breakdown.get("graph", 0)))
 
             console.print(context_info)
 
             if graph_context and graph_context.related_entities:
-                console.print(f"\n[bold cyan]Related Entities Found:[/bold cyan]")
-                entity_text = ", ".join([e.name for e in graph_context.related_entities[:10]])
+                console.print("\n[bold cyan]Related Entities Found:[/bold cyan]")
+                entity_text = ", ".join(
+                    [e.name for e in graph_context.related_entities[:10]]
+                )
                 console.print(Panel(entity_text, expand=False))
         else:
             console.print("[yellow]No activities found matching the query.[/yellow]")
@@ -1798,7 +2185,9 @@ def search_graph(query: str, limit: int, date_range: int):
 def graph_stats():
     """Display knowledge graph statistics and insights."""
     try:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
+        with Progress(
+            SpinnerColumn(), TextColumn("[progress.description]{task.description}")
+        ) as progress:
             task = progress.add_task("Loading knowledge graph...", total=None)
 
             knowledge_graph = KnowledgeGraph()
@@ -1820,7 +2209,7 @@ def graph_stats():
         console.print(overview_table)
 
         if stats["entity_types"]:
-            console.print(f"\n[bold cyan]Entity Types:[/bold cyan]")
+            console.print("\n[bold cyan]Entity Types:[/bold cyan]")
 
             entity_table = Table(show_header=True, header_style="bold magenta")
             entity_table.add_column("Type", style="cyan")
@@ -1828,18 +2217,18 @@ def graph_stats():
             entity_table.add_column("Percentage", style="yellow")
 
             total_entities = stats["total_entities"]
-            for entity_type, count in sorted(stats["entity_types"].items(), key=lambda x: x[1], reverse=True):
+            for entity_type, count in sorted(
+                stats["entity_types"].items(), key=lambda x: x[1], reverse=True
+            ):
                 percentage = (count / total_entities * 100) if total_entities > 0 else 0
                 entity_table.add_row(
-                    entity_type.title(),
-                    str(count),
-                    f"{percentage:.1f}%"
+                    entity_type.title(), str(count), f"{percentage:.1f}%"
                 )
 
             console.print(entity_table)
 
         if stats["relationship_types"]:
-            console.print(f"\n[bold cyan]Relationship Types:[/bold cyan]")
+            console.print("\n[bold cyan]Relationship Types:[/bold cyan]")
 
             rel_table = Table(show_header=True, header_style="bold magenta")
             rel_table.add_column("Type", style="cyan")
@@ -1847,19 +2236,27 @@ def graph_stats():
             rel_table.add_column("Percentage", style="yellow")
 
             total_relationships = stats["total_relationships"]
-            for rel_type, count in sorted(stats["relationship_types"].items(), key=lambda x: x[1], reverse=True):
-                percentage = (count / total_relationships * 100) if total_relationships > 0 else 0
+            for rel_type, count in sorted(
+                stats["relationship_types"].items(), key=lambda x: x[1], reverse=True
+            ):
+                percentage = (
+                    (count / total_relationships * 100)
+                    if total_relationships > 0
+                    else 0
+                )
                 rel_table.add_row(
-                    rel_type.title().replace("_", " "),
-                    str(count),
-                    f"{percentage:.1f}%"
+                    rel_type.title().replace("_", " "), str(count), f"{percentage:.1f}%"
                 )
 
             console.print(rel_table)
 
-        console.print(f"\n[bold cyan]Graph Health:[/bold cyan]")
+        console.print("\n[bold cyan]Graph Health:[/bold cyan]")
 
-        avg_connections = (stats["total_relationships"] * 2) / stats["total_entities"] if stats["total_entities"] > 0 else 0
+        avg_connections = (
+            (stats["total_relationships"] * 2) / stats["total_entities"]
+            if stats["total_entities"] > 0
+            else 0
+        )
 
         health_table = Table(show_header=False)
         health_table.add_column("Metric", style="cyan")

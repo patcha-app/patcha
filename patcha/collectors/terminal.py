@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -46,9 +45,7 @@ class TerminalCollector:
                 timestamp = file_mtime if since else datetime.now(timezone.utc)
 
                 terminal_cmd = TerminalCommand(
-                    command=command,
-                    timestamp=timestamp,
-                    working_dir=str(Path.cwd())
+                    command=command, timestamp=timestamp, working_dir=str(Path.cwd())
                 )
 
                 event = Event(
@@ -59,8 +56,10 @@ class TerminalCollector:
                     metadata={
                         "shell": "bash",
                         "command_length": len(command),
-                        "note": "bash_history_no_timestamps_recent_only" if since else "bash_history_no_timestamps"
-                    }
+                        "note": "bash_history_no_timestamps_recent_only"
+                        if since
+                        else "bash_history_no_timestamps",
+                    },
                 )
                 events.append(event)
 
@@ -98,9 +97,10 @@ class TerminalCollector:
                         timestamp_part = parts[0][2:].split(":")[0]
                         command = parts[1]
                         try:
-                            timestamp = datetime.fromtimestamp(int(timestamp_part), tz=timezone.utc)
-                        except:
-                            # If timestamp parsing fails, skip this entry
+                            timestamp = datetime.fromtimestamp(
+                                int(timestamp_part), tz=timezone.utc
+                            )
+                        except Exception:
                             continue
                     else:
                         continue
@@ -114,7 +114,7 @@ class TerminalCollector:
                 terminal_cmd = TerminalCommand(
                     command=command.strip(),
                     timestamp=timestamp,
-                    working_dir=str(Path.cwd())
+                    working_dir=str(Path.cwd()),
                 )
 
                 event = Event(
@@ -122,10 +122,7 @@ class TerminalCollector:
                     type=EventType.TERMINAL,
                     source="zsh",
                     raw_content=json.dumps(terminal_cmd.model_dump(), default=str),
-                    metadata={
-                        "shell": "zsh",
-                        "command_length": len(command)
-                    }
+                    metadata={"shell": "zsh", "command_length": len(command)},
                 )
                 events.append(event)
 
@@ -156,8 +153,10 @@ class TerminalCollector:
                     if line.strip().startswith("when: "):
                         try:
                             timestamp_str = line.strip().split("when: ")[1]
-                            timestamp = datetime.fromtimestamp(int(timestamp_str), tz=timezone.utc)
-                        except:
+                            timestamp = datetime.fromtimestamp(
+                                int(timestamp_str), tz=timezone.utc
+                            )
+                        except Exception:
                             pass
                         break
 
@@ -167,7 +166,7 @@ class TerminalCollector:
                 terminal_cmd = TerminalCommand(
                     command=command.strip(),
                     timestamp=timestamp,
-                    working_dir=str(Path.cwd())
+                    working_dir=str(Path.cwd()),
                 )
 
                 event = Event(
@@ -175,10 +174,7 @@ class TerminalCollector:
                     type=EventType.TERMINAL,
                     source="fish",
                     raw_content=json.dumps(terminal_cmd.model_dump(), default=str),
-                    metadata={
-                        "shell": "fish",
-                        "command_length": len(command)
-                    }
+                    metadata={"shell": "fish", "command_length": len(command)},
                 )
                 events.append(event)
 

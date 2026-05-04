@@ -14,7 +14,11 @@ from mcp.types import TextContent, Tool
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from patcha.db.retrieval.context import get_working_memory, get_recent_activity, search_activity
+from patcha.db.retrieval.context import (
+    get_working_memory,
+    get_recent_activity,
+    search_activity,
+)
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
 
@@ -143,14 +147,32 @@ def _build_http_app() -> Starlette:
 
 async def _serve_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
 
 
 @click.command()
-@click.option("--http", "transport", flag_value="http", default=False, help="Serve over HTTP instead of stdio.")
-@click.option("--stdio", "transport", flag_value="stdio", default=True, help="Serve over stdio (default).")
-@click.option("--port", default=7861, show_default=True, help="Port for HTTP transport.")
-@click.option("--host", default="127.0.0.1", show_default=True, help="Host for HTTP transport.")
+@click.option(
+    "--http",
+    "transport",
+    flag_value="http",
+    default=False,
+    help="Serve over HTTP instead of stdio.",
+)
+@click.option(
+    "--stdio",
+    "transport",
+    flag_value="stdio",
+    default=True,
+    help="Serve over stdio (default).",
+)
+@click.option(
+    "--port", default=7861, show_default=True, help="Port for HTTP transport."
+)
+@click.option(
+    "--host", default="127.0.0.1", show_default=True, help="Host for HTTP transport."
+)
 def main(transport: str, port: int, host: str) -> None:
     logging.basicConfig(level=logging.WARNING)
     if transport == "http":
