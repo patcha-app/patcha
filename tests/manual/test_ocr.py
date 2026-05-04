@@ -1,6 +1,6 @@
 import pytest
 
-from memorai.collectors.accessibility import AccessibilityCollector
+from patcha.collectors.accessibility import AccessibilityCollector
 
 
 def test_ocr_screen_capture():

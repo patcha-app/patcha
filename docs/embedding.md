@@ -1,6 +1,6 @@
 # Embedding Pipeline
 
-`memorai/process.py`
+`patcha/process.py`
 
 `EventPreprocessor` handles converting raw `Event` objects into vector embeddings ready for storage in Qdrant.
 

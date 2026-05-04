@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/../.."
-SRC="$ROOT/memorai/macos/ax_content.swift"
+SRC="$ROOT/patcha/macos/ax_content.swift"
 BIN="$ROOT/data/ax_content_diag"
 
 mkdir -p "$ROOT/data"

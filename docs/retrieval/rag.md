@@ -1,6 +1,6 @@
 # RAG System
 
-`memorai/db/retrieval/rag.py`, `memorai/db/retrieval/graphrag.py`
+`patcha/db/retrieval/rag.py`, `patcha/db/retrieval/graphrag.py`
 
 Two RAG implementations that augment task analysis and daily summaries with historical context pulled from the vector store.
 

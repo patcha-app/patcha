@@ -1,5 +1,5 @@
 [project]
-name = "memorai"
+name = "patcha"
 version = "0.1.0"
 description = "A localised observability for your computer."
 readme = "README.md"
@@ -29,8 +29,8 @@ dependencies = [
 ]
 
 [project.scripts]
-memorai = "memorai.cli:cli"
-memorai-mcp = "memorai.mcp_server:main"
+patcha = "patcha.cli:cli"
+patcha-mcp = "patcha.mcp_server:main"
 
 [dependency-groups]
 dev = [

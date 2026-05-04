@@ -1,6 +1,6 @@
 # Daily Compaction
 
-`memorai/utils/compaction.py`
+`patcha/utils/compaction.py`
 
 Compaction is the nightly process that converts raw activity events from the previous day(s) into structured `Task` objects and removes the raw events from Qdrant.
 

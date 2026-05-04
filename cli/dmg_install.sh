@@ -4,22 +4,22 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="/usr/local/bin"
 HOME_DIR="$HOME"
-LOG_DIR="$HOME/.memorai/logs"
-PLIST="$HOME/Library/LaunchAgents/com.memorai.agent.plist"
+LOG_DIR="$HOME/.patcha/logs"
+PLIST="$HOME/Library/LaunchAgents/com.patcha.agent.plist"
 
-echo "Installing memorai..."
+echo "Installing patcha..."
 
 # Copy binaries
 if [ ! -w "$INSTALL_DIR" ]; then
     echo "Installing to $INSTALL_DIR (requires sudo)..."
-    sudo cp "$SCRIPT_DIR/memorai" "$INSTALL_DIR/"
-    sudo cp "$SCRIPT_DIR/memorai-mcp" "$INSTALL_DIR/"
+    sudo cp "$SCRIPT_DIR/patcha" "$INSTALL_DIR/"
+    sudo cp "$SCRIPT_DIR/patcha-mcp" "$INSTALL_DIR/"
 else
-    cp "$SCRIPT_DIR/memorai" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/memorai-mcp" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/patcha" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/patcha-mcp" "$INSTALL_DIR/"
 fi
 
-chmod +x "$INSTALL_DIR/memorai" "$INSTALL_DIR/memorai-mcp"
+chmod +x "$INSTALL_DIR/patcha" "$INSTALL_DIR/patcha-mcp"
 
 # Create log directory
 mkdir -p "$LOG_DIR"
@@ -34,11 +34,11 @@ cat > "$PLIST" <<EOF
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.memorai.agent</string>
+    <string>com.patcha.agent</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_DIR/memorai</string>
+        <string>$INSTALL_DIR/patcha</string>
         <string>start-daemon</string>
     </array>
 
@@ -71,9 +71,9 @@ launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
 echo ""
-echo "memorai installed successfully."
-echo "  CLI:    $INSTALL_DIR/memorai"
-echo "  MCP:    $INSTALL_DIR/memorai-mcp"
-echo "  Daemon: running via launchd (com.memorai.agent)"
+echo "patcha installed successfully."
+echo "  CLI:    $INSTALL_DIR/patcha"
+echo "  MCP:    $INSTALL_DIR/patcha-mcp"
+echo "  Daemon: running via launchd (com.patcha.agent)"
 echo ""
-echo "Run 'memorai --help' to get started."
+echo "Run 'patcha --help' to get started."

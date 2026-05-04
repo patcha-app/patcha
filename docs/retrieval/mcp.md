@@ -1,8 +1,8 @@
 # MCP Server
 
-`memorai/mcp_server.py`
+`patcha/mcp_server.py`
 
-Exposes memorai's retrieval functions as [Model Context Protocol](https://modelcontextprotocol.io) tools so any MCP-compatible AI client (e.g. Claude Desktop) can query the user's activity history directly.
+Exposes patcha's retrieval functions as [Model Context Protocol](https://modelcontextprotocol.io) tools so any MCP-compatible AI client (e.g. Claude Desktop) can query the user's activity history directly.
 
 The MCP server is a **read-only consumer** — it never writes to Qdrant. The `ActivityDaemon` runs as a separate process and populates the vector store; the MCP server only retrieves from it.
 
@@ -24,8 +24,8 @@ Returns a compact, deduplicated summary of the user's recent device activity.
 ```
 # Working memory (last 15m)
 [14:32] terminal: git status
-[14:33] browser: memorai docs | github.com
-[14:35] git_commit: fix: collector dedup | memorai/collectors/accessibility.py
+[14:33] browser: patcha docs | github.com
+[14:35] git_commit: fix: collector dedup | patcha/collectors/accessibility.py
 ```
 
 Use this to understand what the user is currently working on before answering questions or making suggestions.
@@ -79,7 +79,7 @@ Same pipeline as `get_working_memory` but over a longer window. Uses the same co
 # Recent activity (last 3h)
 [12:01] terminal: uv run pytest
 [12:15] browser: Python asyncio docs | docs.python.org
-[13:40] git_commit: feat: mcp http transport | memorai/mcp_server.py
+[13:40] git_commit: feat: mcp http transport | patcha/mcp_server.py
 ```
 
 Use this for broader historical context — what the user has been working on over the past few hours, not just the last few minutes.
@@ -95,8 +95,8 @@ The server supports two transports selectable at startup.
 Used for Claude Desktop and most MCP clients. The server reads/writes MCP protocol messages over stdin/stdout.
 
 ```
-memorai-mcp
-memorai-mcp --stdio
+patcha-mcp
+patcha-mcp --stdio
 ```
 
 ### HTTP
@@ -104,8 +104,8 @@ memorai-mcp --stdio
 Serves over HTTP using Starlette + uvicorn. Useful for non-stdio MCP clients or local debugging.
 
 ```
-memorai-mcp --http
-memorai-mcp --http --port 7861 --host 127.0.0.1
+patcha-mcp --http
+patcha-mcp --http --port 7861 --host 127.0.0.1
 ```
 
 The MCP endpoint is mounted at `/mcp`. Uses `StreamableHTTPSessionManager` in stateless mode.
@@ -137,7 +137,7 @@ The MCP endpoint is mounted at `/mcp`. Uses `StreamableHTTPSessionManager` in st
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | required | Used by `EventPreprocessor` for query embeddings |
 | `QDRANT_URL` | `http://localhost:6333` | Remote Qdrant instance |
-| `QDRANT_PATH` | `~/.memorai/qdrant_storage` | Local Qdrant storage (used if `QDRANT_URL` is unset) |
+| `QDRANT_PATH` | `~/.patcha/qdrant_storage` | Local Qdrant storage (used if `QDRANT_URL` is unset) |
 
 ### Claude Desktop
 
@@ -146,9 +146,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "memorai": {
+    "patcha": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/memorai-3", "memorai-mcp"]
+      "args": ["run", "--project", "/path/to/patcha-3", "patcha-mcp"]
     }
   }
 }

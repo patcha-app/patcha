@@ -789,7 +789,7 @@ wheels = [
 ]
 
 [[package]]
-name = "memorai"
+name = "patcha"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

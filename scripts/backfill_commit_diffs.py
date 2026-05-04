@@ -9,8 +9,8 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue, PointStruct
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memorai.db.store import VectorStore
-from memorai.process import EventPreprocessor
+from patcha.db.store import VectorStore
+from patcha.process import EventPreprocessor
 
 
 def _build_embedding_text(data: dict, project: str) -> str:

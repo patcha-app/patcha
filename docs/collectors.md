@@ -1,6 +1,6 @@
 # Collectors
 
-`memorai/collectors/`
+`patcha/collectors/`
 
 Collectors are responsible for pulling raw activity data from various sources on the user's machine and converting them into `Event` objects. Each collector is independent and can be polled on its own schedule.
 
@@ -73,7 +73,7 @@ This is called on a periodic interval by the daemon to detect active staging act
 
 Captures on-screen text content using macOS Accessibility APIs and OCR as a fallback.
 
-Requires macOS Accessibility permission for the terminal or memorai process (`System Settings > Privacy & Security > Accessibility`).
+Requires macOS Accessibility permission for the terminal or patcha process (`System Settings > Privacy & Security > Accessibility`).
 
 **How it works:**
 - Compiles two Swift binaries on first run (if not already built): `ax_content.swift` (AX API) and `ocr.swift` (Vision framework OCR)

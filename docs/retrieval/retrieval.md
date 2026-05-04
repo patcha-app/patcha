@@ -1,6 +1,6 @@
 # Context Retrieval
 
-`memorai/db/retrieval/context.py`
+`patcha/db/retrieval/context.py`
 
 The retrieval layer is the primary interface between the vector store and AI agent consumers. It provides three read functions that translate raw Qdrant records into human-readable text blocks.
 
@@ -18,8 +18,8 @@ Output example:
 ```
 # Working memory (last 15m)
 [14:32] terminal: git status
-[14:33] browser: memorai docs | github.com
-[14:35] git_commit: fix: collector dedup | memorai/collectors/accessibility.py
+[14:33] browser: patcha docs | github.com
+[14:35] git_commit: fix: collector dedup | patcha/collectors/accessibility.py
 ```
 
 ### `get_recent_activity(store, hours=3)`

@@ -1,4 +1,4 @@
-Fetch the user's recent activity from memorai and produce a completed-task digest.
+Fetch the user's recent activity from patcha and produce a completed-task digest.
 
 Steps:
 1. Call `get_working_memory` with `minutes: 60` to get the last hour of activity.
