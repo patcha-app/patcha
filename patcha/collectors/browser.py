@@ -1,10 +1,11 @@
 import json
+import logging
+import shutil
 import sqlite3
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
-import os
 
 from patcha.db.models import Event, EventType, BrowserActivity
 from patcha.config import config
@@ -13,6 +14,7 @@ from patcha.config import config
 class BrowserCollector:
     def __init__(self):
         self.history_paths = config.browser_history_paths
+        self.logger = logging.getLogger(__name__)
 
     def _enhance_youtube_title(self, title: str, url: str) -> str:
         if "youtube.com/watch" not in url and "youtu.be/" not in url:
@@ -41,7 +43,7 @@ class BrowserCollector:
         events = []
         try:
             temp_path = chrome_path.with_suffix(".tmp")
-            os.system(f"cp '{chrome_path}' '{temp_path}'")
+            shutil.copy2(chrome_path, temp_path)
 
             conn = sqlite3.connect(temp_path)
             cursor = conn.cursor()
@@ -101,7 +103,7 @@ class BrowserCollector:
             temp_path.unlink()
 
         except Exception as e:
-            print(f"Error collecting Chrome history: {e}")
+            self.logger.warning("Error collecting Chrome history: %s", e)
 
         return events
 
@@ -113,7 +115,7 @@ class BrowserCollector:
         events = []
         try:
             temp_path = safari_path.with_suffix(".tmp")
-            os.system(f"cp '{safari_path}' '{temp_path}'")
+            shutil.copy2(safari_path, temp_path)
 
             conn = sqlite3.connect(temp_path)
             cursor = conn.cursor()
@@ -158,7 +160,7 @@ class BrowserCollector:
             temp_path.unlink()
 
         except Exception as e:
-            print(f"Error collecting Safari history: {e}")
+            self.logger.warning("Error collecting Safari history: %s", e)
 
         return events
 
@@ -170,7 +172,7 @@ class BrowserCollector:
         events = []
         try:
             temp_path = arc_path.with_suffix(".tmp")
-            os.system(f"cp '{arc_path}' '{temp_path}'")
+            shutil.copy2(arc_path, temp_path)
 
             conn = sqlite3.connect(temp_path)
             cursor = conn.cursor()
@@ -232,7 +234,7 @@ class BrowserCollector:
             temp_path.unlink()
 
         except Exception as e:
-            print(f"Error collecting Arc history: {e}")
+            self.logger.warning("Error collecting Arc history: %s", e)
 
         return events
 

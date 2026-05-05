@@ -45,6 +45,41 @@ The screen/window collectors require Accessibility access. Go to:
 
 **System Settings > Privacy & Security > Accessibility** and add your terminal app (or the patcha binary if using the built executable).
 
+## macOS Distribution
+
+The `swift/` directory contains a native macOS menu bar app that manages the daemon for you — no terminal required.
+
+**What it does:**
+- Runs entirely in the menu bar (no dock icon)
+- Spawns the Python daemon as a child process on launch
+- Requests Accessibility and Screen Recording permissions on first run
+- Auto-heals the daemon if it crashes (exponential backoff: 5s → 10s → 20s → 40s → 80s, up to 5 attempts)
+- Gracefully shuts the daemon down when you quit the app
+
+**How the Swift app runs Python:**
+
+The app uses `Foundation.Process` (macOS's subprocess API) to fork a child process. It resolves the daemon binary in this order:
+
+1. `Patcha.app/Contents/Resources/patcha` — the PyInstaller-bundled standalone binary (used in production DMG). Swift runs it directly; Python is embedded inside it.
+2. `PATCHA_DAEMON_PATH` env var — custom binary override.
+3. Dev fallback — finds `uv` in PATH and runs `uv run python main.py` from the project directory.
+
+After launch, a `DispatchSourceProcess` watches the child PID at the kernel level and fires immediately on exit — no polling.
+
+**Build:**
+
+```bash
+cd swift
+swift build -c release
+bash build_app.sh   # produces dist/Patcha.app
+```
+
+Or run the full build (Python executables + DMG):
+
+```bash
+bash build.sh
+```
+
 ## Getting started
 
 Start the background daemon:

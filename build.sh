@@ -11,9 +11,15 @@ with open('pyproject.toml', 'rb') as f:
 
 echo "Building patcha ${VERSION}..."
 
-# Step 1: compile Swift binaries
+# Step 1: build native macOS menu bar app
 echo ""
-echo "[1/4] Compiling Swift binaries..."
+echo "[1/5] Building Patcha.app (Swift menu bar app)..."
+bash swift/build_app.sh
+echo "  Patcha.app built."
+
+# Step 2: compile Swift helper binaries (accessibility helpers)
+echo ""
+echo "[2/5] Compiling Swift helper binaries..."
 mkdir -p data
 
 if ! command -v swiftc &>/dev/null; then
@@ -32,11 +38,11 @@ swiftc patcha/macos/ocr.swift \
     -framework Foundation \
     -o data/ocr
 
-echo "  Swift binaries compiled."
+echo "  Swift helper binaries compiled."
 
-# Step 2: PyInstaller builds
+# Step 4: PyInstaller builds
 echo ""
-echo "[2/4] Building Python executables..."
+echo "[4/5] Building Python executables..."
 rm -rf dist/bin build
 
 uv run pyinstaller patcha.spec \
@@ -49,23 +55,24 @@ uv run pyinstaller patcha_mcp.spec \
 
 echo "  Python executables built."
 
-# Step 3: Assemble .dmg staging area
+# Step 5: Assemble .dmg staging area
 echo ""
-echo "[3/4] Staging .dmg contents..."
+echo "[5/5] Staging .dmg contents..."
 DMG_STAGE="dist/dmg_stage/patcha"
 rm -rf dist/dmg_stage
 mkdir -p "$DMG_STAGE"
 
 cp dist/bin/patcha "$DMG_STAGE/"
 cp dist/bin/patcha-mcp "$DMG_STAGE/"
+cp -r dist/Patcha.app "$DMG_STAGE/"
 cp cli/dmg_install.sh "$DMG_STAGE/install.sh"
 chmod +x "$DMG_STAGE/install.sh"
 
 echo "  Contents staged at $DMG_STAGE"
 
-# Step 4: Create .dmg
+# Create .dmg
 echo ""
-echo "[4/4] Creating .dmg..."
+echo "Creating .dmg..."
 DMG_PATH="dist/patcha-${VERSION}.dmg"
 rm -f "$DMG_PATH"
 

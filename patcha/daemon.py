@@ -29,11 +29,19 @@ class ActivityDaemon:
         config.data_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
 
-        self.git_collector = GitCollector()
-        self.browser_collector = BrowserCollector()
-        self.terminal_collector = TerminalCollector()
-        self.window_collector = WindowCollector()
-        self.accessibility_collector = AccessibilityCollector()
+        self.git_collector = GitCollector() if config.enable_git_collector else None
+        self.browser_collector = (
+            BrowserCollector() if config.enable_browser_collector else None
+        )
+        self.terminal_collector = (
+            TerminalCollector() if config.enable_terminal_collector else None
+        )
+        self.window_collector = (
+            WindowCollector() if config.enable_window_collector else None
+        )
+        self.accessibility_collector = (
+            AccessibilityCollector() if config.enable_accessibility_collector else None
+        )
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
         self.daily_compactor = DailyCompactor()
@@ -52,9 +60,26 @@ class ActivityDaemon:
         self.last_collection_time = self.start_time
 
         self.logger.info(
-            f"Starting Activity Daemon (poll interval: {self.poll_interval}s)"
+            "Starting Activity Daemon (pid=%d, poll interval: %ds)",
+            os.getpid(),
+            self.poll_interval,
         )
-        self.logger.info(f"Will only collect events after: {self.start_time}")
+        self.logger.info("Will only collect events after: %s", self.start_time)
+
+        active_collectors = [
+            name
+            for name, obj in [
+                ("git", self.git_collector),
+                ("browser", self.browser_collector),
+                ("terminal", self.terminal_collector),
+                ("window", self.window_collector),
+                ("accessibility", self.accessibility_collector),
+            ]
+            if obj is not None
+        ]
+        self.logger.info(
+            "Active collectors: %s", ", ".join(active_collectors) or "none"
+        )
 
         if not config.openai_api_key:
             self.logger.error(
@@ -73,14 +98,16 @@ class ActivityDaemon:
         with open(pid_file, "w") as f:
             json.dump(daemon_info, f)
 
-        self.accessibility_collector.start_recording()
+        if self.accessibility_collector:
+            self.accessibility_collector.start_recording()
         try:
             while self.running:
                 self.collect_and_process()
                 if self.running:
                     time.sleep(self.poll_interval)
         finally:
-            self.accessibility_collector.stop_recording()
+            if self.accessibility_collector:
+                self.accessibility_collector.stop_recording()
             if pid_file.exists():
                 pid_file.unlink()
             self.logger.info("Daemon stopped")
@@ -100,24 +127,34 @@ class ActivityDaemon:
 
             all_events = []
 
-            try:
-                self.window_collector.record_current_window()
-            except Exception as e:
-                self.logger.debug(f"Window snapshot skipped: {e}")
+            if self.window_collector:
+                try:
+                    self.window_collector.record_current_window()
+                except Exception as e:
+                    self.logger.debug(f"Window snapshot skipped: {e}")
 
-            try:
-                self.git_collector.record_staging_snapshot()
-            except Exception as e:
-                self.logger.debug(f"Git staging snapshot skipped: {e}")
+            if self.git_collector:
+                try:
+                    self.git_collector.record_staging_snapshot()
+                except Exception as e:
+                    self.logger.debug(f"Git staging snapshot skipped: {e}")
 
-            sources = [
-                ("git", self.git_collector.collect_commits),
-                ("git_staged", self.git_collector.collect_staging_events),
-                ("browser", self.browser_collector.collect_all),
-                ("terminal", self.terminal_collector.collect_all),
-                ("window", self.window_collector.collect_windows),
-                ("accessibility", self.accessibility_collector.collect_screen_text),
-            ]
+            sources = []
+            if self.git_collector:
+                sources.append(("git", self.git_collector.collect_commits))
+                sources.append(
+                    ("git_staged", self.git_collector.collect_staging_events)
+                )
+            if self.browser_collector:
+                sources.append(("browser", self.browser_collector.collect_all))
+            if self.terminal_collector:
+                sources.append(("terminal", self.terminal_collector.collect_all))
+            if self.window_collector:
+                sources.append(("window", self.window_collector.collect_windows))
+            if self.accessibility_collector:
+                sources.append(
+                    ("accessibility", self.accessibility_collector.collect_screen_text)
+                )
 
             for source_name, collector_func in sources:
                 try:

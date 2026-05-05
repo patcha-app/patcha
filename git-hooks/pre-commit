@@ -3,4 +3,4 @@ set -e
 
 uv run ruff check .
 uv run ruff format .
-uv run --group dev pytest
+uv run python -m pytest

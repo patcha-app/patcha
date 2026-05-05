@@ -29,9 +29,17 @@ class Config(BaseModel):
         "firefox": "~/Library/Application Support/Firefox/Profiles/*/places.sqlite",
         "safari": "~/Library/Safari/History.db",
     }
+    enable_git_collector: bool = True
+    enable_browser_collector: bool = True
+    enable_terminal_collector: bool = True
+    enable_window_collector: bool = True
+    enable_accessibility_collector: bool = True
 
     @classmethod
     def from_env(cls) -> "Config":
+        def _bool(key: str, default: bool = True) -> bool:
+            return os.getenv(key, str(default)).lower() not in ("false", "0", "no")
+
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
@@ -40,6 +48,11 @@ class Config(BaseModel):
             ),
             data_dir=Path(os.getenv("DATA_DIR", str(_DEFAULT_patcha_DIR / "data"))),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            enable_git_collector=_bool("ENABLE_GIT_COLLECTOR"),
+            enable_browser_collector=_bool("ENABLE_BROWSER_COLLECTOR"),
+            enable_terminal_collector=_bool("ENABLE_TERMINAL_COLLECTOR"),
+            enable_window_collector=_bool("ENABLE_WINDOW_COLLECTOR"),
+            enable_accessibility_collector=_bool("ENABLE_ACCESSIBILITY_COLLECTOR"),
         )
 
 
