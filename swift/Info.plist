@@ -24,6 +24,8 @@
     <string>Patcha needs Accessibility access to track active windows and screen content.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Patcha needs Screen Recording to capture on-screen text.</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
