@@ -1,7 +1,10 @@
 <svg width="745" height="745" viewBox="0 0 745 745" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="439.945" y="139.613" width="144.559" height="148.895" stroke="black" stroke-width="46"/>
-<rect x="180.294" y="139.937" width="144.559" height="148.895" stroke="black" stroke-width="46"/>
-<rect x="358.64" y="308.938" width="47.1257" height="25.0122" fill="black"/>
-<rect x="363.879" y="308.938" width="36.6533" height="35.0171" fill="black"/>
-<rect x="369.116" y="323.942" width="26.181" height="25.0122" fill="black"/>
+<rect x="88" y="372.465" width="589" height="324.824" fill="white"/>
+<rect x="230.918" y="679.967" width="99.6102" height="64.9649" fill="white"/>
+<rect x="443.132" y="679.967" width="99.6102" height="64.9649" fill="white"/>
+<path d="M677 376.797H88V51.9727H677V376.797ZM358.64 333.95H363.879V343.955H369.116V348.954H395.297V343.955H400.532V333.95H405.766V308.938H358.64V333.95ZM157.294 311.832H347.853V116.938H157.294V311.832ZM416.945 311.508H607.504V116.613H416.945V311.508ZM301.853 265.832H203.294V162.938H301.853V265.832ZM561.504 265.508H462.945V162.613H561.504V265.508Z" fill="white"/>
+<rect x="88" y="411.445" width="86.6176" height="251.198" fill="white"/>
+<rect x="590.382" y="402.782" width="86.6176" height="251.198" fill="white"/>
+<rect x="88" width="103.941" height="103.944" fill="white"/>
+<rect x="573.059" width="103.941" height="103.944" fill="white"/>
 </svg>

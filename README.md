@@ -60,11 +60,18 @@ The `swift/` directory contains a native macOS menu bar app that manages the dae
 
 The app uses `Foundation.Process` (macOS's subprocess API) to fork a child process. It resolves the daemon binary in this order:
 
-1. `Patcha.app/Contents/Resources/patcha` — the PyInstaller-bundled standalone binary (used in production DMG). Swift runs it directly; Python is embedded inside it.
+1. `Patcha.app/Contents/Resources/patcha` — the PyInstaller-bundled standalone binary (used in production DMG). Swift runs it directly; Python is embedded inside it. No `uv` or Python installation required.
 2. `PATCHA_DAEMON_PATH` env var — custom binary override.
-3. Dev fallback — finds `uv` in PATH and runs `uv run python main.py` from the project directory.
+3. Dev fallback — finds `uv` in `$PATH` and runs `uv run python main.py` from the project directory. If `uv` is not installed, the app shows an alert and quits.
 
 After launch, a `DispatchSourceProcess` watches the child PID at the kernel level and fires immediately on exit — no polling.
+
+**`uv` requirement:**
+
+| Mode | `uv` needed? |
+|------|-------------|
+| Production DMG (full `build.sh`) | No — Python is bundled inside the `patcha` binary |
+| Dev (`swift/build_app.sh` only) | Yes — install with `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 
 **Build:**
 

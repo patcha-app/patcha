@@ -1,5 +1,6 @@
-import Foundation
+import AppKit
 import Combine
+import Foundation
 
 enum DaemonStatus: Equatable {
     case stopped
@@ -61,21 +62,41 @@ class DaemonManager: ObservableObject {
     }
 
     private func launchProcess() {
-        let (execURL, args) = resolveDaemonPath()
+        let (execURL, args, workDir) = resolveDaemonPath()
+
+        guard FileManager.default.isExecutableFile(atPath: execURL.path) else {
+            NSLog("[DaemonManager] executable not found: %@", execURL.path)
+            scheduleRestart()
+            return
+        }
+
         let proc = Process()
         proc.executableURL = execURL
         proc.arguments = args
+        if let workDir {
+            proc.currentDirectoryURL = URL(fileURLWithPath: workDir)
+        }
 
         var env = ProcessInfo.processInfo.environment
-        if let home = env["HOME"] {
-            env["PATH"] = "\(home)/.local/bin:/usr/local/bin:/usr/bin:/bin"
-        }
+        let home = env["HOME"] ?? NSHomeDirectory()
+        let extraPaths = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         proc.environment = env
+
+        let errPipe = Pipe()
+        proc.standardError = errPipe
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if !data.isEmpty, let line = String(data: data, encoding: .utf8) {
+                NSLog("[patcha-daemon] %@", line)
+            }
+        }
 
         do {
             status = .starting
             try proc.run()
         } catch {
+            NSLog("[DaemonManager] launch failed: %@", error.localizedDescription)
             DispatchQueue.main.async { [weak self] in
                 self?.scheduleRestart()
             }
@@ -127,37 +148,45 @@ class DaemonManager: ObservableObject {
         }
     }
 
-    private func resolveDaemonPath() -> (URL, [String]) {
+    private func resolveDaemonPath() -> (URL, [String], String?) {
         if let bundleResource = Bundle.main.resourceURL {
             let bundledBinary = bundleResource.appendingPathComponent("patcha")
             if FileManager.default.isExecutableFile(atPath: bundledBinary.path) {
-                return (bundledBinary, [])
+                NSLog("[DaemonManager] using bundled binary: %@", bundledBinary.path)
+                return (bundledBinary, [], nil)
             }
         }
 
         if let envPath = ProcessInfo.processInfo.environment["PATCHA_DAEMON_PATH"] {
             let url = URL(fileURLWithPath: envPath)
             if FileManager.default.isExecutableFile(atPath: url.path) {
-                return (url, [])
+                NSLog("[DaemonManager] using PATCHA_DAEMON_PATH: %@", envPath)
+                return (url, [], nil)
             }
         }
 
-        let uvPath = findExecutable("uv") ?? "/usr/local/bin/uv"
-        let projectDir = defaultProjectDir()
+        let projectDir = detectProjectDir()
+        guard let uv = findExecutable("uv") else {
+            NSLog("[DaemonManager] uv not found in PATH — daemon cannot start")
+            DispatchQueue.main.async { DaemonManager.showUvMissingAlert() }
+            status = .failed
+            return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
+        }
+
+        NSLog("[DaemonManager] dev mode: uv=%@ project=%@", uv, projectDir)
         return (
-            URL(fileURLWithPath: uvPath),
-            ["run", "--project", projectDir, "python", "\(projectDir)/main.py"]
+            URL(fileURLWithPath: uv),
+            ["run", "python", "main.py"],
+            projectDir
         )
     }
 
     private func findExecutable(_ name: String) -> String? {
-        let searchPaths = [
-            (ProcessInfo.processInfo.environment["HOME"] ?? "") + "/.local/bin",
-            "/usr/local/bin",
-            "/opt/homebrew/bin",
-            "/usr/bin",
-        ]
-        for dir in searchPaths {
+        let env = ProcessInfo.processInfo.environment
+        let home = env["HOME"] ?? NSHomeDirectory()
+        var dirs = (env["PATH"] ?? "").split(separator: ":").map(String.init)
+        dirs += ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
+        for dir in dirs {
             let path = "\(dir)/\(name)"
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
@@ -166,8 +195,43 @@ class DaemonManager: ObservableObject {
         return nil
     }
 
-    private func defaultProjectDir() -> String {
-        let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
-        return "\(home)/patcha-app/patcha"
+    private static func showUvMissingAlert() {
+        let alert = NSAlert()
+        alert.messageText = "uv not found"
+        alert.informativeText = """
+            Patcha requires uv to run the Python daemon in development mode.
+
+            Install uv with:
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+
+            Then relaunch Patcha.
+            """
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Open uv Installation Page")
+        alert.addButton(withTitle: "Quit")
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "https://docs.astral.sh/uv/getting-started/installation/")!)
+        }
+        NSApp.terminate(nil)
+    }
+
+    private func detectProjectDir() -> String {
+        // When built via build_app.sh the bundle lives at <project>/dist/Patcha.app.
+        // Walk up two levels from the bundle to find the project root.
+        let bundlePath = Bundle.main.bundlePath
+        let distDir = (bundlePath as NSString).deletingLastPathComponent
+        let candidate = (distDir as NSString).deletingLastPathComponent
+        if FileManager.default.fileExists(atPath: "\(candidate)/main.py") {
+            return candidate
+        }
+
+        if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
+            return envDir
+        }
+
+        NSLog("[DaemonManager] could not detect project dir; set PATCHA_PROJECT_DIR env var")
+        return (Bundle.main.bundlePath as NSString).deletingLastPathComponent
     }
 }
