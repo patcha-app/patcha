@@ -1,3 +1,5 @@
+import ctypes
+import ctypes.util
 import json
 import logging
 import os
@@ -12,6 +14,17 @@ from typing import Dict, List, Optional, Tuple
 from patcha.config import config, settings
 
 logger = logging.getLogger(__name__)
+
+
+def _has_screen_recording_permission() -> bool:
+    try:
+        cg = ctypes.CDLL(ctypes.util.find_library("CoreGraphics"))
+        if not hasattr(cg, "CGPreflightScreenCaptureAccess"):
+            return True
+        cg.CGPreflightScreenCaptureAccess.restype = ctypes.c_bool
+        return bool(cg.CGPreflightScreenCaptureAccess())
+    except Exception:
+        return True
 
 _FROZEN = getattr(sys, "frozen", False)
 _MEIPASS = Path(getattr(sys, "_MEIPASS", ""))
@@ -213,6 +226,9 @@ class AccessibilityCollector:
         window_title: str,
         frame: Optional[Dict] = None,
     ) -> Optional[Dict]:
+        if not _has_screen_recording_permission():
+            logger.debug("Screen Recording permission not granted, skipping OCR capture")
+            return None
         binary = self._ensure_ocr_binary()
         if not binary:
             return None

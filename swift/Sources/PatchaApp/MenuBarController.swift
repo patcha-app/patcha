@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 
-class MenuBarController {
+class MenuBarController: NSObject {
     private var statusItem: NSStatusItem
     private var daemonManager: DaemonManager
     private var cancellable: AnyCancellable?
@@ -15,6 +15,7 @@ class MenuBarController {
     init(daemonManager: DaemonManager) {
         self.daemonManager = daemonManager
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        super.init()
 
         buildMenu()
         updateIcon(for: .stopped)
@@ -29,6 +30,7 @@ class MenuBarController {
 
     private func buildMenu() {
         let menu = NSMenu()
+        menu.delegate = self
 
         let titleItem = NSMenuItem(title: "Patcha", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
@@ -41,6 +43,12 @@ class MenuBarController {
         let restartItem = NSMenuItem(title: "Restart Daemon", action: #selector(restartDaemon), keyEquivalent: "r")
         restartItem.target = self
         menu.addItem(restartItem)
+
+        menu.addItem(.separator())
+
+        let permissionsItem = NSMenuItem(title: "Grant Permissions...", action: #selector(grantPermissions), keyEquivalent: "")
+        permissionsItem.target = self
+        menu.addItem(permissionsItem)
 
         menu.addItem(.separator())
 
@@ -96,7 +104,21 @@ class MenuBarController {
         daemonManager.restart()
     }
 
+    @objc private func grantPermissions() {
+        PermissionsManager.resetPromptFlags()
+        PermissionsManager.requestIfNeeded()
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+}
+
+extension MenuBarController: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        let allGranted = PermissionsManager.accessibilityGranted() && PermissionsManager.screenRecordingGranted()
+        if let item = menu.items.first(where: { $0.action == #selector(grantPermissions) }) {
+            item.isHidden = allGranted
+        }
     }
 }
