@@ -11,6 +11,8 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
+                .linkedFramework("SwiftUI"),
+                .linkedLibrary("sqlite3"),
             ]
         ),
     ]

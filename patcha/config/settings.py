@@ -9,7 +9,13 @@ _DB_PATH = Path.home() / "Library" / "Application Support" / "patcha" / "setting
 
 @dataclass
 class _Defaults:
-    poll_interval: int = 5
+    poll_interval: int = 60
+    ax_poll_interval: int = 5
+    enable_git: bool = True
+    enable_browser: bool = True
+    enable_terminal: bool = True
+    enable_window: bool = True
+    enable_accessibility: bool = True
 
 
 _defaults: dict = asdict(_Defaults())

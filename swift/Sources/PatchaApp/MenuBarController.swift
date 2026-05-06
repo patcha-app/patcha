@@ -4,6 +4,7 @@ import Combine
 class MenuBarController: NSObject {
     private var statusItem: NSStatusItem
     private var daemonManager: DaemonManager
+    private var settingsWindowController: SettingsWindowController
     private var cancellable: AnyCancellable?
 
     private lazy var statusMenuItem: NSMenuItem = {
@@ -12,8 +13,9 @@ class MenuBarController: NSObject {
         return item
     }()
 
-    init(daemonManager: DaemonManager) {
+    init(daemonManager: DaemonManager, settingsWindowController: SettingsWindowController) {
         self.daemonManager = daemonManager
+        self.settingsWindowController = settingsWindowController
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -43,6 +45,12 @@ class MenuBarController: NSObject {
         let restartItem = NSMenuItem(title: "Restart Daemon", action: #selector(restartDaemon), keyEquivalent: "r")
         restartItem.target = self
         menu.addItem(restartItem)
+
+        menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
 
@@ -98,6 +106,10 @@ class MenuBarController: NSObject {
         case .failed:
             statusMenuItem.title = "Status: Failed — restart limit reached"
         }
+    }
+
+    @objc private func openSettings() {
+        settingsWindowController.show()
     }
 
     @objc private func restartDaemon() {

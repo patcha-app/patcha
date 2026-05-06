@@ -15,12 +15,12 @@ from patcha.compaction import DailyCompactor
 from patcha.process import EventPreprocessor
 from patcha.db.store import VectorStore
 from patcha.db.models import Event, EventType
-from patcha.config import config
+from patcha.config import config, settings as _settings
 
 
 class ActivityDaemon:
     def __init__(self, poll_interval: int = 60, batch_size: int = 50):
-        self.poll_interval = poll_interval
+        self.poll_interval = _settings.get("poll_interval") or poll_interval
         self.batch_size = batch_size
         self.running = False
         self.start_time = None
@@ -29,18 +29,18 @@ class ActivityDaemon:
         config.data_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
 
-        self.git_collector = GitCollector() if config.enable_git_collector else None
+        self.git_collector = GitCollector() if _settings.get("enable_git") else None
         self.browser_collector = (
-            BrowserCollector() if config.enable_browser_collector else None
+            BrowserCollector() if _settings.get("enable_browser") else None
         )
         self.terminal_collector = (
-            TerminalCollector() if config.enable_terminal_collector else None
+            TerminalCollector() if _settings.get("enable_terminal") else None
         )
         self.window_collector = (
-            WindowCollector() if config.enable_window_collector else None
+            WindowCollector() if _settings.get("enable_window") else None
         )
         self.accessibility_collector = (
-            AccessibilityCollector() if config.enable_accessibility_collector else None
+            AccessibilityCollector() if _settings.get("enable_accessibility") else None
         )
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()

@@ -218,8 +218,11 @@ class DaemonManager: ObservableObject {
     }
 
     private func detectProjectDir() -> String {
-        // When built via build_app.sh the bundle lives at <project>/dist/Patcha.app.
-        // Walk up two levels from the bundle to find the project root.
+        if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
+            return envDir
+        }
+
+        // In .app bundle: bundle lives at <project>/dist/Patcha.app — two levels up is project root.
         let bundlePath = Bundle.main.bundlePath
         let distDir = (bundlePath as NSString).deletingLastPathComponent
         let candidate = (distDir as NSString).deletingLastPathComponent
@@ -227,8 +230,17 @@ class DaemonManager: ObservableObject {
             return candidate
         }
 
-        if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
-            return envDir
+        // In dev mode (swift run): walk up from the executable to find main.py.
+        if let execPath = Bundle.main.executablePath {
+            var dir = (execPath as NSString).deletingLastPathComponent
+            for _ in 0..<10 {
+                if FileManager.default.fileExists(atPath: "\(dir)/main.py") {
+                    return dir
+                }
+                let parent = (dir as NSString).deletingLastPathComponent
+                if parent == dir { break }
+                dir = parent
+            }
         }
 
         NSLog("[DaemonManager] could not detect project dir; set PATCHA_PROJECT_DIR env var")
