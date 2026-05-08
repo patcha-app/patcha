@@ -16,6 +16,7 @@ from patcha.process import EventPreprocessor
 from patcha.db.store import VectorStore
 from patcha.db.models import Event, EventType
 from patcha.config import config, settings as _settings
+from patcha.utils.guard import CollectorGuard
 
 
 class ActivityDaemon:
@@ -45,6 +46,7 @@ class ActivityDaemon:
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
         self.daily_compactor = DailyCompactor()
+        self._guards: dict = {}
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -157,6 +159,9 @@ class ActivityDaemon:
                 )
 
             for source_name, collector_func in sources:
+                guard = self._guards.setdefault(source_name, CollectorGuard(source_name))
+                if not guard.ok:
+                    continue
                 try:
                     events = collector_func(since)
                     if source_name == "git":
@@ -181,12 +186,13 @@ class ActivityDaemon:
                         ]
 
                     all_events.extend(events)
+                    guard.success()
                     self.logger.info(
                         f"Collected {len(events)} events from {source_name}"
                     )
 
                 except Exception as e:
-                    self.logger.error(f"Error collecting from {source_name}: {e}")
+                    guard.fail(e)
                     continue
 
             if not all_events:

@@ -1,14 +1,9 @@
-import AppKit
 import Foundation
 import Vision
 
 guard CommandLine.arguments.count > 1 else { exit(1) }
 let imagePath = CommandLine.arguments[1]
-
-guard
-    let image = NSImage(contentsOfFile: imagePath),
-    let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-else { exit(1) }
+let imageURL = URL(fileURLWithPath: imagePath)
 
 struct TextObs: Codable {
     let text: String
@@ -18,11 +13,13 @@ struct TextObs: Codable {
     let h: Double
 }
 
-let semaphore = DispatchSemaphore(value: 0)
 var observations: [TextObs] = []
 
-let request = VNRecognizeTextRequest { req, _ in
-    defer { semaphore.signal() }
+let request = VNRecognizeTextRequest { req, err in
+    if let err = err {
+        fputs("Vision error: \(err)\n", stderr)
+        return
+    }
     guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
     for observation in obs {
         guard let text = observation.topCandidates(1).first?.string else { continue }
@@ -39,9 +36,12 @@ let request = VNRecognizeTextRequest { req, _ in
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = true
 
-let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-try? handler.perform([request])
-semaphore.wait()
+let handler = VNImageRequestHandler(url: imageURL, options: [:])
+do {
+    try handler.perform([request])
+} catch {
+    fputs("Vision error: \(error)\n", stderr)
+}
 
 if let data = try? JSONEncoder().encode(observations),
    let json = String(data: data, encoding: .utf8) {

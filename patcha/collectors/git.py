@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,11 +9,16 @@ from git import Repo
 
 from patcha.config import config
 from patcha.db.models import Event, EventType, GitCommit, GitStash
+from patcha.utils.guard import CollectorGuard
+
+logger = logging.getLogger(__name__)
 
 
 class GitCollector:
     def __init__(self, repo_path: Optional[str] = None):
         self.repo_path = Path(repo_path) if repo_path else Path.cwd()
+        self._commits_guard = CollectorGuard("git_commits")
+        self._stashes_guard = CollectorGuard("git_stashes")
 
     def is_git_repo(self) -> bool:
         try:
@@ -40,11 +46,13 @@ class GitCollector:
                         git_repos.append(repo_path)
 
         except Exception as e:
-            print(f"Error searching for git repositories: {e}")
+            logger.debug("Error searching for git repositories: %s", e)
 
         return git_repos
 
     def collect_commits(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._commits_guard.ok:
+            return []
         events = []
 
         git_repos = self._find_git_repos(Path.home())
@@ -119,15 +127,16 @@ class GitCollector:
                         },
                     )
                     events.append(event)
+                self._commits_guard.success()
 
             except Exception as e:
-                print(f"Error collecting git commits from {repo_path}: {e}")
+                self._commits_guard.fail(e, msg=f"{repo_path}: {e}")
                 continue
 
         return events
 
     def collect_stashes(self, since: Optional[datetime] = None) -> List[Event]:
-        if not self.is_git_repo():
+        if not self._stashes_guard.ok or not self.is_git_repo():
             return []
 
         events = []
@@ -174,8 +183,9 @@ class GitCollector:
                 )
                 events.append(event)
 
+            self._stashes_guard.success()
         except Exception as e:
-            print(f"Error collecting git stashes: {e}")
+            self._stashes_guard.fail(e)
 
         return events
 

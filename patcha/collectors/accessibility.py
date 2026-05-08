@@ -1,5 +1,6 @@
 import ctypes
 import ctypes.util
+import hashlib
 import json
 import logging
 import os
@@ -66,6 +67,7 @@ class AccessibilityCollector:
         self.log_file: Path = config.data_dir / "screen_log.jsonl"
         self._line_count: int = self._count_existing_lines()
         self._write_count: int = 0
+        self._screenshot_hashes: Dict[Tuple[str, str], str] = {}
 
     def _count_existing_lines(self) -> int:
         if not self.log_file.exists():
@@ -151,75 +153,46 @@ class AccessibilityCollector:
         if not observations:
             return ""
 
-        def x_mid(o: Dict) -> float:
-            return o["x"] + o["w"] / 2
+        heights = [o["h"] for o in observations if o.get("h", 0) > 0]
+        if heights:
+            sorted_h = sorted(heights)
+            median_h = sorted_h[len(sorted_h) // 2]
+            line_threshold = max(0.005, median_h * 0.55)
+        else:
+            line_threshold = 0.015
 
-        def y_mid(o: Dict) -> float:
-            return o["y"] + o["h"] / 2
+        # Vision y=0 is bottom of image; sort descending so we go top-to-bottom.
+        sorted_obs = sorted(observations, key=lambda o: -(o["y"] + o["h"] / 2))
 
-        def gap_splits(midpoints: List[float], min_gap: float) -> List[float]:
-            pts = sorted(midpoints)
-            splits = []
-            for i in range(1, len(pts)):
-                if pts[i] - pts[i - 1] > min_gap:
-                    splits.append((pts[i - 1] + pts[i]) / 2)
-            return splits
+        lines: List[List[Dict]] = []
+        current_line: List[Dict] = []
+        last_y: float = float("inf")
 
-        def assign(val: float, splits: List[float]) -> int:
-            return sum(1 for s in splits if val > s)
+        for obs in sorted_obs:
+            y_mid = obs["y"] + obs["h"] / 2
+            if current_line and abs(y_mid - last_y) > line_threshold:
+                lines.append(current_line)
+                current_line = []
+            current_line.append(obs)
+            last_y = y_mid
 
-        col_splits = gap_splits([x_mid(o) for o in observations], min_gap=0.02)
+        if current_line:
+            lines.append(current_line)
 
-        cols: Dict[int, List] = {}
-        for obs in observations:
-            cols.setdefault(assign(x_mid(obs), col_splits), []).append(obs)
+        parts: List[str] = []
+        total = 0
+        for line in lines:
+            row = sorted(line, key=lambda o: o["x"])
+            text = "  ".join(o["text"] for o in row if o.get("text", "").strip())
+            if not text:
+                continue
+            parts.append(text)
+            total += len(text) + 1
+            if total >= 4000:
+                break
 
-        section_parts = []
-        for ci in sorted(cols):
-            col_obs = cols[ci]
-
-            row_splits = gap_splits(
-                sorted([y_mid(o) for o in col_obs], reverse=True),
-                min_gap=0.03,
-            )
-            row_splits_asc = sorted(row_splits)
-
-            def row_idx(o: Dict) -> int:
-                ym = y_mid(o)
-                return sum(1 for s in row_splits_asc if ym < s)
-
-            rows: Dict[int, List] = {}
-            for obs in col_obs:
-                rows.setdefault(row_idx(obs), []).append(obs)
-
-            col_lines = []
-            for ri in sorted(rows):
-                row_obs = sorted(rows[ri], key=lambda o: -y_mid(o))
-                lines: List[str] = []
-                current: List[Dict] = []
-                for obs in row_obs:
-                    if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.015:
-                        current.append(obs)
-                    else:
-                        lines.append(
-                            " ".join(
-                                o["text"] for o in sorted(current, key=lambda o: o["x"])
-                            )
-                        )
-                        current = [obs]
-                if current:
-                    lines.append(
-                        " ".join(
-                            o["text"] for o in sorted(current, key=lambda o: o["x"])
-                        )
-                    )
-                col_lines.extend(lines)
-                if ri < max(rows):
-                    col_lines.append("---")
-
-            section_parts.append("\n".join(col_lines))
-
-        return "\n\n===\n\n".join(section_parts)[:4000]
+        result = "\n".join(parts)
+        return result if len(result) >= 30 else ""
 
     def _take_ocr_screenshot(
         self,
@@ -254,6 +227,12 @@ class AccessibilityCollector:
             )
             if cap.returncode != 0 or not os.path.getsize(tmp_path):
                 return None
+            digest = hashlib.md5(open(tmp_path, "rb").read()).hexdigest()
+            _key = (app_name, window_title)
+            if digest == self._screenshot_hashes.get(_key):
+                logger.debug("Screenshot unchanged for %s, skipping OCR", app_name)
+                return None
+            self._screenshot_hashes[_key] = digest
             ocr = subprocess.run(
                 [str(binary), tmp_path],
                 capture_output=True,
