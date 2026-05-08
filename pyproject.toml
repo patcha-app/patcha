@@ -36,12 +36,21 @@ patcha-mcp = "patcha.mcp_server:main"
 dev = [
     "ruff>=0.1.0",
     "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=6.0.0",
     "pyinstaller>=6.20.0",
     "pyinstaller-hooks-contrib>=2026.4",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-q --ignore=tests/manual"
+markers = [
+    "unit: pure-function tests with no I/O",
+    "integration: tests that use filesystem fixtures or mock subprocesses",
+    "slow: tests that take more than 1 second",
+    "macos: tests that require macOS-specific APIs",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -191,7 +191,7 @@ class AccessibilityCollector:
             if total >= 4000:
                 break
 
-        result = "\n".join(parts)
+        result = "\n".join(parts)[:4000]
         return result if len(result) >= 30 else ""
 
     def _take_ocr_screenshot(
