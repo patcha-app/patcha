@@ -19,6 +19,7 @@ def test_long_text_splits():
 @pytest.mark.unit
 def test_each_chunk_within_max_tokens():
     import tiktoken
+
     enc = tiktoken.get_encoding("cl100k_base")
     long_text = "hello world " * 500
     chunks = chunk_text(long_text, max_tokens=50, overlap=5)
@@ -29,6 +30,7 @@ def test_each_chunk_within_max_tokens():
 @pytest.mark.unit
 def test_overlap_preserved():
     import tiktoken
+
     enc = tiktoken.get_encoding("cl100k_base")
     long_text = "word " * 300
     chunks = chunk_text(long_text, max_tokens=50, overlap=10)

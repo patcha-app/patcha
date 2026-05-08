@@ -19,7 +19,12 @@ def sample_event(ts):
         type=EventType.BROWSER,
         source="chrome",
         raw_content=json.dumps(
-            {"title": "GitHub", "url": "https://github.com", "domain": "github.com", "duration": 0}
+            {
+                "title": "GitHub",
+                "url": "https://github.com",
+                "domain": "github.com",
+                "duration": 0,
+            }
         ),
         metadata={"domain": "github.com", "browser": "chrome"},
     )
@@ -44,9 +49,10 @@ def chrome_db(tmp_path):
         "CREATE TABLE urls (id INTEGER PRIMARY KEY, title TEXT, url TEXT, "
         "last_visit_time INTEGER, visit_count INTEGER)"
     )
-    chrome_ts = int(
-        datetime(2026, 1, 1, 12, tzinfo=timezone.utc).timestamp() * 1_000_000
-    ) + 11_644_473_600_000_000
+    chrome_ts = (
+        int(datetime(2026, 1, 1, 12, tzinfo=timezone.utc).timestamp() * 1_000_000)
+        + 11_644_473_600_000_000
+    )
     conn.execute(
         "INSERT INTO urls VALUES (1,'GitHub','https://github.com',?,1)", (chrome_ts,)
     )

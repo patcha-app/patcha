@@ -19,7 +19,9 @@ def make_event(type_, raw_content, project=None):
 
 @pytest.mark.unit
 def test_browser_event_extracts_title_and_domain():
-    raw = json.dumps({"title": "GitHub", "url": "https://github.com", "domain": "github.com"})
+    raw = json.dumps(
+        {"title": "GitHub", "url": "https://github.com", "domain": "github.com"}
+    )
     result = _build_embedding_text(make_event(EventType.BROWSER, raw))
     assert "GitHub" in result
     assert "github.com" in result
@@ -27,18 +29,28 @@ def test_browser_event_extracts_title_and_domain():
 
 @pytest.mark.unit
 def test_terminal_event_extracts_command():
-    raw = json.dumps({"command": "git status", "timestamp": "2026-01-01", "working_dir": "/"})
+    raw = json.dumps(
+        {"command": "git status", "timestamp": "2026-01-01", "working_dir": "/"}
+    )
     result = _build_embedding_text(make_event(EventType.TERMINAL, raw))
     assert "git status" in result
 
 
 @pytest.mark.unit
 def test_git_commit_extracts_message_and_files():
-    raw = json.dumps({
-        "hash": "abc123", "message": "fix bug", "author": "dev",
-        "timestamp": "2026-01-01", "files_changed": ["foo.py", "bar.py"],
-        "insertions": 1, "deletions": 0, "branch": "main", "diff": "",
-    })
+    raw = json.dumps(
+        {
+            "hash": "abc123",
+            "message": "fix bug",
+            "author": "dev",
+            "timestamp": "2026-01-01",
+            "files_changed": ["foo.py", "bar.py"],
+            "insertions": 1,
+            "deletions": 0,
+            "branch": "main",
+            "diff": "",
+        }
+    )
     result = _build_embedding_text(make_event(EventType.GIT_COMMIT, raw))
     assert "fix bug" in result
     assert "foo.py" in result
@@ -53,7 +65,9 @@ def test_screen_event_returns_raw_content():
 @pytest.mark.unit
 def test_project_appended():
     raw = json.dumps({"title": "Docs", "domain": "docs.python.org"})
-    result = _build_embedding_text(make_event(EventType.BROWSER, raw, project="myproject"))
+    result = _build_embedding_text(
+        make_event(EventType.BROWSER, raw, project="myproject")
+    )
     assert "[myproject]" in result
 
 

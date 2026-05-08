@@ -22,8 +22,12 @@ def make_event(type_=EventType.BROWSER, raw="content", project=None):
 def preprocessor(mocker):
     mock_client = mocker.MagicMock()
     mocker.patch("patcha.process.OpenAI", return_value=mock_client)
-    mocker.patch("patcha.process.config", openai_api_key="test-key",
-                 max_embedding_tokens=8191, embedding_chunk_overlap=100)
+    mocker.patch(
+        "patcha.process.config",
+        openai_api_key="test-key",
+        max_embedding_tokens=8191,
+        embedding_chunk_overlap=100,
+    )
     p = EventPreprocessor()
     fake_embedding = [0.1] * 1536
     p.client.embeddings.create.return_value.data = [
@@ -43,8 +47,12 @@ def test_process_event_single_chunk(preprocessor):
 
 @pytest.mark.integration
 def test_process_event_multi_chunk(preprocessor, mocker):
-    mocker.patch("patcha.process.config", openai_api_key="test-key",
-                 max_embedding_tokens=10, embedding_chunk_overlap=2)
+    mocker.patch(
+        "patcha.process.config",
+        openai_api_key="test-key",
+        max_embedding_tokens=10,
+        embedding_chunk_overlap=2,
+    )
     long_text = "word " * 200
     event = make_event(raw=long_text)
     results = preprocessor.process_event(event)
@@ -56,8 +64,12 @@ def test_process_event_multi_chunk(preprocessor, mocker):
 
 @pytest.mark.integration
 def test_process_event_chunk_source_doc_id(preprocessor, mocker):
-    mocker.patch("patcha.process.config", openai_api_key="test-key",
-                 max_embedding_tokens=10, embedding_chunk_overlap=2)
+    mocker.patch(
+        "patcha.process.config",
+        openai_api_key="test-key",
+        max_embedding_tokens=10,
+        embedding_chunk_overlap=2,
+    )
     event = make_event(raw="word " * 200)
     results = preprocessor.process_event(event)
     assert len(results) > 1

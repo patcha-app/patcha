@@ -11,7 +11,15 @@ def test_empty_observations():
 
 @pytest.mark.unit
 def test_single_observation():
-    obs = [{"text": "Hello world this is a long enough line to pass", "x": 0.1, "y": 0.5, "w": 0.2, "h": 0.02}]
+    obs = [
+        {
+            "text": "Hello world this is a long enough line to pass",
+            "x": 0.1,
+            "y": 0.5,
+            "w": 0.2,
+            "h": 0.02,
+        }
+    ]
     result = reconstruct(obs)
     assert "Hello world" in result
 
@@ -77,9 +85,27 @@ def test_returns_empty_for_short_result():
 @pytest.mark.unit
 def test_adaptive_threshold_tall_text():
     tall_obs = [
-        {"text": "First heading row of content", "x": 0.0, "y": 0.9, "w": 0.3, "h": 0.08},
-        {"text": "Second paragraph of content", "x": 0.0, "y": 0.5, "w": 0.3, "h": 0.08},
-        {"text": "Third section with more text", "x": 0.0, "y": 0.1, "w": 0.3, "h": 0.08},
+        {
+            "text": "First heading row of content",
+            "x": 0.0,
+            "y": 0.9,
+            "w": 0.3,
+            "h": 0.08,
+        },
+        {
+            "text": "Second paragraph of content",
+            "x": 0.0,
+            "y": 0.5,
+            "w": 0.3,
+            "h": 0.08,
+        },
+        {
+            "text": "Third section with more text",
+            "x": 0.0,
+            "y": 0.1,
+            "w": 0.3,
+            "h": 0.08,
+        },
     ]
     result = reconstruct(tall_obs)
     lines = [line for line in result.splitlines() if line.strip()]

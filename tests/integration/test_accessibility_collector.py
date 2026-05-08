@@ -110,6 +110,7 @@ def test_screenshot_hash_skips_unchanged_app(collector, tmp_path, mocker):
         m.returncode = 0
         if cmd[0] == "screencapture":
             import shutil
+
             shutil.copy(str(fake_png), cmd[-1])
             m.stdout = ""
         else:

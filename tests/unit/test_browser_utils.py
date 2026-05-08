@@ -5,6 +5,7 @@ from patcha.collectors.browser import BrowserCollector
 @pytest.fixture
 def collector():
     from unittest.mock import patch
+
     with patch("patcha.collectors.browser.config"):
         c = BrowserCollector.__new__(BrowserCollector)
         c.history_paths = {}
@@ -13,7 +14,9 @@ def collector():
 
 @pytest.mark.unit
 def test_non_youtube_url_unchanged(collector):
-    assert collector._enhance_youtube_title("My Title", "https://github.com") == "My Title"
+    assert (
+        collector._enhance_youtube_title("My Title", "https://github.com") == "My Title"
+    )
 
 
 @pytest.mark.unit
@@ -39,4 +42,7 @@ def test_empty_title_with_youtube(collector):
 
 @pytest.mark.unit
 def test_non_youtube_empty_title(collector):
-    assert collector._enhance_youtube_title("Untitled", "https://example.com") == "Untitled"
+    assert (
+        collector._enhance_youtube_title("Untitled", "https://example.com")
+        == "Untitled"
+    )
