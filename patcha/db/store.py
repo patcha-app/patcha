@@ -1,7 +1,7 @@
 """Vector storage using Qdrant."""
 
 import logging
-import sys
+import os
 import uuid
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
@@ -25,11 +25,14 @@ log = logging.getLogger(__name__)
 
 class VectorStore:
     def __init__(self):
-        if getattr(sys, "frozen", False):
-            config.qdrant_path.mkdir(parents=True, exist_ok=True)
-            self.client = QdrantClient(path=str(config.qdrant_path))
-        else:
+        if os.getenv("QDRANT_URL"):
             self.client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
+        else:
+            config.qdrant_path.mkdir(parents=True, exist_ok=True)
+            lock_file = config.qdrant_path / ".lock"
+            if lock_file.exists():
+                lock_file.unlink()
+            self.client = QdrantClient(path=str(config.qdrant_path))
         self.collection_name = config.collection_name
         self.vector_size = config.vector_size
         self._ensure_collection_exists()
