@@ -27,7 +27,8 @@ def _clear_tokens() -> None:
     lines = [
         line
         for line in _ENV_PATH.read_text().splitlines()
-        if not line.startswith("PATCHA_ACCESS_TOKEN=") and not line.startswith("PATCHA_REFRESH_TOKEN=")
+        if not line.startswith("PATCHA_ACCESS_TOKEN=")
+        and not line.startswith("PATCHA_REFRESH_TOKEN=")
     ]
     _ENV_PATH.write_text("\n".join(lines) + "\n")
 
@@ -51,7 +52,9 @@ class PatchaAPIClient:
 
     def login(self, email: str, password: str) -> bool:
         with httpx.Client(base_url=self._base_url, timeout=30.0) as client:
-            resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+            resp = client.post(
+                "/api/v1/auth/login", json={"email": email, "password": password}
+            )
             if resp.status_code != 200:
                 return False
             data = resp.json()
@@ -62,7 +65,9 @@ class PatchaAPIClient:
 
     def register(self, email: str, password: str) -> bool:
         with httpx.Client(base_url=self._base_url, timeout=30.0) as client:
-            resp = client.post("/api/v1/auth/register", json={"email": email, "password": password})
+            resp = client.post(
+                "/api/v1/auth/register", json={"email": email, "password": password}
+            )
             if resp.status_code not in (200, 201):
                 return False
             data = resp.json()

@@ -50,6 +50,7 @@ The screen/window collectors require Accessibility access. Go to:
 The `swift/` directory contains a native macOS menu bar app that manages the daemon for you — no terminal required.
 
 **What it does:**
+
 - Runs entirely in the menu bar (no dock icon)
 - Spawns the Python daemon as a child process on launch
 - Requests Accessibility and Screen Recording permissions on first run
@@ -66,12 +67,14 @@ The app uses `Foundation.Process` (macOS's subprocess API) to fork a child proce
 
 After launch, a `DispatchSourceProcess` watches the child PID at the kernel level and fires immediately on exit — no polling.
 
-**`uv` requirement:**
+`**uv` requirement:**
 
-| Mode | `uv` needed? |
-|------|-------------|
-| Production DMG (full `build.sh`) | No — Python is bundled inside the `patcha` binary |
-| Dev (`swift/build_app.sh` only) | Yes — install with `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+
+| Mode                             | `uv` needed?                                                         |
+| -------------------------------- | -------------------------------------------------------------------- |
+| Production DMG (full `build.sh`) | No — Python is bundled inside the `patcha` binary                    |
+| Dev ( only)                      | Yes — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` |
+
 
 **Build:**
 
@@ -121,21 +124,23 @@ uv run patcha stop-daemon
 
 ## CLI reference
 
-| Command | Description |
-|---------|-------------|
-| `start-daemon` | Start the background activity collector |
-| `stop-daemon` | Stop the daemon |
-| `daemon-status` | Show daemon health and collection stats |
-| `collect` | Run a one-shot collection from all sources |
-| `search <query>` | Semantic search over activity history |
-| `observe` | Cluster today's activity into themes |
-| `summarize` | Generate a written summary of a day's activity |
-| `review` | Review activity over a date range |
-| `tasks` | List identified tasks |
-| `task-details <id>` | Show full detail for a task |
-| `compact-day` | Manually trigger compaction for a past date |
-| `status` | Show config and store health |
-| `config` | Get or set configuration values |
+
+| Command             | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `start-daemon`      | Start the background activity collector        |
+| `stop-daemon`       | Stop the daemon                                |
+| `daemon-status`     | Show daemon health and collection stats        |
+| `collect`           | Run a one-shot collection from all sources     |
+| `search <query>`    | Semantic search over activity history          |
+| `observe`           | Cluster today's activity into themes           |
+| `summarize`         | Generate a written summary of a day's activity |
+| `review`            | Review activity over a date range              |
+| `tasks`             | List identified tasks                          |
+| `task-details <id>` | Show full detail for a task                    |
+| `compact-day`       | Manually trigger compaction for a past date    |
+| `status`            | Show config and store health                   |
+| `config`            | Get or set configuration values                |
+
 
 Run `uv run patcha --help` or `uv run patcha <command> --help` for full options.
 
@@ -164,11 +169,13 @@ See [docs/retrieval/mcp.md](docs/retrieval/mcp.md) for full tool documentation.
 
 Patcha reads configuration from `~/.patcha/.env`. Key variables:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENAI_API_KEY` | required | Used for generating embeddings |
-| `QDRANT_PATH` | `~/.patcha/qdrant_storage` | Local Qdrant storage path |
-| `QDRANT_URL` | — | Remote Qdrant instance (overrides `QDRANT_PATH`) |
+
+| Variable         | Default                    | Description                                      |
+| ---------------- | -------------------------- | ------------------------------------------------ |
+| `OPENAI_API_KEY` | required                   | Used for generating embeddings                   |
+| `QDRANT_PATH`    | `~/.patcha/qdrant_storage` | Local Qdrant storage path                        |
+| `QDRANT_URL`     | —                          | Remote Qdrant instance (overrides `QDRANT_PATH`) |
+
 
 Run `uv run patcha config` to inspect or modify settings at runtime.
 
@@ -195,10 +202,13 @@ The `commit-msg` hook enforces this. Install hooks with `bash scripts/install-ho
 
 ## Docs
 
-| Topic | File |
-|-------|------|
-| Collectors (browser, terminal, git, screen) | [docs/collectors.md](docs/collectors.md) |
-| Embedding pipeline | [docs/embedding.md](docs/embedding.md) |
-| Retrieval (working memory, search) | [docs/retrieval/retrieval.md](docs/retrieval/retrieval.md) |
-| MCP server | [docs/retrieval/mcp.md](docs/retrieval/mcp.md) |
-| Daily compaction | [docs/compaction.md](docs/compaction.md) |
+
+| Topic                                       | File                                                       |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| Collectors (browser, terminal, git, screen) | [docs/collectors.md](docs/collectors.md)                   |
+| Embedding pipeline                          | [docs/embedding.md](docs/embedding.md)                     |
+| Retrieval (working memory, search)          | [docs/retrieval/retrieval.md](docs/retrieval/retrieval.md) |
+| MCP server                                  | [docs/retrieval/mcp.md](docs/retrieval/mcp.md)             |
+| Daily compaction                            | [docs/compaction.md](docs/compaction.md)                   |
+
+

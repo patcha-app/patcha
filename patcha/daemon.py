@@ -85,7 +85,7 @@ class ActivityDaemon:
             self.logger.error(
                 "OPENAI_API_KEY not set. Please configure your .env file."
             )
-            return
+            sys.exit(2)
 
         config.data_dir.mkdir(exist_ok=True)
 

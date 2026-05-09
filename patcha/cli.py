@@ -2279,18 +2279,32 @@ def graph_stats():
 
 @cli.command()
 @click.option("--email", prompt="Email", help="Your patcha account email")
-@click.option("--password", prompt="Password", hide_input=True, help="Your patcha account password")
-@click.option("--register", "do_register", is_flag=True, default=False, help="Create a new account instead of logging in")
+@click.option(
+    "--password",
+    prompt="Password",
+    hide_input=True,
+    help="Your patcha account password",
+)
+@click.option(
+    "--register",
+    "do_register",
+    is_flag=True,
+    default=False,
+    help="Create a new account instead of logging in",
+)
 def login(email: str, password: str, do_register: bool):
     """Log in to patcha cloud (or create an account with --register)."""
     from patcha.api_client import PatchaAPIClient
+
     client = PatchaAPIClient()
     if do_register:
         ok = client.register(email, password)
         if ok:
             console.print("[green]Account created and logged in.[/green]")
         else:
-            console.print("[red]Registration failed. Email may already be in use.[/red]")
+            console.print(
+                "[red]Registration failed. Email may already be in use.[/red]"
+            )
     else:
         ok = client.login(email, password)
         if ok:
@@ -2303,6 +2317,7 @@ def login(email: str, password: str, do_register: bool):
 def logout():
     """Log out from patcha cloud."""
     from patcha.api_client import PatchaAPIClient
+
     client = PatchaAPIClient()
     client.logout()
     console.print("[green]Logged out.[/green]")
@@ -2312,6 +2327,7 @@ def logout():
 def check_update():
     """Check for a newer version of patcha."""
     from patcha.api_client import PatchaAPIClient
+
     client = PatchaAPIClient()
     result = client.check_update(_VERSION)
     if result is None:
@@ -2332,10 +2348,13 @@ def check_update():
 def list_models(model_id: Optional[str]):
     """List available small language models (or download one with --download ID)."""
     from patcha.api_client import PatchaAPIClient
+
     client = PatchaAPIClient()
     if model_id:
         if not client.is_authenticated:
-            console.print("[red]You must be logged in to download models. Run: patcha login[/red]")
+            console.print(
+                "[red]You must be logged in to download models. Run: patcha login[/red]"
+            )
             return
         url = client.get_model_download_url(model_id)
         if url:
@@ -2359,7 +2378,14 @@ def list_models(model_id: Optional[str]):
 
     for m in models:
         size_gb = m["size_bytes"] / 1e9
-        table.add_row(m["id"], m["name"], m["version"], m["format"], f"{size_gb:.1f} GB", m["description"])
+        table.add_row(
+            m["id"],
+            m["name"],
+            m["version"],
+            m["format"],
+            f"{size_gb:.1f} GB",
+            m["description"],
+        )
 
     console.print(table)
 

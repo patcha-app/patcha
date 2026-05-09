@@ -26,6 +26,7 @@ def _has_screen_recording_permission() -> bool:
     except Exception:
         return True
 
+
 _FROZEN = getattr(sys, "frozen", False)
 _MEIPASS = Path(getattr(sys, "_MEIPASS", ""))
 
@@ -227,7 +228,9 @@ class AccessibilityCollector:
         frame: Optional[Dict] = None,
     ) -> Optional[Dict]:
         if not _has_screen_recording_permission():
-            logger.debug("Screen Recording permission not granted, skipping OCR capture")
+            logger.debug(
+                "Screen Recording permission not granted, skipping OCR capture"
+            )
             return None
         binary = self._ensure_ocr_binary()
         if not binary:
