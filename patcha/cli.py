@@ -21,7 +21,7 @@ from patcha.db.store import VectorStore
 from patcha.summary import DailySummarizer
 from patcha.db.models import Category
 from patcha.config import config
-from patcha.daemon import ActivityDaemon
+from patcha.daemon import ActivityDaemon, daemon_status
 from patcha.db.retrieval.cluster import ActivityClusterer
 from patcha.categorize import EnhancedCategorizer
 from patcha.db.graph import KnowledgeGraph
@@ -643,8 +643,7 @@ def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
 def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
     """Start the background activity collection daemon."""
 
-    daemon = ActivityDaemon(poll_interval=poll_interval, batch_size=batch_size)
-    status = daemon.get_status()
+    status = daemon_status()
 
     if status["running"]:
         console.print(
@@ -653,6 +652,8 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
         return
 
     console.print(f"Starting daemon with {poll_interval}s poll interval...")
+
+    daemon = ActivityDaemon(poll_interval=poll_interval, batch_size=batch_size)
 
     if foreground:
         daemon.start()
@@ -673,8 +674,7 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
 def stop_daemon():
     """Stop the background activity collection daemon."""
 
-    daemon = ActivityDaemon()
-    status = daemon.get_status()
+    status = daemon_status()
 
     if not status["running"]:
         console.print("[yellow]Daemon is not running[/yellow]")
@@ -695,12 +695,11 @@ def stop_daemon():
         console.print(f"[red]Permission denied. Cannot stop daemon (PID: {pid})[/red]")
 
 
-@cli.command()
-def daemon_status():
+@cli.command("daemon-status")
+def daemon_status_cmd():
     """Show daemon status."""
 
-    daemon = ActivityDaemon()
-    status = daemon.get_status()
+    status = daemon_status()
 
     if status["running"]:
         console.print("[green]Daemon is running[/green]")
