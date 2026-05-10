@@ -45,7 +45,7 @@ _MIN_CONTENT_LEN = 60
 _MIN_DIFF_LEN = 30  # minimum new chars required to write a diff entry
 _FULL_REPLACE_RATIO = 0.8  # if diff is >80% of new content, store full text (new page)
 _MIN_DURATION_SECS = 4
-_SKIP_APPS = {
+_SKIP_APPS_BASE = {
     "Finder",
     "System Preferences",
     "System Settings",
@@ -53,6 +53,14 @@ _SKIP_APPS = {
     "Dock",
     "",
 }
+
+
+def _build_skip_apps() -> set:
+    base = set(_SKIP_APPS_BASE)
+    excluded = settings.get("excluded_app_names") or ""
+    if excluded:
+        base |= {n.strip() for n in excluded.split(",") if n.strip()}
+    return base
 
 
 class AccessibilityCollector:
@@ -302,8 +310,8 @@ class AccessibilityCollector:
             return
         app = data["app"]
         window_title = data["window_title"]
-        if app in _SKIP_APPS:
-            logger.debug("Skipping capture for noise app: %s", app)
+        if app in _build_skip_apps():
+            logger.debug("Skipping capture for excluded app: %s", app)
             return
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:

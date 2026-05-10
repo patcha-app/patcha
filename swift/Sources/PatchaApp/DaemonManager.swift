@@ -6,20 +6,52 @@ enum DaemonStatus: Equatable {
     case stopped
     case starting
     case running
+    case paused
     case restarting(attempt: Int)
     case failed
 }
 
 class DaemonManager: ObservableObject {
     @Published var status: DaemonStatus = .stopped
+    @Published var pausedUntil: Date? = nil
 
     private var process: Process?
     private var processSource: DispatchSourceProcess?
     private var stabilityTimer: Timer?
+    private var pauseWorkItem: DispatchWorkItem?
     private var restartCount = 0
     private let maxRestarts = 5
     private let backoffDelays: [Double] = [5, 10, 20, 40, 80]
     private let stabilityWindow: TimeInterval = 600
+
+    func pause(until date: Date) {
+        guard case .running = status else { return }
+        guard let proc = process, proc.isRunning else { return }
+        pauseWorkItem?.cancel()
+        kill(proc.processIdentifier, SIGSTOP)
+        pausedUntil = date
+        status = .paused
+        let delay = max(0, date.timeIntervalSinceNow)
+        let item = DispatchWorkItem { [weak self] in self?.resume() }
+        pauseWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    func resume() {
+        guard case .paused = status else { return }
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        guard let proc = process, proc.isRunning else {
+            pausedUntil = nil
+            status = .stopped
+            scheduleRestart()
+            return
+        }
+        kill(proc.processIdentifier, SIGCONT)
+        pausedUntil = nil
+        status = .running
+        startStabilityTimer()
+    }
 
     func start() {
         guard case .stopped = status else { return }
@@ -36,6 +68,9 @@ class DaemonManager: ObservableObject {
     }
 
     func stop() {
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        pausedUntil = nil
         stabilityTimer?.invalidate()
         stabilityTimer = nil
         processSource?.cancel()
@@ -47,6 +82,7 @@ class DaemonManager: ObservableObject {
             return
         }
 
+        kill(proc.processIdentifier, SIGCONT)
         proc.terminate()
 
         let deadline = DispatchTime.now() + 5
@@ -118,6 +154,9 @@ class DaemonManager: ObservableObject {
     }
 
     private func handleProcessExit() {
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        pausedUntil = nil
         processSource?.cancel()
         processSource = nil
         process = nil

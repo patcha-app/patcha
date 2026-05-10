@@ -16,6 +16,7 @@ class _Defaults:
     enable_terminal: bool = True
     enable_window: bool = True
     enable_accessibility: bool = True
+    excluded_app_names: str = ""
 
 
 _defaults: dict = asdict(_Defaults())

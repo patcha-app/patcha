@@ -12,6 +12,7 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("SwiftUI"),
+                .linkedFramework("ServiceManagement"),
                 .linkedLibrary("sqlite3"),
             ]
         ),

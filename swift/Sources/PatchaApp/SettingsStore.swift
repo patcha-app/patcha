@@ -1,4 +1,5 @@
 import Foundation
+import ServiceManagement
 import SQLite3
 
 final class SettingsStore: ObservableObject {
@@ -8,6 +9,19 @@ final class SettingsStore: ObservableObject {
     @Published var enableTerminal: Bool = true
     @Published var enableWindow: Bool = true
     @Published var enableAccessibility: Bool = true
+    @Published var excludedBundleIDs: Set<String> = []
+    @Published var excludedAppNames: String = ""
+    @Published var pauseForInternal: Bool = false
+    @Published var autoCheckUpdates: Bool = true
+    @Published var launchAtLogin: Bool = false {
+        didSet {
+            if launchAtLogin {
+                try? SMAppService.mainApp.register()
+            } else {
+                try? SMAppService.mainApp.unregister()
+            }
+        }
+    }
 
     private let dbPath: String
 
@@ -29,12 +43,17 @@ final class SettingsStore: ObservableObject {
         let rows = query(db: db, sql: "SELECT key, value FROM settings")
         for (key, value) in rows {
             switch key {
-            case "poll_interval":       pollInterval = Int(value) ?? 60
-            case "enable_git":          enableGit = value == "true"
-            case "enable_browser":      enableBrowser = value == "true"
-            case "enable_terminal":     enableTerminal = value == "true"
-            case "enable_window":       enableWindow = value == "true"
+            case "poll_interval":        pollInterval = Int(value) ?? 60
+            case "enable_git":           enableGit = value == "true"
+            case "enable_browser":       enableBrowser = value == "true"
+            case "enable_terminal":      enableTerminal = value == "true"
+            case "enable_window":        enableWindow = value == "true"
             case "enable_accessibility": enableAccessibility = value == "true"
+            case "excluded_bundle_ids":  excludedBundleIDs = Set(value.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+            case "excluded_app_names":   excludedAppNames = value
+            case "pause_for_internal":   pauseForInternal = value == "true"
+            case "auto_check_updates":   autoCheckUpdates = value == "true"
+            case "launch_at_login":      launchAtLogin = value == "true"
             default: break
             }
         }
@@ -54,6 +73,11 @@ final class SettingsStore: ObservableObject {
             ("enable_terminal",      enableTerminal ? "true" : "false"),
             ("enable_window",        enableWindow ? "true" : "false"),
             ("enable_accessibility", enableAccessibility ? "true" : "false"),
+            ("excluded_bundle_ids",  excludedBundleIDs.sorted().joined(separator: ",")),
+            ("excluded_app_names",   excludedAppNames),
+            ("pause_for_internal",   pauseForInternal ? "true" : "false"),
+            ("auto_check_updates",   autoCheckUpdates ? "true" : "false"),
+            ("launch_at_login",      launchAtLogin ? "true" : "false"),
         ]
         for (key, value) in entries {
             upsert(db: db, key: key, value: value)

@@ -18,7 +18,9 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 
 cp .build/release/PatchaApp "$CONTENTS/MacOS/PatchaApp"
 cp Info.plist "$CONTENTS/Info.plist"
-cp Resources/menubar-icon.svg "$CONTENTS/Resources/menubar-icon.svg"
+for icon in menubar-icon icon-recording icon-paused icon-error icon-starting; do
+    [ -f "Resources/${icon}.svg" ] && cp "Resources/${icon}.svg" "$CONTENTS/Resources/${icon}.svg"
+done
 
 if [ -f Resources/AppIcon.icns ]; then
     cp Resources/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
