@@ -159,7 +159,9 @@ class ActivityDaemon:
                 )
 
             for source_name, collector_func in sources:
-                guard = self._guards.setdefault(source_name, CollectorGuard(source_name))
+                guard = self._guards.setdefault(
+                    source_name, CollectorGuard(source_name)
+                )
                 if not guard.ok:
                     continue
                 try:

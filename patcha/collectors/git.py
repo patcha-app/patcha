@@ -27,6 +27,12 @@ class GitCollector:
         except git.exc.InvalidGitRepositoryError:
             return False
 
+    _SKIP_DIRS = {
+        "Music", "Pictures", "Movies",
+        "Library", "Applications",
+        "iCloud Drive", "iCloud",
+    }
+
     def _find_git_repos(self, search_path: Optional[Path] = None) -> List[Path]:
         search_path = search_path or self.repo_path
         git_repos = []
@@ -41,6 +47,8 @@ class GitCollector:
                     repo_path = git_dir.parent
                     rel_parts = repo_path.relative_to(search_path).parts
                     if any(part.startswith(".") for part in rel_parts):
+                        continue
+                    if any(part in self._SKIP_DIRS for part in rel_parts):
                         continue
                     if repo_path not in git_repos:
                         git_repos.append(repo_path)

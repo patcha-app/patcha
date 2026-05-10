@@ -5,15 +5,6 @@ datas = []
 binaries = []
 hiddenimports = []
 
-for pkg in ['objc', 'Foundation', 'AppKit', 'Quartz', 'ApplicationServices']:
-    try:
-        d, b, h = collect_all(pkg)
-        datas += d
-        binaries += b
-        hiddenimports += h
-    except Exception:
-        pass
-
 datas += collect_data_files('tiktoken')
 try:
     d, b, h = collect_all('qdrant_client')
