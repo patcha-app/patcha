@@ -73,7 +73,11 @@ class VectorStore:
 
     def store_event(self, event: Event) -> bool:
         if not event.embedding:
-            log.warning("skipping event type=%s source=%s — no embedding", event.type, event.source)
+            log.warning(
+                "skipping event type=%s source=%s — no embedding",
+                event.type,
+                event.source,
+            )
             return False
 
         try:
@@ -97,11 +101,22 @@ class VectorStore:
             point = PointStruct(id=point_id, vector=event.embedding, payload=payload)
 
             self.client.upsert(collection_name=self.collection_name, points=[point])
-            log.debug("stored event type=%s source=%s point_id=%s", event.type, event.source, point_id)
+            log.debug(
+                "stored event type=%s source=%s point_id=%s",
+                event.type,
+                event.source,
+                point_id,
+            )
             return True
 
         except Exception as e:
-            log.error("error storing event type=%s source=%s: %s", event.type, event.source, e, exc_info=True)
+            log.error(
+                "error storing event type=%s source=%s: %s",
+                event.type,
+                event.source,
+                e,
+                exc_info=True,
+            )
             return False
 
     def store_events(self, events: List[Event]) -> int:
@@ -112,7 +127,11 @@ class VectorStore:
 
         for event in events:
             if not event.embedding:
-                log.warning("skipping event type=%s source=%s — no embedding", event.type, event.source)
+                log.warning(
+                    "skipping event type=%s source=%s — no embedding",
+                    event.type,
+                    event.source,
+                )
                 no_embedding += 1
                 continue
 
@@ -134,16 +153,27 @@ class VectorStore:
                     "raw_content": event.raw_content,
                 }
 
-                points.append(PointStruct(id=point_id, vector=event.embedding, payload=payload))
+                points.append(
+                    PointStruct(id=point_id, vector=event.embedding, payload=payload)
+                )
 
             except Exception as e:
-                log.error("error preparing event type=%s source=%s: %s", event.type, event.source, e, exc_info=True)
+                log.error(
+                    "error preparing event type=%s source=%s: %s",
+                    event.type,
+                    event.source,
+                    e,
+                    exc_info=True,
+                )
                 prep_errors += 1
                 continue
 
         log.debug(
             "store_events: total=%d prepared=%d skipped_no_embedding=%d prep_errors=%d",
-            total, len(points), no_embedding, prep_errors,
+            total,
+            len(points),
+            no_embedding,
+            prep_errors,
         )
 
         successful_stores = 0
@@ -151,14 +181,25 @@ class VectorStore:
             try:
                 self.client.upsert(collection_name=self.collection_name, points=points)
                 successful_stores = len(points)
-                log.info("stored %d/%d events (skipped=%d errors=%d)", successful_stores, total, no_embedding, prep_errors)
+                log.info(
+                    "stored %d/%d events (skipped=%d errors=%d)",
+                    successful_stores,
+                    total,
+                    no_embedding,
+                    prep_errors,
+                )
             except Exception as e:
                 log.error(
                     "error batch storing %d events to collection %s: %s",
-                    len(points), self.collection_name, e, exc_info=True,
+                    len(points),
+                    self.collection_name,
+                    e,
+                    exc_info=True,
                 )
         elif not no_embedding and not prep_errors:
-            log.warning("store_events called with %d events but nothing to upsert", total)
+            log.warning(
+                "store_events called with %d events but nothing to upsert", total
+            )
 
         return successful_stores
 
