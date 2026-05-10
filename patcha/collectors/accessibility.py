@@ -1,5 +1,6 @@
 import ctypes
 import ctypes.util
+import hashlib
 import json
 import logging
 import os
@@ -61,6 +62,7 @@ class AccessibilityCollector:
         self._last_text: Dict[
             Tuple[str, str], str
         ] = {}  # (app, window_title) → last full text
+        self._last_active_key: Optional[Tuple[str, str]] = None
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self.log_file: Path = config.data_dir / "screen_log.jsonl"
@@ -147,9 +149,28 @@ class AccessibilityCollector:
             return None
 
     @staticmethod
+    def _dedup_observations(observations: List[Dict]) -> List[Dict]:
+        deduped: List[Dict] = []
+        for obs in observations:
+            ox, oy = obs["x"] + obs["w"] / 2, obs["y"] + obs["h"] / 2
+            duplicate = False
+            for kept in deduped:
+                if kept["text"] == obs["text"]:
+                    kx = kept["x"] + kept["w"] / 2
+                    ky = kept["y"] + kept["h"] / 2
+                    if abs(kx - ox) < 0.03 and abs(ky - oy) < 0.03:
+                        duplicate = True
+                        break
+            if not duplicate:
+                deduped.append(obs)
+        return deduped
+
+    @staticmethod
     def _reconstruct_layout(observations: List[Dict]) -> str:
         if not observations:
             return ""
+
+        observations = AccessibilityCollector._dedup_observations(observations)
 
         def x_mid(o: Dict) -> float:
             return o["x"] + o["w"] / 2
@@ -180,7 +201,7 @@ class AccessibilityCollector:
 
             row_splits = gap_splits(
                 sorted([y_mid(o) for o in col_obs], reverse=True),
-                min_gap=0.03,
+                min_gap=0.025,
             )
             row_splits_asc = sorted(row_splits)
 
@@ -198,7 +219,7 @@ class AccessibilityCollector:
                 lines: List[str] = []
                 current: List[Dict] = []
                 for obs in row_obs:
-                    if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.015:
+                    if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.010:
                         current.append(obs)
                     else:
                         lines.append(
@@ -272,7 +293,7 @@ class AccessibilityCollector:
                 text = raw[:4000]
             if not text:
                 return None
-            return {"app": app_name, "window_title": window_title, "text": text}
+            return {"app": app_name, "window_title": window_title, "text": text, "raw_text_source": "ocr"}
         except (subprocess.TimeoutExpired, OSError):
             return None
         finally:
@@ -296,6 +317,7 @@ class AccessibilityCollector:
                         "app": app_name,
                         "window_title": window_title,
                         "text": content,
+                        "raw_text_source": "ax",
                     }
 
             # AX binary ran but content requires OCR; use app/window and frame from AX
@@ -336,27 +358,54 @@ class AccessibilityCollector:
         key = (app, window_title)
         last = self._last_text.get(key, "")
 
+        if self._last_active_key is None:
+            transition = "new"
+        elif self._last_active_key[0] != app:
+            transition = "switch"
+        elif self._last_active_key != key:
+            transition = "new"
+        else:
+            transition = "same"
+
         if last:
             diff = self._content_diff(last, text)
             if len(diff) < _MIN_DIFF_LEN:
                 self._last_text[key] = text
+                self._last_active_key = key
                 return
             diff_ratio = len(diff) / max(len(text), 1)
-            is_diff = diff_ratio <= _FULL_REPLACE_RATIO
-            raw_for_embed = diff if is_diff else text
+            raw_text_truncated = diff_ratio <= _FULL_REPLACE_RATIO
+            raw_for_embed = diff if raw_text_truncated else text
         else:
             raw_for_embed = text
-            is_diff = False
+            raw_text_truncated = False
 
         self._last_text[key] = text
+        self._last_active_key = key
+
+        now = datetime.now(timezone.utc)
+        ts_ms = int(now.timestamp() * 1000)
+        short_hash = hashlib.md5(f"{app}:{window_title}:{ts_ms}".encode()).hexdigest()[:8]
+
         config.data_dir.mkdir(parents=True, exist_ok=True)
         entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "app": app,
+            "type": "screen",
+            "timestamp": now.isoformat(),
+            "project": None,
+            "app_name": app,
             "window_title": window_title,
-            "text": raw_for_embed,
-            "is_diff": is_diff,
-            "full_content_chars": len(text),
+            "raw_text": raw_for_embed,
+            "raw_text_source": data.get("raw_text_source", "ax"),
+            "raw_text_truncated": raw_text_truncated,
+            "gist": None,
+            "transition": transition,
+            "trigger": "timer",
+            "compacted": False,
+            "source_doc_id": f"screen::{ts_ms}::{short_hash}",
+            "_meta": {
+                "schema_version": 2,
+                "text_embedder": "text-embedding-3-small",
+            },
         }
         with open(self.log_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
@@ -425,12 +474,13 @@ class AccessibilityCollector:
             if duration < _MIN_DURATION_SECS:
                 continue
 
-            text = obj.get("text", "")
+            text = obj.get("raw_text") or obj.get("text", "")
             if not text:
                 continue
 
-            app = obj.get("app", "")
+            app = obj.get("app_name") or obj.get("app", "")
             window_title = obj.get("window_title", "")
+            raw_text_truncated = obj.get("raw_text_truncated", obj.get("is_diff", False))
 
             if window_title:
                 raw_content = f"{app} — {window_title}: {text}"
@@ -441,10 +491,16 @@ class AccessibilityCollector:
                 "app_name": app,
                 "window_title": window_title,
                 "duration_seconds": duration,
+                "raw_text_source": obj.get("raw_text_source", "ax"),
+                "transition": obj.get("transition"),
+                "trigger": obj.get("trigger", "timer"),
+                "gist": obj.get("gist"),
+                "compacted": obj.get("compacted", False),
             }
-            if obj.get("is_diff"):
-                meta["is_diff"] = True
-                meta["full_content_chars"] = obj.get("full_content_chars", len(text))
+            if raw_text_truncated:
+                meta["raw_text_truncated"] = True
+
+            source_doc_id = obj.get("source_doc_id")
 
             events.append(
                 {
@@ -452,6 +508,7 @@ class AccessibilityCollector:
                     "source": "accessibility",
                     "raw_content": raw_content,
                     "metadata": meta,
+                    "source_doc_id": source_doc_id,
                 }
             )
 

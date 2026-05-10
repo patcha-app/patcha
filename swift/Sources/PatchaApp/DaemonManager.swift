@@ -81,6 +81,7 @@ class DaemonManager: ObservableObject {
         let home = env["HOME"] ?? NSHomeDirectory()
         let extraPaths = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
+        env["PATCHA_ENV"] = "production"
         proc.environment = env
 
         let errPipe = Pipe()

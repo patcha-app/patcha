@@ -320,6 +320,7 @@ struct DiagResult: Encodable {
     let bfs_candidates: [BFSCandidate]
     let web_area_analysis: WebAreaAnalysis?
     let winner: String
+    let ocr_frame: String?
     let full_content: String?
 }
 
@@ -512,6 +513,21 @@ if diagMode {
         )
     }
 
+    // Compute what OCR frame would be used (same cascade as the non-diag path).
+    var diagOcrFrame: CGRect = .zero
+    if let f = focusedEl { diagOcrFrame = nearestFrame(f) }
+    if diagOcrFrame == .zero {
+        var diagCursorEl: AXUIElement?
+        let diagSysEl = AXUIElementCreateSystemWide()
+        if AXUIElementCopyElementAtPosition(diagSysEl, Float(mousePos.x), axY, &diagCursorEl) == .success,
+           let el = diagCursorEl {
+            diagOcrFrame = nearestFrame(el)
+        }
+    }
+    if diagOcrFrame == .zero { diagOcrFrame = axFrame(windowRoot) }
+    diagOcrFrame = narrowToViewport(diagOcrFrame, cursorX: CGFloat(mousePos.x), cursorAXY: CGFloat(axY))
+    let diagOcrFrameDesc = diagOcrFrame == .zero ? "no frame (nil)" : frameDesc(diagOcrFrame)
+
     let diagEncoder = JSONEncoder()
     diagEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let result = DiagResult(
@@ -523,6 +539,7 @@ if diagMode {
         bfs_candidates: bfsCandidates,
         web_area_analysis: webAnalysis,
         winner: winner,
+        ocr_frame: diagOcrFrameDesc,
         full_content: winnerContent
     )
     if let data = try? diagEncoder.encode(result),
@@ -543,6 +560,21 @@ func nearestFrame(_ el: AXUIElement) -> CGRect {
         current = axEl(c, "AXParent" as CFString)
     }
     return .zero
+}
+
+// When an app (e.g. GPU-rendered editors with minimal AX) only exposes the full window as
+// the focused region, shrink to a cursor-centered viewport so OCR isn't run on the entire screen.
+// Only kicks in when the frame occupies >= 85% of the primary screen area.
+func narrowToViewport(_ frame: CGRect, cursorX: CGFloat, cursorAXY: CGFloat) -> CGRect {
+    guard let screenFrame = NSScreen.main?.frame else { return frame }
+    let screenArea = Double(screenFrame.width * screenFrame.height)
+    let frameArea = Double(frame.width * frame.height)
+    guard frameArea >= screenArea * 0.85 else { return frame }
+    let vpW = min(frame.width, screenFrame.width * 0.55)
+    let vpH = min(frame.height, screenFrame.height * 0.65)
+    let x = max(frame.minX, min(frame.maxX - vpW, cursorX - vpW / 2))
+    let y = max(frame.minY, min(frame.maxY - vpH, cursorAXY - vpH / 2))
+    return CGRect(x: x, y: y, width: vpW, height: vpH)
 }
 
 // Strategy 1: keyboard focus — walk up from the focused element to the nearest content container
@@ -579,13 +611,25 @@ if let best = candidates.max(by: { axFrameArea($0.el) < axFrameArea($1.el) }),
 }
 
 // ocr_needed: no text extractable — emit best-effort frame so OCR can crop to the right region
-let ocrFrame: FrameRect?
+// Priority: keyboard focus > mouse cursor > window root.
+// Each level falls through when the previous yields .zero (e.g. GPU-rendered apps with no AX frames).
+var ocrBestFrame: CGRect = .zero
+
 if let focused = axEl(appEl, "AXFocusedUIElement" as CFString) {
-    ocrFrame = toFrameRect(nearestFrame(focused))
-} else if AXUIElementCopyElementAtPosition(sysEl, Float(mousePos.x), axY, &cursorEl) == .success,
-          let el = cursorEl {
-    ocrFrame = toFrameRect(nearestFrame(el))
-} else {
-    ocrFrame = toFrameRect(axFrame(windowRoot))
+    ocrBestFrame = nearestFrame(focused)
 }
+
+if ocrBestFrame == .zero,
+   AXUIElementCopyElementAtPosition(sysEl, Float(mousePos.x), axY, &cursorEl) == .success,
+   let el = cursorEl {
+    ocrBestFrame = nearestFrame(el)
+}
+
+if ocrBestFrame == .zero {
+    ocrBestFrame = axFrame(windowRoot)
+}
+
+ocrBestFrame = narrowToViewport(ocrBestFrame, cursorX: CGFloat(mousePos.x), cursorAXY: CGFloat(axY))
+
+let ocrFrame = toFrameRect(ocrBestFrame)
 emit(Out(app: appName, window_title: windowTitle, content: "", source: "ocr_needed", frame: ocrFrame))

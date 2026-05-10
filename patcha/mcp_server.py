@@ -49,9 +49,10 @@ async def list_tools() -> list[Tool]:
             name="get_working_memory",
             description=(
                 "Get a compact summary of the user's recent device activity. "
-                "Shows open apps, browser research, terminal commands, and git activity "
-                "from the last N minutes. Use this to understand what the user is currently "
-                "working on before answering questions or making suggestions."
+                "Shows open apps (with app-switch transitions noted), browser research, "
+                "terminal commands, and git activity from the last N minutes. "
+                "Use this to understand what the user is currently working on before "
+                "answering questions or making suggestions."
             ),
             inputSchema={
                 "type": "object",
