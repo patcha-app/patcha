@@ -6,20 +6,52 @@ enum DaemonStatus: Equatable {
     case stopped
     case starting
     case running
+    case paused
     case restarting(attempt: Int)
     case failed
 }
 
 class DaemonManager: ObservableObject {
     @Published var status: DaemonStatus = .stopped
+    @Published var pausedUntil: Date? = nil
 
     private var process: Process?
     private var processSource: DispatchSourceProcess?
     private var stabilityTimer: Timer?
+    private var pauseWorkItem: DispatchWorkItem?
     private var restartCount = 0
     private let maxRestarts = 5
     private let backoffDelays: [Double] = [5, 10, 20, 40, 80]
     private let stabilityWindow: TimeInterval = 600
+
+    func pause(until date: Date) {
+        guard case .running = status else { return }
+        guard let proc = process, proc.isRunning else { return }
+        pauseWorkItem?.cancel()
+        kill(proc.processIdentifier, SIGSTOP)
+        pausedUntil = date
+        status = .paused
+        let delay = max(0, date.timeIntervalSinceNow)
+        let item = DispatchWorkItem { [weak self] in self?.resume() }
+        pauseWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    func resume() {
+        guard case .paused = status else { return }
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        guard let proc = process, proc.isRunning else {
+            pausedUntil = nil
+            status = .stopped
+            scheduleRestart()
+            return
+        }
+        kill(proc.processIdentifier, SIGCONT)
+        pausedUntil = nil
+        status = .running
+        startStabilityTimer()
+    }
 
     func start() {
         guard case .stopped = status else { return }
@@ -36,6 +68,9 @@ class DaemonManager: ObservableObject {
     }
 
     func stop() {
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        pausedUntil = nil
         stabilityTimer?.invalidate()
         stabilityTimer = nil
         processSource?.cancel()
@@ -47,6 +82,7 @@ class DaemonManager: ObservableObject {
             return
         }
 
+        kill(proc.processIdentifier, SIGCONT)
         proc.terminate()
 
         let deadline = DispatchTime.now() + 5
@@ -119,6 +155,9 @@ class DaemonManager: ObservableObject {
     }
 
     private func handleProcessExit() {
+        pauseWorkItem?.cancel()
+        pauseWorkItem = nil
+        pausedUntil = nil
         let exitCode = process?.terminationStatus ?? -1
         let exitReason = process?.terminationReason ?? .exit
 
@@ -254,8 +293,11 @@ class DaemonManager: ObservableObject {
     }
 
     private func detectProjectDir() -> String {
-        // When built via build_app.sh the bundle lives at <project>/dist/Patcha.app.
-        // Walk up two levels from the bundle to find the project root.
+        if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
+            return envDir
+        }
+
+        // In .app bundle: bundle lives at <project>/dist/Patcha.app — two levels up is project root.
         let bundlePath = Bundle.main.bundlePath
         let distDir = (bundlePath as NSString).deletingLastPathComponent
         let candidate = (distDir as NSString).deletingLastPathComponent
@@ -263,8 +305,17 @@ class DaemonManager: ObservableObject {
             return candidate
         }
 
-        if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
-            return envDir
+        // In dev mode (swift run): walk up from the executable to find main.py.
+        if let execPath = Bundle.main.executablePath {
+            var dir = (execPath as NSString).deletingLastPathComponent
+            for _ in 0..<10 {
+                if FileManager.default.fileExists(atPath: "\(dir)/main.py") {
+                    return dir
+                }
+                let parent = (dir as NSString).deletingLastPathComponent
+                if parent == dir { break }
+                dir = parent
+            }
         }
 
         NSLog("[DaemonManager] could not detect project dir; set PATCHA_PROJECT_DIR env var")

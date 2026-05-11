@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from patcha.config import config, settings
+from patcha.collectors.filters import is_banking_domain, is_incognito_window
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _has_screen_recording_permission() -> bool:
 _FROZEN = getattr(sys, "frozen", False)
 _MEIPASS = Path(getattr(sys, "_MEIPASS", ""))
 
-_POLL_INTERVAL = settings.get("poll_interval")
+_POLL_INTERVAL = settings.get("ax_poll_interval")
 _AX_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ax_content.swift"
 _OCR_SWIFT_SOURCE = Path(__file__).parent.parent / "macos" / "ocr.swift"
 _APP_SCRIPT = (
@@ -45,7 +46,7 @@ _MIN_CONTENT_LEN = 60
 _MIN_DIFF_LEN = 30  # minimum new chars required to write a diff entry
 _FULL_REPLACE_RATIO = 0.8  # if diff is >80% of new content, store full text (new page)
 _MIN_DURATION_SECS = 4
-_SKIP_APPS = {
+_SKIP_APPS_BASE = {
     "Finder",
     "System Preferences",
     "System Settings",
@@ -53,6 +54,14 @@ _SKIP_APPS = {
     "Dock",
     "",
 }
+
+
+def _build_skip_apps() -> set:
+    base = set(_SKIP_APPS_BASE)
+    excluded = settings.get("excluded_app_names") or ""
+    if excluded:
+        base |= {n.strip() for n in excluded.split(",") if n.strip()}
+    return base
 
 
 class AccessibilityCollector:
@@ -68,6 +77,7 @@ class AccessibilityCollector:
         self.log_file: Path = config.data_dir / "screen_log.jsonl"
         self._line_count: int = self._count_existing_lines()
         self._write_count: int = 0
+        self._screenshot_hashes: Dict[Tuple[str, str], str] = {}
 
     def _count_existing_lines(self) -> int:
         if not self.log_file.exists():
@@ -201,7 +211,7 @@ class AccessibilityCollector:
 
             row_splits = gap_splits(
                 sorted([y_mid(o) for o in col_obs], reverse=True),
-                min_gap=0.025,
+                min_gap=0.02,
             )
             row_splits_asc = sorted(row_splits)
 
@@ -275,6 +285,12 @@ class AccessibilityCollector:
             )
             if cap.returncode != 0 or not os.path.getsize(tmp_path):
                 return None
+            digest = hashlib.md5(open(tmp_path, "rb").read()).hexdigest()
+            _key = (app_name, window_title)
+            if digest == self._screenshot_hashes.get(_key):
+                logger.debug("Screenshot unchanged for %s, skipping OCR", app_name)
+                return None
+            self._screenshot_hashes[_key] = digest
             ocr = subprocess.run(
                 [str(binary), tmp_path],
                 capture_output=True,
@@ -345,8 +361,14 @@ class AccessibilityCollector:
             return
         app = data["app"]
         window_title = data["window_title"]
-        if app in _SKIP_APPS:
-            logger.debug("Skipping capture for noise app: %s", app)
+        if app in _build_skip_apps():
+            logger.debug("Skipping capture for excluded app: %s", app)
+            return
+        if is_incognito_window(window_title):
+            logger.debug("Skipping capture: incognito window (%s)", window_title)
+            return
+        if is_banking_domain(window_title):
+            logger.debug("Skipping capture: banking site (%s)", window_title)
             return
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:

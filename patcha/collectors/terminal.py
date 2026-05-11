@@ -1,17 +1,26 @@
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
 from patcha.db.models import Event, EventType, TerminalCommand
+from patcha.utils.guard import CollectorGuard
+
+logger = logging.getLogger(__name__)
 
 
 class TerminalCollector:
     def __init__(self):
         self.shell = os.getenv("SHELL", "/bin/bash")
+        self._bash_guard = CollectorGuard("bash_history")
+        self._zsh_guard = CollectorGuard("zsh_history")
+        self._fish_guard = CollectorGuard("fish_history")
 
     def collect_bash_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._bash_guard.ok:
+            return []
         events = []
         history_file = Path.home() / ".bash_history"
 
@@ -62,13 +71,16 @@ class TerminalCollector:
                     },
                 )
                 events.append(event)
+            self._bash_guard.success()
 
         except Exception as e:
-            print(f"Error collecting bash history: {e}")
+            self._bash_guard.fail(e)
 
         return events
 
     def collect_zsh_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._zsh_guard.ok:
+            return []
         events = []
         history_file = Path.home() / ".zsh_history"
 
@@ -125,13 +137,16 @@ class TerminalCollector:
                     metadata={"shell": "zsh", "command_length": len(command)},
                 )
                 events.append(event)
+            self._zsh_guard.success()
 
         except Exception as e:
-            print(f"Error collecting zsh history: {e}")
+            self._zsh_guard.fail(e)
 
         return events
 
     def collect_fish_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._fish_guard.ok:
+            return []
         events = []
         history_file = Path.home() / ".local/share/fish/fish_history"
 
@@ -177,9 +192,10 @@ class TerminalCollector:
                     metadata={"shell": "fish", "command_length": len(command)},
                 )
                 events.append(event)
+            self._fish_guard.success()
 
         except Exception as e:
-            print(f"Error collecting fish history: {e}")
+            self._fish_guard.fail(e)
 
         return events
 

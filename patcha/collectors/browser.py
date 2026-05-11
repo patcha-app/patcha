@@ -9,12 +9,17 @@ from typing import List, Optional
 
 from patcha.db.models import Event, EventType, BrowserActivity
 from patcha.config import config
+from patcha.utils.guard import CollectorGuard
+from patcha.collectors.filters import is_banking_domain
 
 
 class BrowserCollector:
     def __init__(self):
         self.history_paths = config.browser_history_paths
         self.logger = logging.getLogger(__name__)
+        self._chrome_guard = CollectorGuard("chrome_history")
+        self._safari_guard = CollectorGuard("safari_history")
+        self._arc_guard = CollectorGuard("arc_history")
 
     def _enhance_youtube_title(self, title: str, url: str) -> str:
         if "youtube.com/watch" not in url and "youtu.be/" not in url:
@@ -36,6 +41,8 @@ class BrowserCollector:
         return title
 
     def collect_chrome_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._chrome_guard.ok:
+            return []
         chrome_path = Path(self.history_paths["chrome"]).expanduser()
         if not chrome_path.exists():
             return []
@@ -80,6 +87,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -101,13 +110,16 @@ class BrowserCollector:
 
             conn.close()
             temp_path.unlink()
+            self._chrome_guard.success()
 
         except Exception as e:
-            self.logger.warning("Error collecting Chrome history: %s", e)
+            self._chrome_guard.fail(e)
 
         return events
 
     def collect_safari_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._safari_guard.ok:
+            return []
         safari_path = Path(self.history_paths["safari"]).expanduser()
         if not safari_path.exists():
             return []
@@ -141,6 +153,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -158,13 +172,21 @@ class BrowserCollector:
 
             conn.close()
             temp_path.unlink()
+            self._safari_guard.success()
 
+        except PermissionError as e:
+            self._safari_guard.fail(
+                e,
+                msg=f"{e} — grant Full Disk Access in System Settings → Privacy & Security",
+            )
         except Exception as e:
-            self.logger.warning("Error collecting Safari history: %s", e)
+            self._safari_guard.fail(e)
 
         return events
 
     def collect_arc_history(self, since: Optional[datetime] = None) -> List[Event]:
+        if not self._arc_guard.ok:
+            return []
         arc_path = Path(self.history_paths["arc"]).expanduser()
         if not arc_path.exists():
             return []
@@ -209,8 +231,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
-
-                # Enhance title, especially for YouTube videos
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -232,9 +254,10 @@ class BrowserCollector:
 
             conn.close()
             temp_path.unlink()
+            self._arc_guard.success()
 
         except Exception as e:
-            self.logger.warning("Error collecting Arc history: %s", e)
+            self._arc_guard.fail(e)
 
         return events
 

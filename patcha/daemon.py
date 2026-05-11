@@ -15,12 +15,13 @@ from patcha.compaction import DailyCompactor
 from patcha.process import EventPreprocessor
 from patcha.db.store import VectorStore
 from patcha.db.models import Event, EventType
-from patcha.config import config
+from patcha.config import config, settings as _settings
+from patcha.utils.guard import CollectorGuard
 
 
 class ActivityDaemon:
     def __init__(self, poll_interval: int = 60, batch_size: int = 50):
-        self.poll_interval = poll_interval
+        self.poll_interval = _settings.get("poll_interval") or poll_interval
         self.batch_size = batch_size
         self.running = False
         self.start_time = None
@@ -29,22 +30,23 @@ class ActivityDaemon:
         config.data_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
 
-        self.git_collector = GitCollector() if config.enable_git_collector else None
+        self.git_collector = GitCollector() if _settings.get("enable_git") else None
         self.browser_collector = (
-            BrowserCollector() if config.enable_browser_collector else None
+            BrowserCollector() if _settings.get("enable_browser") else None
         )
         self.terminal_collector = (
-            TerminalCollector() if config.enable_terminal_collector else None
+            TerminalCollector() if _settings.get("enable_terminal") else None
         )
         self.window_collector = (
-            WindowCollector() if config.enable_window_collector else None
+            WindowCollector() if _settings.get("enable_window") else None
         )
         self.accessibility_collector = (
-            AccessibilityCollector() if config.enable_accessibility_collector else None
+            AccessibilityCollector() if _settings.get("enable_accessibility") else None
         )
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
         self.daily_compactor = DailyCompactor()
+        self._guards: dict = {}
 
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -157,6 +159,11 @@ class ActivityDaemon:
                 )
 
             for source_name, collector_func in sources:
+                guard = self._guards.setdefault(
+                    source_name, CollectorGuard(source_name)
+                )
+                if not guard.ok:
+                    continue
                 try:
                     events = collector_func(since)
                     if source_name == "git":
@@ -182,12 +189,13 @@ class ActivityDaemon:
                         ]
 
                     all_events.extend(events)
+                    guard.success()
                     self.logger.info(
                         f"Collected {len(events)} events from {source_name}"
                     )
 
                 except Exception as e:
-                    self.logger.error(f"Error collecting from {source_name}: {e}")
+                    guard.fail(e)
                     continue
 
             if not all_events:
