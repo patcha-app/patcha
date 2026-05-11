@@ -3,7 +3,6 @@
 import json
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
-from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
     VectorParams,
@@ -16,11 +15,12 @@ from qdrant_client.models import (
 
 from patcha.db.models import Task, TaskStatus, TaskSearchResult
 from patcha.config import config
+from patcha.db.store import _get_client
 
 
 class TaskStore:
     def __init__(self):
-        self.client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
+        self.client = _get_client()
         self.tasks_collection_name = "tasks"
         self.vector_size = config.vector_size
         self.local_storage_path = config.data_dir / "tasks"

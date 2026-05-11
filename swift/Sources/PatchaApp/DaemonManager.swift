@@ -117,6 +117,7 @@ class DaemonManager: ObservableObject {
         let home = env["HOME"] ?? NSHomeDirectory()
         let extraPaths = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
+        env["PATCHA_ENV"] = "production"
         proc.environment = env
 
         let errPipe = Pipe()
@@ -157,12 +158,47 @@ class DaemonManager: ObservableObject {
         pauseWorkItem?.cancel()
         pauseWorkItem = nil
         pausedUntil = nil
+        let exitCode = process?.terminationStatus ?? -1
+        let exitReason = process?.terminationReason ?? .exit
+
         processSource?.cancel()
         processSource = nil
         process = nil
         stabilityTimer?.invalidate()
         stabilityTimer = nil
+
+        // Clean exit (code 0, normal reason) means the daemon stopped on its own
+        // intentionally — don't restart endlessly; surface it as stopped.
+        if exitCode == 0 && exitReason == .exit {
+            NSLog("[DaemonManager] daemon exited cleanly (code 0) — not restarting")
+            status = .stopped
+            return
+        }
+
+        // Exit code 2 signals a non-recoverable config error (e.g. missing API key).
+        if exitCode == 2 {
+            NSLog("[DaemonManager] daemon exited with config error (code 2)")
+            status = .failed
+            DispatchQueue.main.async { DaemonManager.showConfigErrorAlert() }
+            return
+        }
+
         scheduleRestart()
+    }
+
+    private static func showConfigErrorAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Patcha configuration error"
+        alert.informativeText = """
+            The daemon could not start due to a missing configuration.
+
+            Make sure OPENAI_API_KEY is set in ~/.patcha/.env or the project .env file, \
+            then restart the daemon.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     private func scheduleRestart() {

@@ -87,7 +87,7 @@ class ActivityDaemon:
             self.logger.error(
                 "OPENAI_API_KEY not set. Please configure your .env file."
             )
-            return
+            sys.exit(2)
 
         config.data_dir.mkdir(exist_ok=True)
 
@@ -181,6 +181,7 @@ class ActivityDaemon:
                                 source=e.get("source", "accessibility"),
                                 raw_content=e.get("raw_content", ""),
                                 metadata=e.get("metadata", {}),
+                                source_doc_id=e.get("source_doc_id"),
                             )
                             if isinstance(e, dict)
                             else e
@@ -253,38 +254,42 @@ class ActivityDaemon:
             self.logger.error(f"Error in collection cycle: {e}")
 
     def get_status(self):
-        pid_file = config.data_dir / "daemon.pid"
-        if not pid_file.exists():
-            return {"running": False, "pid": None}
+        return daemon_status()
+
+
+def daemon_status() -> dict:
+    pid_file = config.data_dir / "daemon.pid"
+    if not pid_file.exists():
+        return {"running": False, "pid": None}
+
+    try:
+        with open(pid_file, "r") as f:
+            content = f.read().strip()
 
         try:
-            with open(pid_file, "r") as f:
-                content = f.read().strip()
+            daemon_info = json.loads(content)
+            pid = daemon_info["pid"]
+            start_time = daemon_info.get("start_time")
+            last_collection = daemon_info.get("last_collection_time")
+        except json.JSONDecodeError:
+            pid = int(content)
+            start_time = None
+            last_collection = None
 
-            try:
-                daemon_info = json.loads(content)
-                pid = daemon_info["pid"]
-                start_time = daemon_info.get("start_time")
-                last_collection = daemon_info.get("last_collection_time")
-            except json.JSONDecodeError:
-                pid = int(content)
-                start_time = None
-                last_collection = None
+        import psutil
 
-            import psutil
-
-            if psutil.pid_exists(pid):
-                status = {"running": True, "pid": pid}
-                if start_time:
-                    status["start_time"] = start_time
-                if last_collection:
-                    status["last_collection"] = last_collection
-                return status
-            else:
-                pid_file.unlink()
-                return {"running": False, "pid": None}
-        except Exception as e:
-            return {"running": False, "pid": None, "error": str(e)}
+        if psutil.pid_exists(pid):
+            status = {"running": True, "pid": pid}
+            if start_time:
+                status["start_time"] = start_time
+            if last_collection:
+                status["last_collection"] = last_collection
+            return status
+        else:
+            pid_file.unlink()
+            return {"running": False, "pid": None}
+    except Exception as e:
+        return {"running": False, "pid": None, "error": str(e)}
 
 
 def run_daemon(poll_interval: int = 60, batch_size: int = 50):

@@ -100,7 +100,13 @@ if wa:
             print(f"      {CYAN}{lm}{RESET}")
 
 winner_color = GREEN if data["winner"] != "ocr_needed" else RED
-print(f"\n{BOLD}Winner:{RESET} {winner_color}{data['winner']}{RESET}\n")
+print(f"\n{BOLD}Winner:{RESET} {winner_color}{data['winner']}{RESET}")
+
+ocr_frame = data.get("ocr_frame")
+if ocr_frame:
+    ocr_color = YELLOW if data["winner"] == "ocr_needed" else GREEN
+    print(f"{BOLD}OCR frame:{RESET} {ocr_color}{ocr_frame}{RESET}")
+print()
 
 if show_content:
     content = data.get("full_content")

@@ -57,9 +57,15 @@ def _format_line(payload: dict) -> str:
         detail = raw[:120]
 
     elif event_type in ("screen", "window"):
-        app = meta.get("app_name", "")
-        title = meta.get("window_title", "")
-        detail = f"{app} — {title}" if title else app
+        gist = meta.get("gist")
+        if gist:
+            detail = gist
+        else:
+            app = meta.get("app_name", "")
+            title = meta.get("window_title", "")
+            detail = f"{app} — {title}" if title else app
+        if meta.get("transition") == "switch":
+            detail = f"[app switch] {detail}"
 
     else:
         detail = raw[:120]
@@ -147,6 +153,18 @@ def _format_detail(payload: dict) -> str:
         raw = payload.get("raw_content", "")
         if "Diff:\n" in raw:
             return base + "\n" + raw[raw.index("Diff:\n") :]
+    if event_type in ("screen", "window"):
+        meta = payload.get("metadata") or {}
+        raw_source = meta.get("raw_text_source")
+        raw = payload.get("raw_content", "")
+        detail_lines = []
+        if raw_source and raw_source != "ax":
+            detail_lines.append(f"capture: {raw_source}")
+        if raw:
+            snippet = raw[raw.find(": ") + 2 :] if ": " in raw else raw
+            detail_lines.append(snippet[:300])
+        if detail_lines:
+            return base + "\n" + "\n".join(detail_lines)
     return base
 
 

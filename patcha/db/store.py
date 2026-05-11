@@ -1,7 +1,7 @@
 """Vector storage using Qdrant."""
 
 import logging
-import sys
+import os
 import uuid
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
@@ -22,14 +22,33 @@ from patcha.config import config
 
 log = logging.getLogger(__name__)
 
+_qdrant_client: QdrantClient | None = None
+
+
+def _get_client() -> QdrantClient:
+    global _qdrant_client
+    if _qdrant_client is not None:
+        return _qdrant_client
+    is_production = os.getenv("PATCHA_ENV") == "production"
+    explicit_url = os.getenv("QDRANT_URL")
+    if is_production and not explicit_url:
+        log.info("qdrant mode=local path=%s", config.qdrant_path)
+        config.qdrant_path.mkdir(parents=True, exist_ok=True)
+        lock_file = config.qdrant_path / ".lock"
+        if lock_file.exists():
+            log.warning("qdrant: removing stale lock file at %s", lock_file)
+            lock_file.unlink()
+        _qdrant_client = QdrantClient(path=str(config.qdrant_path))
+    else:
+        log.info("qdrant mode=server endpoint=%s", config.qdrant_url)
+        _qdrant_client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
+    log.info("qdrant: client ready")
+    return _qdrant_client
+
 
 class VectorStore:
     def __init__(self):
-        if getattr(sys, "frozen", False):
-            config.qdrant_path.mkdir(parents=True, exist_ok=True)
-            self.client = QdrantClient(path=str(config.qdrant_path))
-        else:
-            self.client = QdrantClient(url=config.qdrant_url, check_compatibility=False)
+        self.client = _get_client()
         self.collection_name = config.collection_name
         self.vector_size = config.vector_size
         self._ensure_collection_exists()
@@ -50,24 +69,18 @@ class VectorStore:
             else:
                 log.debug("collection already exists: %s", self.collection_name)
         except Exception as e:
-            log.error("error ensuring collection exists: %s", e)
+            log.error("error ensuring collection exists: %s", e, exc_info=True)
 
     def store_event(self, event: Event) -> bool:
         if not event.embedding:
-            log.debug("skipping event %s — no embedding", event.type)
+            log.warning("skipping event type=%s source=%s — no embedding", event.type, event.source)
             return False
 
         try:
             if event.source_doc_id:
                 point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
-                log.debug(
-                    "dedup: using deterministic id for source_doc_id=%s → point_id=%s",
-                    event.source_doc_id,
-                    point_id,
-                )
             else:
                 point_id = str(uuid.uuid4())
-                log.debug("new point id (no source_doc_id): %s", point_id)
 
             payload = {
                 "timestamp": event.timestamp.isoformat(),
@@ -84,33 +97,30 @@ class VectorStore:
             point = PointStruct(id=point_id, vector=event.embedding, payload=payload)
 
             self.client.upsert(collection_name=self.collection_name, points=[point])
-            log.debug("upserted event type=%s point_id=%s", event.type, point_id)
+            log.debug("stored event type=%s source=%s point_id=%s", event.type, event.source, point_id)
             return True
 
         except Exception as e:
-            log.error("error storing event: %s", e)
+            log.error("error storing event type=%s source=%s: %s", event.type, event.source, e, exc_info=True)
             return False
 
     def store_events(self, events: List[Event]) -> int:
-        successful_stores = 0
+        total = len(events)
+        no_embedding = 0
+        prep_errors = 0
         points = []
 
         for event in events:
             if not event.embedding:
-                log.debug("skipping event %s — no embedding", event.type)
+                log.warning("skipping event type=%s source=%s — no embedding", event.type, event.source)
+                no_embedding += 1
                 continue
 
             try:
                 if event.source_doc_id:
                     point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, event.source_doc_id))
-                    log.debug(
-                        "dedup: deterministic id for source_doc_id=%s → %s",
-                        event.source_doc_id,
-                        point_id,
-                    )
                 else:
                     point_id = str(uuid.uuid4())
-                    log.debug("new point id: %s type=%s", point_id, event.type)
 
                 payload = {
                     "timestamp": event.timestamp.isoformat(),
@@ -124,32 +134,31 @@ class VectorStore:
                     "raw_content": event.raw_content,
                 }
 
-                point = PointStruct(
-                    id=point_id, vector=event.embedding, payload=payload
-                )
-
-                points.append(point)
+                points.append(PointStruct(id=point_id, vector=event.embedding, payload=payload))
 
             except Exception as e:
-                log.error("error preparing event for storage: %s", e)
+                log.error("error preparing event type=%s source=%s: %s", event.type, event.source, e, exc_info=True)
+                prep_errors += 1
                 continue
 
+        log.debug(
+            "store_events: total=%d prepared=%d skipped_no_embedding=%d prep_errors=%d",
+            total, len(points), no_embedding, prep_errors,
+        )
+
+        successful_stores = 0
         if points:
             try:
-                log.debug(
-                    "upserting batch of %d points to collection %s",
-                    len(points),
-                    self.collection_name,
-                )
                 self.client.upsert(collection_name=self.collection_name, points=points)
                 successful_stores = len(points)
-                log.info("stored %d events", successful_stores)
+                log.info("stored %d/%d events (skipped=%d errors=%d)", successful_stores, total, no_embedding, prep_errors)
             except Exception as e:
-                log.error("error batch storing events: %s", e)
-
-        skipped = len(events) - successful_stores
-        if skipped:
-            log.debug("skipped %d events (no embedding or prep error)", skipped)
+                log.error(
+                    "error batch storing %d events to collection %s: %s",
+                    len(points), self.collection_name, e, exc_info=True,
+                )
+        elif not no_embedding and not prep_errors:
+            log.warning("store_events called with %d events but nothing to upsert", total)
 
         return successful_stores
 
@@ -340,8 +349,8 @@ class VectorStore:
             info = self.client.get_collection(self.collection_name)
             return {
                 "name": self.collection_name,
-                "vectors_count": info.vectors_count,
                 "points_count": info.points_count,
+                "indexed_vectors_count": info.indexed_vectors_count,
                 "status": info.status,
             }
         except Exception as e:

@@ -21,7 +21,7 @@ from patcha.db.store import VectorStore
 from patcha.summary import DailySummarizer
 from patcha.db.models import Category
 from patcha.config import config
-from patcha.daemon import ActivityDaemon
+from patcha.daemon import ActivityDaemon, daemon_status
 from patcha.db.retrieval.cluster import ActivityClusterer
 from patcha.categorize import EnhancedCategorizer
 from patcha.db.graph import KnowledgeGraph
@@ -643,8 +643,7 @@ def compact_day(date: Optional[datetime], dry_run: bool, force: bool):
 def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
     """Start the background activity collection daemon."""
 
-    daemon = ActivityDaemon(poll_interval=poll_interval, batch_size=batch_size)
-    status = daemon.get_status()
+    status = daemon_status()
 
     if status["running"]:
         console.print(
@@ -653,6 +652,8 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
         return
 
     console.print(f"Starting daemon with {poll_interval}s poll interval...")
+
+    daemon = ActivityDaemon(poll_interval=poll_interval, batch_size=batch_size)
 
     if foreground:
         daemon.start()
@@ -673,8 +674,7 @@ def start_daemon(poll_interval: int, batch_size: int, foreground: bool):
 def stop_daemon():
     """Stop the background activity collection daemon."""
 
-    daemon = ActivityDaemon()
-    status = daemon.get_status()
+    status = daemon_status()
 
     if not status["running"]:
         console.print("[yellow]Daemon is not running[/yellow]")
@@ -695,12 +695,11 @@ def stop_daemon():
         console.print(f"[red]Permission denied. Cannot stop daemon (PID: {pid})[/red]")
 
 
-@cli.command()
-def daemon_status():
+@cli.command("daemon-status")
+def daemon_status_cmd():
     """Show daemon status."""
 
-    daemon = ActivityDaemon()
-    status = daemon.get_status()
+    status = daemon_status()
 
     if status["running"]:
         console.print("[green]Daemon is running[/green]")
@@ -2275,6 +2274,119 @@ def graph_stats():
 
     except Exception as e:
         console.print(f"[red]Error getting graph statistics: {e}[/red]")
+
+
+@cli.command()
+@click.option("--email", prompt="Email", help="Your patcha account email")
+@click.option(
+    "--password",
+    prompt="Password",
+    hide_input=True,
+    help="Your patcha account password",
+)
+@click.option(
+    "--register",
+    "do_register",
+    is_flag=True,
+    default=False,
+    help="Create a new account instead of logging in",
+)
+def login(email: str, password: str, do_register: bool):
+    """Log in to patcha cloud (or create an account with --register)."""
+    from patcha.api_client import PatchaAPIClient
+
+    client = PatchaAPIClient()
+    if do_register:
+        ok = client.register(email, password)
+        if ok:
+            console.print("[green]Account created and logged in.[/green]")
+        else:
+            console.print(
+                "[red]Registration failed. Email may already be in use.[/red]"
+            )
+    else:
+        ok = client.login(email, password)
+        if ok:
+            console.print("[green]Logged in successfully.[/green]")
+        else:
+            console.print("[red]Login failed. Check your credentials.[/red]")
+
+
+@cli.command()
+def logout():
+    """Log out from patcha cloud."""
+    from patcha.api_client import PatchaAPIClient
+
+    client = PatchaAPIClient()
+    client.logout()
+    console.print("[green]Logged out.[/green]")
+
+
+@cli.command("update")
+def check_update():
+    """Check for a newer version of patcha."""
+    from patcha.api_client import PatchaAPIClient
+
+    client = PatchaAPIClient()
+    result = client.check_update(_VERSION)
+    if result is None:
+        console.print("[yellow]Could not reach patcha update server.[/yellow]")
+        return
+    if result.get("up_to_date"):
+        console.print(f"[green]You are on the latest version ({_VERSION}).[/green]")
+    else:
+        latest = result.get("latest_version", "?")
+        url = result.get("download_url", "")
+        console.print(f"[yellow]Update available: {latest}[/yellow]")
+        if url:
+            console.print(f"Download: {url}")
+
+
+@cli.command("models")
+@click.option("--download", "model_id", default=None, help="Download a model by ID")
+def list_models(model_id: Optional[str]):
+    """List available small language models (or download one with --download ID)."""
+    from patcha.api_client import PatchaAPIClient
+
+    client = PatchaAPIClient()
+    if model_id:
+        if not client.is_authenticated:
+            console.print(
+                "[red]You must be logged in to download models. Run: patcha login[/red]"
+            )
+            return
+        url = client.get_model_download_url(model_id)
+        if url:
+            console.print(f"[green]Download URL (valid 15 min):[/green]\n{url}")
+        else:
+            console.print("[red]Could not get download URL. Model may not exist.[/red]")
+        return
+
+    models = client.list_models()
+    if not models:
+        console.print("[yellow]No models available or could not reach server.[/yellow]")
+        return
+
+    table = Table(title="Available Models")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("Version")
+    table.add_column("Format")
+    table.add_column("Size")
+    table.add_column("Description")
+
+    for m in models:
+        size_gb = m["size_bytes"] / 1e9
+        table.add_row(
+            m["id"],
+            m["name"],
+            m["version"],
+            m["format"],
+            f"{size_gb:.1f} GB",
+            m["description"],
+        )
+
+    console.print(table)
 
 
 if __name__ == "__main__":
