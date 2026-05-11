@@ -28,9 +28,13 @@ class GitCollector:
             return False
 
     _SKIP_DIRS = {
-        "Music", "Pictures", "Movies",
-        "Library", "Applications",
-        "iCloud Drive", "iCloud",
+        "Music",
+        "Pictures",
+        "Movies",
+        "Library",
+        "Applications",
+        "iCloud Drive",
+        "iCloud",
     }
 
     def _find_git_repos(self, search_path: Optional[Path] = None) -> List[Path]:

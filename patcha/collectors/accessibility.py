@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from patcha.config import config, settings
+from patcha.collectors.filters import is_banking_domain, is_incognito_window
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +313,12 @@ class AccessibilityCollector:
         window_title = data["window_title"]
         if app in _build_skip_apps():
             logger.debug("Skipping capture for excluded app: %s", app)
+            return
+        if is_incognito_window(window_title):
+            logger.debug("Skipping capture: incognito window (%s)", window_title)
+            return
+        if is_banking_domain(window_title):
+            logger.debug("Skipping capture: banking site (%s)", window_title)
             return
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:

@@ -10,6 +10,7 @@ from typing import List, Optional
 from patcha.db.models import Event, EventType, BrowserActivity
 from patcha.config import config
 from patcha.utils.guard import CollectorGuard
+from patcha.collectors.filters import is_banking_domain
 
 
 class BrowserCollector:
@@ -86,6 +87,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -150,6 +153,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
@@ -226,8 +231,8 @@ class BrowserCollector:
                     if "//" in url
                     else url.split("/")[0]
                 )
-
-                # Enhance title, especially for YouTube videos
+                if is_banking_domain(domain):
+                    continue
                 enhanced_title = self._enhance_youtube_title(title or "Untitled", url)
 
                 browser_activity = BrowserActivity(
