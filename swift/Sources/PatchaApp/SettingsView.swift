@@ -41,7 +41,11 @@ struct SettingsRootView: View {
         case .permissions:
             AppPermissionsPane(store: store, viewModel: permissionsVM)
         case .general:
-            GeneralPane(store: store, daemonManager: daemonManager)
+            if let dm = daemonManager {
+                GeneralPane(store: store, daemonManager: dm)
+            } else {
+                PlaceholderPane(section: .general)
+            }
         case .memories:
             PlaceholderPane(section: .memories)
         case .modelPreference:
@@ -252,8 +256,28 @@ struct AppPermissionRow: View {
 
 struct GeneralPane: View {
     @ObservedObject var store: SettingsStore
-    var daemonManager: DaemonManager?
+    @ObservedObject var daemonManager: DaemonManager
     @State private var restartFeedback = false
+    @State private var pauseDuration: Int = 30 * 60
+
+    private let pauseOptions: [(String, Int)] = [
+        ("30 minutes", 30 * 60),
+        ("1 hour",     60 * 60),
+        ("2 hours",   120 * 60),
+        ("4 hours",   240 * 60),
+        ("Until tomorrow", -1),
+    ]
+
+    private var isPaused: Bool {
+        daemonManager.status == .paused
+    }
+
+    private func nextMidnight() -> Date {
+        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        comps.day = (comps.day ?? 0) + 1
+        comps.hour = 0; comps.minute = 0; comps.second = 0
+        return Calendar.current.date(from: comps) ?? Date().addingTimeInterval(86400)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -276,9 +300,31 @@ struct GeneralPane: View {
                     Toggle("Launch at Login", isOn: $store.launchAtLogin)
                     Toggle("Check for updates automatically", isOn: $store.autoCheckUpdates)
                 }
-                Section("Collection") {
-                    LabeledContent("Poll Interval") {
-                        Stepper("\(store.pollInterval) s", value: $store.pollInterval, in: 30...600, step: 30)
+                Section("Pause Patcha") {
+                    if isPaused, let until = daemonManager.pausedUntil {
+                        LabeledContent("Status") {
+                            Text("Paused · resumes \(until.formatted(.relative(presentation: .named)))")
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Resume Now") {
+                            daemonManager.resume()
+                        }
+                    } else {
+                        LabeledContent("Pause for") {
+                            Picker("", selection: $pauseDuration) {
+                                ForEach(pauseOptions, id: \.1) { label, secs in
+                                    Text(label).tag(secs)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 160)
+                        }
+                        Button("Pause Recording") {
+                            let until = pauseDuration == -1
+                                ? nextMidnight()
+                                : Date().addingTimeInterval(TimeInterval(pauseDuration))
+                            daemonManager.pause(until: until)
+                        }
                     }
                 }
             }
@@ -294,7 +340,7 @@ struct GeneralPane: View {
                 }
                 Spacer()
                 Button("Save & Restart Daemon") {
-                    store.save { daemonManager?.restart() }
+                    store.save { daemonManager.restart() }
                     restartFeedback = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         restartFeedback = false

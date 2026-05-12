@@ -41,6 +41,7 @@ final class SettingsStore: ObservableObject {
         sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)", nil, nil, nil)
 
         let rows = query(db: db, sql: "SELECT key, value FROM settings")
+        var foundLaunchAtLogin = false
         for (key, value) in rows {
             switch key {
             case "poll_interval":        pollInterval = Int(value) ?? 60
@@ -53,9 +54,14 @@ final class SettingsStore: ObservableObject {
             case "excluded_app_names":   excludedAppNames = value
             case "pause_for_internal":   pauseForInternal = value == "true"
             case "auto_check_updates":   autoCheckUpdates = value == "true"
-            case "launch_at_login":      launchAtLogin = value == "true"
+            case "launch_at_login":
+                launchAtLogin = value == "true"
+                foundLaunchAtLogin = true
             default: break
             }
+        }
+        if !foundLaunchAtLogin {
+            launchAtLogin = true
         }
     }
 

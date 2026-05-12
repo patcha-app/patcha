@@ -47,6 +47,14 @@ class MenuBarController: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateMenuState() }
             .store(in: &cancellables)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        refreshPermissions()
     }
 
     private func buildMenu() {
@@ -57,9 +65,6 @@ class MenuBarController: NSObject {
         menu.addItem(grantScreenRecordingItem)
 
         menu.addItem(.separator())
-        menu.addItem(statusMenuItem)
-        menu.addItem(.separator())
-
         menu.addItem(buildPauseSubmenu())
 
         let restartItem = NSMenuItem(title: "Restart Daemon", action: #selector(restartDaemon), keyEquivalent: "r")
@@ -68,8 +73,9 @@ class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Open Settings", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
+        settingsItem.image = nil
         menu.addItem(settingsItem)
 
         menu.addItem(buildResourcesSubmenu())
@@ -129,6 +135,22 @@ class MenuBarController: NSObject {
         updateIcon(for: daemonManager.status)
         updateStatusLabel(for: daemonManager.status, pausedUntil: daemonManager.pausedUntil)
         resumeNowItem?.isHidden = daemonManager.status != .paused
+    }
+
+    private func refreshPermissions() {
+        grantAccessibilityItem.isHidden = PermissionsManager.accessibilityGranted()
+
+        let srGranted = PermissionsManager.screenRecordingGranted()
+        let srOpened = UserDefaults.standard.bool(forKey: "didOpenScreenRecordingPrefs")
+        grantScreenRecordingItem.isHidden = srGranted || srOpened
+    }
+
+    @objc private func appDidBecomeActive() {
+        refreshPermissions()
+        if case .stopped = daemonManager.status, PermissionsManager.accessibilityGranted() {
+            daemonManager.start()
+        }
+        updateMenuState()
     }
 
     private func updateIcon(for daemonStatus: DaemonStatus) {
@@ -229,6 +251,7 @@ class MenuBarController: NSObject {
     }
 
     @objc private func openScreenRecordingPrefs() {
+        UserDefaults.standard.set(true, forKey: "didOpenScreenRecordingPrefs")
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 
@@ -239,10 +262,7 @@ class MenuBarController: NSObject {
 
 extension MenuBarController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
-        let axGranted = PermissionsManager.accessibilityGranted()
-        let srGranted = PermissionsManager.screenRecordingGranted()
-        grantAccessibilityItem.isHidden = axGranted
-        grantScreenRecordingItem.isHidden = srGranted
+        refreshPermissions()
         resumeNowItem?.isHidden = daemonManager.status != .paused
         updateStatusLabel(for: daemonManager.status, pausedUntil: daemonManager.pausedUntil)
     }

@@ -53,6 +53,17 @@ _SKIP_APPS_BASE = {
     "loginwindow",
     "Dock",
     "",
+    "1Password",
+    "1Password 7 - Password Manager",
+    "Bitwarden",
+    "LastPass",
+    "Dashlane",
+    "Keychain Access",
+    "KeePassXC",
+    "NordPass",
+    "Enpass",
+    "Keeper Password Manager",
+    "RoboForm",
 }
 
 
