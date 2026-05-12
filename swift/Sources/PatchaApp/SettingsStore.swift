@@ -15,6 +15,7 @@ final class SettingsStore: ObservableObject {
     @Published var autoCheckUpdates: Bool = true
     @Published var launchAtLogin: Bool = false {
         didSet {
+            guard !isLoading else { return }
             if launchAtLogin {
                 try? SMAppService.mainApp.register()
             } else {
@@ -24,6 +25,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private let dbPath: String
+    private var isLoading = false
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -34,6 +36,8 @@ final class SettingsStore: ObservableObject {
     }
 
     func load() {
+        isLoading = true
+        defer { isLoading = false }
         var db: OpaquePointer?
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }

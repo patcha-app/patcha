@@ -129,7 +129,7 @@ struct SidebarNavItem: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-            .cornerRadius(6)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -215,6 +215,7 @@ struct CollectorRow: View {
             Toggle("", isOn: $isEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel(Text(name))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -231,7 +232,7 @@ struct AppPermissionRow: View {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 28, height: 28)
-                    .cornerRadius(6)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 Image(systemName: "app")
                     .font(.body)
@@ -248,6 +249,7 @@ struct AppPermissionRow: View {
             ))
             .labelsHidden()
             .toggleStyle(.switch)
+            .accessibilityLabel(Text(app.name))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -270,13 +272,6 @@ struct GeneralPane: View {
 
     private var isPaused: Bool {
         daemonManager.status == .paused
-    }
-
-    private func nextMidnight() -> Date {
-        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        comps.day = (comps.day ?? 0) + 1
-        comps.hour = 0; comps.minute = 0; comps.second = 0
-        return Calendar.current.date(from: comps) ?? Date().addingTimeInterval(86400)
     }
 
     var body: some View {
@@ -342,11 +337,13 @@ struct GeneralPane: View {
                 Button("Save & Restart Daemon") {
                     store.save { daemonManager.restart() }
                     restartFeedback = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        restartFeedback = false
-                    }
                 }
                 .buttonStyle(.borderedProminent)
+                .task(id: restartFeedback) {
+                    guard restartFeedback else { return }
+                    try? await Task.sleep(for: .seconds(3))
+                    restartFeedback = false
+                }
             }
             .padding()
         }

@@ -1,17 +1,11 @@
 import AppKit
 import Combine
 
-class MenuBarController: NSObject {
+@MainActor class MenuBarController: NSObject {
     private var statusItem: NSStatusItem
     private var daemonManager: DaemonManager
     private var settingsWindowController: SettingsWindowController
     private var cancellables = Set<AnyCancellable>()
-
-    private lazy var statusMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: "Starting up...", action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }()
 
     private lazy var grantAccessibilityItem: NSMenuItem = {
         let item = NSMenuItem(title: "Grant Accessibility Access...", action: #selector(openAccessibilityPrefs), keyEquivalent: "")
@@ -39,12 +33,10 @@ class MenuBarController: NSObject {
         updateIcon(for: .stopped)
 
         daemonManager.$status
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateMenuState() }
             .store(in: &cancellables)
 
         daemonManager.$pausedUntil
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateMenuState() }
             .store(in: &cancellables)
 
@@ -133,7 +125,6 @@ class MenuBarController: NSObject {
 
     private func updateMenuState() {
         updateIcon(for: daemonManager.status)
-        updateStatusLabel(for: daemonManager.status, pausedUntil: daemonManager.pausedUntil)
         resumeNowItem?.isHidden = daemonManager.status != .paused
     }
 
@@ -186,39 +177,12 @@ class MenuBarController: NSObject {
         return image
     }
 
-    private func updateStatusLabel(for daemonStatus: DaemonStatus, pausedUntil: Date?) {
-        switch daemonStatus {
-        case .stopped, .starting:
-            statusMenuItem.title = "Starting up..."
-        case .running:
-            statusMenuItem.title = "Patcha is watching..."
-        case .paused:
-            if let until = pausedUntil {
-                let remaining = max(0, Int(until.timeIntervalSinceNow))
-                statusMenuItem.title = "Paused · resumes in \(formatDuration(remaining))"
-            } else {
-                statusMenuItem.title = "Paused"
-            }
-        case .restarting(let attempt):
-            statusMenuItem.title = "Restarting... (attempt \(attempt))"
-        case .failed:
-            statusMenuItem.title = "Daemon stopped unexpectedly"
-        }
-    }
-
     private func formatDuration(_ seconds: Int) -> String {
         if seconds <= 0 { return "now" }
         if seconds < 3600 { return "\(seconds / 60)m" }
         let h = seconds / 3600
         let m = (seconds % 3600) / 60
         return m > 0 ? "\(h)h \(m)m" : "\(h)h"
-    }
-
-    private func nextMidnight() -> Date {
-        var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        comps.day = (comps.day ?? 0) + 1
-        comps.hour = 0; comps.minute = 0; comps.second = 0
-        return Calendar.current.date(from: comps) ?? Date().addingTimeInterval(86400)
     }
 
     @objc private func pauseFor(_ sender: NSMenuItem) {
@@ -264,6 +228,5 @@ extension MenuBarController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshPermissions()
         resumeNowItem?.isHidden = daemonManager.status != .paused
-        updateStatusLabel(for: daemonManager.status, pausedUntil: daemonManager.pausedUntil)
     }
 }
