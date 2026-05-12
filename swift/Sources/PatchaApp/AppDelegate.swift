@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         daemonManager = DaemonManager()
         settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store)
         menuBarController = MenuBarController(daemonManager: daemonManager, settingsWindowController: settingsWindowController)
+        Installer.installIfNeeded()
         PermissionsManager.requestIfNeeded()
         daemonManager.start()
     }

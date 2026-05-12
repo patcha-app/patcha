@@ -2,6 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# When run from inside Patcha.app, binaries live alongside this script in Resources/
+
 INSTALL_DIR="/usr/local/bin"
 HOME_DIR="$HOME"
 LOG_DIR="$HOME/.patcha/logs"
