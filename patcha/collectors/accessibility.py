@@ -53,6 +53,17 @@ _SKIP_APPS_BASE = {
     "loginwindow",
     "Dock",
     "",
+    "1Password",
+    "1Password 7 - Password Manager",
+    "Bitwarden",
+    "LastPass",
+    "Dashlane",
+    "Keychain Access",
+    "KeePassXC",
+    "NordPass",
+    "Enpass",
+    "Keeper Password Manager",
+    "RoboForm",
 }
 
 
@@ -309,7 +320,12 @@ class AccessibilityCollector:
                 text = raw[:4000]
             if not text:
                 return None
-            return {"app": app_name, "window_title": window_title, "text": text, "raw_text_source": "ocr"}
+            return {
+                "app": app_name,
+                "window_title": window_title,
+                "text": text,
+                "raw_text_source": "ocr",
+            }
         except (subprocess.TimeoutExpired, OSError):
             return None
         finally:
@@ -407,7 +423,9 @@ class AccessibilityCollector:
 
         now = datetime.now(timezone.utc)
         ts_ms = int(now.timestamp() * 1000)
-        short_hash = hashlib.md5(f"{app}:{window_title}:{ts_ms}".encode()).hexdigest()[:8]
+        short_hash = hashlib.md5(f"{app}:{window_title}:{ts_ms}".encode()).hexdigest()[
+            :8
+        ]
 
         config.data_dir.mkdir(parents=True, exist_ok=True)
         entry = {
@@ -502,7 +520,9 @@ class AccessibilityCollector:
 
             app = obj.get("app_name") or obj.get("app", "")
             window_title = obj.get("window_title", "")
-            raw_text_truncated = obj.get("raw_text_truncated", obj.get("is_diff", False))
+            raw_text_truncated = obj.get(
+                "raw_text_truncated", obj.get("is_diff", False)
+            )
 
             if window_title:
                 raw_content = f"{app} — {window_title}: {text}"

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum SettingsSection: CaseIterable, Hashable {
-    case permissions, general, memories, modelPreference
+    case permissions, general, memories, modelPreference, account
 
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "General"
         case .memories:        return "Memories"
         case .modelPreference: return "Model Preference"
+        case .account:         return "Account"
         }
     }
 
@@ -19,19 +20,22 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "gearshape"
         case .memories:        return "clock"
         case .modelPreference: return "cpu"
+        case .account:         return "person.circle"
         }
     }
 }
 
 struct SettingsRootView: View {
     @ObservedObject var store: SettingsStore
+    @ObservedObject var authManager: AuthManager
     var daemonManager: DaemonManager?
     @State private var section: SettingsSection = .permissions
     @StateObject private var permissionsVM: AppPermissionsViewModel
 
-    init(store: SettingsStore, daemonManager: DaemonManager?) {
+    init(store: SettingsStore, daemonManager: DaemonManager?, authManager: AuthManager) {
         self.store = store
         self.daemonManager = daemonManager
+        self.authManager = authManager
         self._permissionsVM = StateObject(wrappedValue: AppPermissionsViewModel(store: store))
     }
 
@@ -41,15 +45,25 @@ struct SettingsRootView: View {
         case .permissions:
             AppPermissionsPane(store: store, viewModel: permissionsVM)
         case .general:
-            GeneralPane(store: store, daemonManager: daemonManager)
+            if let dm = daemonManager {
+                GeneralPane(store: store, daemonManager: dm)
+            } else {
+                PlaceholderPane(section: .general)
+            }
         case .memories:
             PlaceholderPane(section: .memories)
         case .modelPreference:
             PlaceholderPane(section: .modelPreference)
+        case .account:
+            AccountPane(authManager: authManager)
         }
     }
 
     var body: some View {
+        if !authManager.isSignedIn {
+            LoginView(authManager: authManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
         HStack(spacing: 0) {
             SettingsSidebar(selected: $section)
                 .frame(width: 220)
@@ -65,6 +79,7 @@ struct SettingsRootView: View {
         .frame(width: 700)
         .frame(maxHeight: .infinity)
         .onAppear { permissionsVM.scan() }
+        }
     }
 }
 
@@ -125,7 +140,7 @@ struct SidebarNavItem: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
-            .cornerRadius(6)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -211,6 +226,7 @@ struct CollectorRow: View {
             Toggle("", isOn: $isEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel(Text(name))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -227,7 +243,7 @@ struct AppPermissionRow: View {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: 28, height: 28)
-                    .cornerRadius(6)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
                 Image(systemName: "app")
                     .font(.body)
@@ -244,6 +260,7 @@ struct AppPermissionRow: View {
             ))
             .labelsHidden()
             .toggleStyle(.switch)
+            .accessibilityLabel(Text(app.name))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -252,8 +269,21 @@ struct AppPermissionRow: View {
 
 struct GeneralPane: View {
     @ObservedObject var store: SettingsStore
-    var daemonManager: DaemonManager?
+    @ObservedObject var daemonManager: DaemonManager
     @State private var restartFeedback = false
+    @State private var pauseDuration: Int = 30 * 60
+
+    private let pauseOptions: [(String, Int)] = [
+        ("30 minutes", 30 * 60),
+        ("1 hour",     60 * 60),
+        ("2 hours",   120 * 60),
+        ("4 hours",   240 * 60),
+        ("Until tomorrow", -1),
+    ]
+
+    private var isPaused: Bool {
+        daemonManager.status == .paused
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -276,9 +306,31 @@ struct GeneralPane: View {
                     Toggle("Launch at Login", isOn: $store.launchAtLogin)
                     Toggle("Check for updates automatically", isOn: $store.autoCheckUpdates)
                 }
-                Section("Collection") {
-                    LabeledContent("Poll Interval") {
-                        Stepper("\(store.pollInterval) s", value: $store.pollInterval, in: 30...600, step: 30)
+                Section("Pause Patcha") {
+                    if isPaused, let until = daemonManager.pausedUntil {
+                        LabeledContent("Status") {
+                            Text("Paused · resumes \(until.formatted(.relative(presentation: .named)))")
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Resume Now") {
+                            daemonManager.resume()
+                        }
+                    } else {
+                        LabeledContent("Pause for") {
+                            Picker("", selection: $pauseDuration) {
+                                ForEach(pauseOptions, id: \.1) { label, secs in
+                                    Text(label).tag(secs)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 160)
+                        }
+                        Button("Pause Recording") {
+                            let until = pauseDuration == -1
+                                ? nextMidnight()
+                                : Date().addingTimeInterval(TimeInterval(pauseDuration))
+                            daemonManager.pause(until: until)
+                        }
                     }
                 }
             }
@@ -294,13 +346,15 @@ struct GeneralPane: View {
                 }
                 Spacer()
                 Button("Save & Restart Daemon") {
-                    store.save { daemonManager?.restart() }
+                    store.save { daemonManager.restart() }
                     restartFeedback = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        restartFeedback = false
-                    }
                 }
                 .buttonStyle(.borderedProminent)
+                .task(id: restartFeedback) {
+                    guard restartFeedback else { return }
+                    try? await Task.sleep(for: .seconds(3))
+                    restartFeedback = false
+                }
             }
             .padding()
         }
@@ -322,5 +376,85 @@ struct PlaceholderPane: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct AccountPane: View {
+    @ObservedObject var authManager: AuthManager
+    @State private var isSigningOut = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.circle")
+                    .font(.title2)
+                Text("Account")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 32)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            Form {
+                Section("Signed In As") {
+                    HStack(spacing: 12) {
+                        AsyncImage(url: authManager.avatarURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let name = authManager.session?.user.userMetadata["full_name"]?.stringValue {
+                                Text(name).fontWeight(.medium)
+                            }
+                            Text(authManager.session?.user.email ?? "—")
+                                .foregroundStyle(.secondary)
+                                .font(.callout)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .formStyle(.grouped)
+
+            if let error = errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 20)
+            }
+
+            Spacer()
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Sign Out") {
+                    isSigningOut = true
+                    errorMessage = nil
+                    Task {
+                        defer { isSigningOut = false }
+                        do {
+                            try await authManager.signOut()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSigningOut)
+            }
+            .padding()
+        }
     }
 }

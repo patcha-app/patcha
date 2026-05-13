@@ -11,9 +11,10 @@ enum DaemonStatus: Equatable {
     case failed
 }
 
-class DaemonManager: ObservableObject {
+@MainActor class DaemonManager: ObservableObject {
     @Published var status: DaemonStatus = .stopped
     @Published var pausedUntil: Date? = nil
+    var authToken: String?
 
     private var process: Process?
     private var processSource: DispatchSourceProcess?
@@ -82,17 +83,16 @@ class DaemonManager: ObservableObject {
             return
         }
 
-        kill(proc.processIdentifier, SIGCONT)
+        let pid = proc.processIdentifier
+        kill(pid, SIGCONT)
         proc.terminate()
+        process = nil
+        status = .stopped
 
-        let deadline = DispatchTime.now() + 5
-        DispatchQueue.global().asyncAfter(deadline: deadline) { [weak self] in
-            if let proc = self?.process, proc.isRunning {
-                kill(proc.processIdentifier, SIGKILL)
-            }
-            DispatchQueue.main.async {
-                self?.process = nil
-                self?.status = .stopped
+        Task.detached {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if kill(pid, 0) == 0 {
+                kill(pid, SIGKILL)
             }
         }
     }
@@ -118,6 +118,9 @@ class DaemonManager: ObservableObject {
         let extraPaths = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         env["PATCHA_ENV"] = "production"
+        if let token = authToken {
+            env["PATCHA_AUTH_TOKEN"] = token
+        }
         proc.environment = env
 
         let errPipe = Pipe()
@@ -134,9 +137,7 @@ class DaemonManager: ObservableObject {
             try proc.run()
         } catch {
             NSLog("[DaemonManager] launch failed: %@", error.localizedDescription)
-            DispatchQueue.main.async { [weak self] in
-                self?.scheduleRestart()
-            }
+            scheduleRestart()
             return
         }
 
@@ -179,14 +180,14 @@ class DaemonManager: ObservableObject {
         if exitCode == 2 {
             NSLog("[DaemonManager] daemon exited with config error (code 2)")
             status = .failed
-            DispatchQueue.main.async { DaemonManager.showConfigErrorAlert() }
+            DaemonManager.showConfigErrorAlert()
             return
         }
 
         scheduleRestart()
     }
 
-    private static func showConfigErrorAlert() {
+    @MainActor private static func showConfigErrorAlert() {
         let alert = NSAlert()
         alert.messageText = "Patcha configuration error"
         alert.informativeText = """
@@ -218,9 +219,11 @@ class DaemonManager: ObservableObject {
 
     private func startStabilityTimer() {
         stabilityTimer?.invalidate()
-        stabilityTimer = Timer.scheduledTimer(withTimeInterval: stabilityWindow, repeats: false) { [weak self] _ in
-            self?.restartCount = 0
+        let timer = Timer(timeInterval: stabilityWindow, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartCount = 0 }
         }
+        stabilityTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func resolveDaemonPath() -> (URL, [String], String?) {
@@ -243,7 +246,7 @@ class DaemonManager: ObservableObject {
         let projectDir = detectProjectDir()
         guard let uv = findExecutable("uv") else {
             NSLog("[DaemonManager] uv not found in PATH — daemon cannot start")
-            DispatchQueue.main.async { DaemonManager.showUvMissingAlert() }
+            DaemonManager.showUvMissingAlert()
             status = .failed
             return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
         }
@@ -270,7 +273,7 @@ class DaemonManager: ObservableObject {
         return nil
     }
 
-    private static func showUvMissingAlert() {
+    @MainActor private static func showUvMissingAlert() {
         let alert = NSAlert()
         alert.messageText = "uv not found"
         alert.informativeText = """

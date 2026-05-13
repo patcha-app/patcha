@@ -39,24 +39,35 @@ class GitCollector:
 
     def _find_git_repos(self, search_path: Optional[Path] = None) -> List[Path]:
         search_path = search_path or self.repo_path
-        git_repos = []
+        git_repos: List[Path] = []
+
+        def _walk(path: Path, depth: int) -> None:
+            if depth > 3:
+                return
+            try:
+                for entry in path.iterdir():
+                    if not entry.is_dir():
+                        continue
+                    name = entry.name
+                    if name.startswith("."):
+                        continue
+                    if name in self._SKIP_DIRS:
+                        continue
+                    if name == ".git":
+                        if path not in git_repos:
+                            git_repos.append(path)
+                        return
+                    _walk(entry, depth + 1)
+            except PermissionError:
+                pass
+            except Exception as e:
+                logger.debug("Error walking %s: %s", path, e)
 
         try:
             if (search_path / ".git").exists():
                 git_repos.append(search_path)
-
-            for depth in range(1, 4):
-                pattern = "/".join(["*"] * depth) + "/.git"
-                for git_dir in search_path.glob(pattern):
-                    repo_path = git_dir.parent
-                    rel_parts = repo_path.relative_to(search_path).parts
-                    if any(part.startswith(".") for part in rel_parts):
-                        continue
-                    if any(part in self._SKIP_DIRS for part in rel_parts):
-                        continue
-                    if repo_path not in git_repos:
-                        git_repos.append(repo_path)
-
+            else:
+                _walk(search_path, 1)
         except Exception as e:
             logger.debug("Error searching for git repositories: %s", e)
 

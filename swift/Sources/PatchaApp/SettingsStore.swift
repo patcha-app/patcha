@@ -15,6 +15,7 @@ final class SettingsStore: ObservableObject {
     @Published var autoCheckUpdates: Bool = true
     @Published var launchAtLogin: Bool = false {
         didSet {
+            guard !isLoading else { return }
             if launchAtLogin {
                 try? SMAppService.mainApp.register()
             } else {
@@ -24,6 +25,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private let dbPath: String
+    private var isLoading = false
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -34,6 +36,8 @@ final class SettingsStore: ObservableObject {
     }
 
     func load() {
+        isLoading = true
+        defer { isLoading = false }
         var db: OpaquePointer?
         guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
         defer { sqlite3_close(db) }
@@ -41,6 +45,7 @@ final class SettingsStore: ObservableObject {
         sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)", nil, nil, nil)
 
         let rows = query(db: db, sql: "SELECT key, value FROM settings")
+        var foundLaunchAtLogin = false
         for (key, value) in rows {
             switch key {
             case "poll_interval":        pollInterval = Int(value) ?? 60
@@ -53,9 +58,14 @@ final class SettingsStore: ObservableObject {
             case "excluded_app_names":   excludedAppNames = value
             case "pause_for_internal":   pauseForInternal = value == "true"
             case "auto_check_updates":   autoCheckUpdates = value == "true"
-            case "launch_at_login":      launchAtLogin = value == "true"
+            case "launch_at_login":
+                launchAtLogin = value == "true"
+                foundLaunchAtLogin = true
             default: break
             }
+        }
+        if !foundLaunchAtLogin {
+            launchAtLogin = true
         }
     }
 
