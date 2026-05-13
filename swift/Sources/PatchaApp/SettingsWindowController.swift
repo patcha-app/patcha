@@ -4,10 +4,10 @@ import SwiftUI
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private weak var daemonManager: DaemonManager?
 
-    init(daemonManager: DaemonManager, settingsStore: SettingsStore) {
+    init(daemonManager: DaemonManager, settingsStore: SettingsStore, authManager: AuthManager) {
         self.daemonManager = daemonManager
 
-        let view = SettingsRootView(store: settingsStore, daemonManager: daemonManager)
+        let view = SettingsRootView(store: settingsStore, daemonManager: daemonManager, authManager: authManager)
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = []
 

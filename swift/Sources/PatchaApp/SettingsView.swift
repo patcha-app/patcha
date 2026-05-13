@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum SettingsSection: CaseIterable, Hashable {
-    case permissions, general, memories, modelPreference
+    case permissions, general, memories, modelPreference, account
 
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "General"
         case .memories:        return "Memories"
         case .modelPreference: return "Model Preference"
+        case .account:         return "Account"
         }
     }
 
@@ -19,19 +20,22 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "gearshape"
         case .memories:        return "clock"
         case .modelPreference: return "cpu"
+        case .account:         return "person.circle"
         }
     }
 }
 
 struct SettingsRootView: View {
     @ObservedObject var store: SettingsStore
+    @ObservedObject var authManager: AuthManager
     var daemonManager: DaemonManager?
     @State private var section: SettingsSection = .permissions
     @StateObject private var permissionsVM: AppPermissionsViewModel
 
-    init(store: SettingsStore, daemonManager: DaemonManager?) {
+    init(store: SettingsStore, daemonManager: DaemonManager?, authManager: AuthManager) {
         self.store = store
         self.daemonManager = daemonManager
+        self.authManager = authManager
         self._permissionsVM = StateObject(wrappedValue: AppPermissionsViewModel(store: store))
     }
 
@@ -50,10 +54,16 @@ struct SettingsRootView: View {
             PlaceholderPane(section: .memories)
         case .modelPreference:
             PlaceholderPane(section: .modelPreference)
+        case .account:
+            AccountPane(authManager: authManager)
         }
     }
 
     var body: some View {
+        if !authManager.isSignedIn {
+            LoginView(authManager: authManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
         HStack(spacing: 0) {
             SettingsSidebar(selected: $section)
                 .frame(width: 220)
@@ -69,6 +79,7 @@ struct SettingsRootView: View {
         .frame(width: 700)
         .frame(maxHeight: .infinity)
         .onAppear { permissionsVM.scan() }
+        }
     }
 }
 
@@ -365,5 +376,85 @@ struct PlaceholderPane: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct AccountPane: View {
+    @ObservedObject var authManager: AuthManager
+    @State private var isSigningOut = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.circle")
+                    .font(.title2)
+                Text("Account")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 32)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            Form {
+                Section("Signed In As") {
+                    HStack(spacing: 12) {
+                        AsyncImage(url: authManager.avatarURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let name = authManager.session?.user.userMetadata["full_name"]?.stringValue {
+                                Text(name).fontWeight(.medium)
+                            }
+                            Text(authManager.session?.user.email ?? "—")
+                                .foregroundStyle(.secondary)
+                                .font(.callout)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .formStyle(.grouped)
+
+            if let error = errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 20)
+            }
+
+            Spacer()
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Sign Out") {
+                    isSigningOut = true
+                    errorMessage = nil
+                    Task {
+                        defer { isSigningOut = false }
+                        do {
+                            try await authManager.signOut()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSigningOut)
+            }
+            .padding()
+        }
     }
 }

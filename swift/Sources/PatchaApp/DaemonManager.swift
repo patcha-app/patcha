@@ -14,6 +14,7 @@ enum DaemonStatus: Equatable {
 @MainActor class DaemonManager: ObservableObject {
     @Published var status: DaemonStatus = .stopped
     @Published var pausedUntil: Date? = nil
+    var authToken: String?
 
     private var process: Process?
     private var processSource: DispatchSourceProcess?
@@ -117,6 +118,9 @@ enum DaemonStatus: Equatable {
         let extraPaths = "\(home)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         env["PATCHA_ENV"] = "production"
+        if let token = authToken {
+            env["PATCHA_AUTH_TOKEN"] = token
+        }
         proc.environment = env
 
         let errPipe = Pipe()
