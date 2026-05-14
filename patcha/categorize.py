@@ -2,19 +2,18 @@ import numpy as np
 from typing import List, Dict, Any, Tuple
 from collections import Counter
 from datetime import datetime, timedelta
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 from patcha.db.models import Event, EventType, Category
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
-from patcha.config import config
 
 
 class EnhancedCategorizer:
     def __init__(self, vector_store: VectorStore, preprocessor: EventPreprocessor):
         self.vector_store = vector_store
         self.preprocessor = preprocessor
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
     def categorize_with_rag(

@@ -83,10 +83,8 @@ class ActivityDaemon:
             "Active collectors: %s", ", ".join(active_collectors) or "none"
         )
 
-        if not config.openai_api_key:
-            self.logger.error(
-                "OPENAI_API_KEY not set. Please configure your .env file."
-            )
+        if not config.patcha_access_token:
+            self.logger.error("Not authenticated. Please log in with: patcha login")
             sys.exit(2)
 
         config.data_dir.mkdir(exist_ok=True)

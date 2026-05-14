@@ -11,7 +11,7 @@ load_dotenv(_DEFAULT_patcha_DIR / ".env", override=True)
 
 
 class Config(BaseModel):
-    openai_api_key: str
+    openai_api_key: str = ""
     qdrant_url: str = "http://localhost:6333"
     qdrant_path: Path = _DEFAULT_patcha_DIR / "qdrant_storage"
     data_dir: Path = _DEFAULT_patcha_DIR / "data"

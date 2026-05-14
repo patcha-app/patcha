@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 from sklearn.cluster import DBSCAN, HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -42,7 +42,7 @@ def _save_state(state: dict):
 
 class LLMTaskAnalyzer:
     def __init__(self, rag_system=None):
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
         self.rag_system = rag_system
 
@@ -317,7 +317,7 @@ class TaskIdentifier:
             self.rag_system = RAGSystem(vector_store, preprocessor)
 
         self.llm_analyzer = LLMTaskAnalyzer(rag_system=self.rag_system)
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
         self._thread_local = threading.local()
 

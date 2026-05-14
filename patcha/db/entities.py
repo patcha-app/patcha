@@ -5,7 +5,7 @@ import json
 from typing import List
 from datetime import datetime
 
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 from patcha.db.models import Event
 from typing import Union
@@ -16,14 +16,13 @@ from patcha.db.models import (
     RelationshipType,
     EntityExtractionResult,
 )
-from patcha.config import config
 
 
 class EntityExtractor:
     """Extracts entities and relationships from activities for graph RAG."""
 
     def __init__(self):
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
         # Pre-defined technology patterns for quick recognition

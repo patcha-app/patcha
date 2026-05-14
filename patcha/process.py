@@ -4,8 +4,7 @@ import json
 import logging
 from typing import List, Optional
 
-from openai import OpenAI
-
+from patcha.api_client import PatchaLLMClient
 from patcha.config import config
 from patcha.db.models import Event, EventType
 from patcha.utils.chunking import chunk_text
@@ -55,7 +54,7 @@ def _build_embedding_text(event: Event) -> str:
 
 class EventPreprocessor:
     def __init__(self):
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.embedding_model = "text-embedding-3-small"
 
     def generate_embedding(self, text: str) -> Optional[List[float]]:
