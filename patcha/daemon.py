@@ -220,7 +220,8 @@ class ActivityDaemon:
                 pending_future = executor.submit(self.preprocessor.process_pending)
                 new_future = executor.submit(
                     lambda: [
-                        e for batch in batches
+                        e
+                        for batch in batches
                         for e in self.preprocessor.process_events(batch)
                     ]
                 )
@@ -233,7 +234,9 @@ class ActivityDaemon:
                     self.preprocessor.clear_pending()
                     self.logger.info(f"Stored {stored} previously pending events")
                 except Exception as e:
-                    self.logger.error(f"Error storing pending events (kept on disk): {e}")
+                    self.logger.error(
+                        f"Error storing pending events (kept on disk): {e}"
+                    )
 
             total_stored = 0
             if new_events:

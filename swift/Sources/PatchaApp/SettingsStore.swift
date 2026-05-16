@@ -96,6 +96,14 @@ final class SettingsStore: ObservableObject {
         onComplete()
     }
 
+    func read(key: String) -> String? {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return nil }
+        defer { sqlite3_close(db) }
+        let rows = query(db: db, sql: "SELECT key, value FROM settings WHERE key = '\(key)'")
+        return rows.first?.1
+    }
+
     private func query(db: OpaquePointer?, sql: String) -> [(String, String)] {
         var stmt: OpaquePointer?
         var results: [(String, String)] = []

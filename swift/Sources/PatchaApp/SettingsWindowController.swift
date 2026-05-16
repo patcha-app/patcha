@@ -18,6 +18,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.setContentSize(NSSize(width: 700, height: 520))
         window.center()
+        window.isOpaque = true
+        window.backgroundColor = NSColor(name: nil) { appearance in
+            switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
+            case .darkAqua:
+                return NSColor(red: CGFloat(0x1A) / 255, green: CGFloat(0x1A) / 255, blue: CGFloat(0x1A) / 255, alpha: 1)
+            default:
+                return NSColor(red: CGFloat(0xF4) / 255, green: CGFloat(0xF4) / 255, blue: CGFloat(0xF5) / 255, alpha: 1)
+            }
+        }
 
         super.init(window: window)
         window.delegate = self

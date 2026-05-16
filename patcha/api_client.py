@@ -57,7 +57,9 @@ class _Embeddings:
             raise PermissionError("not authenticated — run: patcha login")
         if resp.status_code != 200:
             raise RuntimeError(f"embeddings request failed: HTTP {resp.status_code}")
-        return _EmbeddingResponse([_EmbeddingData(item["embedding"]) for item in resp.json()["data"]])
+        return _EmbeddingResponse(
+            [_EmbeddingData(item["embedding"]) for item in resp.json()["data"]]
+        )
 
 
 class _ChatCompletions:

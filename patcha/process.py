@@ -148,7 +148,9 @@ class EventPreprocessor:
         pairs: List[tuple] = []
         for event in pending:
             text = _build_embedding_text(event)
-            chunks = chunk_text(text, config.max_embedding_tokens, config.embedding_chunk_overlap)
+            chunks = chunk_text(
+                text, config.max_embedding_tokens, config.embedding_chunk_overlap
+            )
             if len(chunks) == 1:
                 pairs.append((event, chunks[0]))
             else:

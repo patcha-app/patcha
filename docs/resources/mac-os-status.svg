@@ -1,15 +1,8 @@
-<svg width="745" height="745" viewBox="0 0 745 745" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect x="88" y="51.9727" width="589" height="324.824" fill="white"/>
-<rect x="88" y="372.465" width="589" height="324.824" fill="white"/>
-<rect x="439.945" y="139.613" width="144.559" height="148.895" stroke="black" stroke-width="46"/>
-<rect x="180.294" y="139.937" width="144.559" height="148.895" stroke="black" stroke-width="46"/>
-<rect x="230.918" y="679.967" width="99.6102" height="64.9649" fill="white"/>
-<rect x="443.132" y="679.967" width="99.6102" height="64.9649" fill="white"/>
-<rect x="358.64" y="308.938" width="47.1257" height="25.0122" fill="black"/>
-<rect x="363.879" y="308.938" width="36.6533" height="35.0171" fill="black"/>
-<rect x="369.116" y="323.942" width="26.181" height="25.0122" fill="black"/>
-<rect x="88" y="411.445" width="86.6176" height="251.198" fill="white"/>
-<rect x="590.382" y="402.782" width="86.6176" height="251.198" fill="white"/>
-<rect x="88" width="103.941" height="103.944" fill="white"/>
-<rect x="573.059" width="103.941" height="103.944" fill="white"/>
+<svg width="511" height="639" viewBox="0 0 511 639" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M0 639C0 611.938 21.938 590 49 590H511V639H0Z" fill="white" fill-opacity="0.7"/>
+<path d="M511.001 0H470.321C415.092 0 370.321 44.7715 370.321 100V136H511.001V0Z" fill="white"/>
+<path d="M0 0H40.6802C95.9086 0 140.68 44.7715 140.68 100V136H0V0Z" fill="white"/>
+<path d="M511 638H100C44.7715 638 1.28869e-06 593.228 0 538V78H511V638ZM244.217 335C236.429 335 231.631 343.508 235.659 350.173L246.941 368.841C250.832 375.277 260.168 375.277 264.059 368.841L275.341 350.173C279.369 343.508 274.571 335 266.783 335H244.217ZM138 152C81.1147 152 35 198.115 35 255C35 311.885 81.1147 358 138 358C194.885 358 241 311.885 241 255C241 198.115 194.885 152 138 152ZM372.389 152C315.26 152 268.947 198.115 268.947 255C268.948 311.885 315.26 358 372.389 358C429.518 358 475.83 311.885 475.83 255C475.83 198.115 429.518 152 372.389 152Z" fill="white"/>
+<circle cx="138" cy="256" r="75" fill="white"/>
+<circle cx="374" cy="256" r="75" fill="white"/>
 </svg>

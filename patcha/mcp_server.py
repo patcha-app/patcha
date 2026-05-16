@@ -2,7 +2,10 @@
 
 import asyncio
 import logging
+import socket
+import sqlite3
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import click
@@ -153,6 +156,34 @@ async def _serve_stdio() -> None:
         )
 
 
+_SETTINGS_DB = Path.home() / "Library" / "Application Support" / "patcha" / "settings.db"
+
+
+def _find_free_port(start: int, attempts: int = 10) -> int:
+    for port in range(start, start + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port found in range {start}–{start + attempts - 1}")
+
+
+def _write_port(port: int) -> None:
+    _SETTINGS_DB.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(_SETTINGS_DB) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('mcp_port', ?)", (str(port),))
+
+
+def _clear_port() -> None:
+    if not _SETTINGS_DB.exists():
+        return
+    with sqlite3.connect(_SETTINGS_DB) as conn:
+        conn.execute("DELETE FROM settings WHERE key = 'mcp_port'")
+
+
 @click.command()
 @click.option(
     "--http",
@@ -177,7 +208,12 @@ async def _serve_stdio() -> None:
 def main(transport: str, port: int, host: str) -> None:
     logging.basicConfig(level=logging.WARNING)
     if transport == "http":
-        app = _build_http_app()
-        uvicorn.run(app, host=host, port=port)
+        actual_port = _find_free_port(port)
+        _write_port(actual_port)
+        try:
+            app = _build_http_app()
+            uvicorn.run(app, host=host, port=actual_port)
+        finally:
+            _clear_port()
     else:
         asyncio.run(_serve_stdio())
