@@ -40,6 +40,8 @@ _preprocessor: Optional[EventPreprocessor] = None
 _vector_store: Optional[VectorStore] = None
 
 _COMMANDS_WITHOUT_KEY = {
+    "login",
+    "logout",
     "start-daemon",
     "stop-daemon",
     "daemon-status",

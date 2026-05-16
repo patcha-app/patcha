@@ -46,13 +46,18 @@ class _Embeddings:
         self._client = api_client
 
     def create(self, *, model: str, input: str | list[str]) -> _EmbeddingResponse:
-        resp = self._client.proxy_embeddings({"model": model, "input": input})
+        payload = {"model": model, "input": input}
+        resp = self._client.proxy_embeddings(payload)
+        if resp is not None and resp.status_code == 401:
+            if self._client.refresh_tokens():
+                resp = self._client.proxy_embeddings(payload)
         if resp is None:
             raise RuntimeError("embeddings request failed: no response")
+        if resp.status_code == 401:
+            raise PermissionError("not authenticated — run: patcha login")
         if resp.status_code != 200:
             raise RuntimeError(f"embeddings request failed: HTTP {resp.status_code}")
-        items = resp.json()["data"]
-        return _EmbeddingResponse([_EmbeddingData(item["embedding"]) for item in items])
+        return _EmbeddingResponse([_EmbeddingData(item["embedding"]) for item in resp.json()["data"]])
 
 
 class _ChatCompletions:
@@ -64,8 +69,13 @@ class _ChatCompletions:
     ) -> _ChatResponse:
         payload: dict[str, Any] = {"model": model, "messages": messages, **kwargs}
         resp = self._client.proxy_chat_completion(payload)
+        if resp is not None and resp.status_code == 401:
+            if self._client.refresh_tokens():
+                resp = self._client.proxy_chat_completion(payload)
         if resp is None:
             raise RuntimeError("chat completion request failed: no response")
+        if resp.status_code == 401:
+            raise PermissionError("not authenticated — run: patcha login")
         if resp.status_code != 200:
             raise RuntimeError(
                 f"chat completion request failed: HTTP {resp.status_code}"
@@ -192,6 +202,14 @@ class PatchaAPIClient:
                 self._refresh_token = data["refresh_token"]
                 _save_tokens(self._access_token, self._refresh_token)
                 return True
+        except httpx.RequestError:
+            return False
+
+    def check_auth(self) -> bool:
+        try:
+            with httpx.Client(base_url=self._base_url, timeout=10.0) as client:
+                resp = client.get("/api/v1/auth/me", headers=self._auth_headers())
+                return resp.status_code == 200
         except httpx.RequestError:
             return False
 

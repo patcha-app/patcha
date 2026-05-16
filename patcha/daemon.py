@@ -4,6 +4,7 @@ import sys
 import os
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from patcha.collectors.git import GitCollector
@@ -83,9 +84,14 @@ class ActivityDaemon:
             "Active collectors: %s", ", ".join(active_collectors) or "none"
         )
 
-        if not config.patcha_access_token:
-            self.logger.error("Not authenticated. Please log in with: patcha login")
-            sys.exit(2)
+        from patcha.api_client import PatchaAPIClient
+
+        api_client = PatchaAPIClient()
+        while not api_client.check_auth():
+            self.logger.warning("Could not reach patcha-api — retrying in 60s")
+            time.sleep(60)
+
+        self.preprocessor = EventPreprocessor()
 
         config.data_dir.mkdir(exist_ok=True)
 
@@ -205,26 +211,36 @@ class ActivityDaemon:
                 f"Processing {len(all_events)} events in batches of {self.batch_size}"
             )
 
+            batches = [
+                all_events[i : i + self.batch_size]
+                for i in range(0, len(all_events), self.batch_size)
+            ]
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                pending_future = executor.submit(self.preprocessor.process_pending)
+                new_future = executor.submit(
+                    lambda: [
+                        e for batch in batches
+                        for e in self.preprocessor.process_events(batch)
+                    ]
+                )
+                pending_events = pending_future.result()
+                new_events = new_future.result()
+
+            if pending_events:
+                try:
+                    stored = self.vector_store.store_events(pending_events)
+                    self.preprocessor.clear_pending()
+                    self.logger.info(f"Stored {stored} previously pending events")
+                except Exception as e:
+                    self.logger.error(f"Error storing pending events (kept on disk): {e}")
+
             total_stored = 0
-            for i in range(0, len(all_events), self.batch_size):
-                batch = all_events[i : i + self.batch_size]
-
-                processed_events = []
-                for event in batch:
-                    try:
-                        processed_events.extend(self.preprocessor.process_event(event))
-                    except Exception as e:
-                        self.logger.warning(f"Error processing event: {e}")
-                        continue
-
-                if processed_events:
-                    try:
-                        stored_count = self.vector_store.store_events(processed_events)
-                        total_stored += stored_count
-                        self.logger.debug(f"Stored batch of {stored_count} events")
-                    except Exception as e:
-                        self.logger.error(f"Error storing batch: {e}")
-                        continue
+            if new_events:
+                try:
+                    total_stored = self.vector_store.store_events(new_events)
+                except Exception as e:
+                    self.logger.error(f"Error storing new events: {e}")
 
             self.logger.info(
                 f"Successfully processed and stored {total_stored}/{len(all_events)} events"
