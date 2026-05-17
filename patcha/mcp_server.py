@@ -75,7 +75,8 @@ async def list_tools() -> list[Tool]:
                 "Use this to find specific past work — e.g. 'qdrant vector search setup', "
                 "'authentication bug fix', 'npm install error', 'what changed in the auth fix'. "
                 "Returns the most relevant past events with similarity scores. "
-                "For git commits and stashes, the full diff is included in the result."
+                "For git commits and stashes, the full diff is included in the result. "
+                "Optionally filter to events from a specific app (e.g. 'Arc', 'Zed', 'WezTerm')."
             ),
             inputSchema={
                 "type": "object",
@@ -89,6 +90,13 @@ async def list_tools() -> list[Tool]:
                         "description": "Number of results to return. Default 10.",
                         "default": 10,
                     },
+                    "app": {
+                        "type": "string",
+                        "description": (
+                            "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). "
+                            "Applies to screen and window events which capture app_name."
+                        ),
+                    },
                 },
                 "required": ["query"],
             },
@@ -98,7 +106,8 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Get a deduped log of the user's raw activity over the last N hours. "
                 "Use this for broader historical context — what the user has been working on "
-                "over the last few hours, not just the last few minutes."
+                "over the last few hours, not just the last few minutes. "
+                "Optionally filter to a specific app."
             ),
             inputSchema={
                 "type": "object",
@@ -107,7 +116,14 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "How many hours back to look. Default 3.",
                         "default": 3,
-                    }
+                    },
+                    "app": {
+                        "type": "string",
+                        "description": (
+                            "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). "
+                            "Applies to screen and window events which capture app_name."
+                        ),
+                    },
                 },
             },
         ),
@@ -123,11 +139,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     elif name == "search_activity":
         query = arguments["query"]
         limit = arguments.get("limit", 5)
-        result = search_activity(_get_store(), _get_preprocessor(), query, limit=limit)
+        app = arguments.get("app")
+        result = search_activity(
+            _get_store(), _get_preprocessor(), query, limit=limit, app_filter=app
+        )
 
     elif name == "get_recent_activity":
         hours = arguments.get("hours", 3)
-        result = get_recent_activity(_get_store(), hours=hours)
+        app = arguments.get("app")
+        result = get_recent_activity(_get_store(), hours=hours, app_filter=app)
 
     else:
         result = f"Unknown tool: {name}"
@@ -156,7 +176,9 @@ async def _serve_stdio() -> None:
         )
 
 
-_SETTINGS_DB = Path.home() / "Library" / "Application Support" / "patcha" / "settings.db"
+_SETTINGS_DB = (
+    Path.home() / "Library" / "Application Support" / "patcha" / "settings.db"
+)
 
 
 def _find_free_port(start: int, attempts: int = 10) -> int:
@@ -173,8 +195,13 @@ def _find_free_port(start: int, attempts: int = 10) -> int:
 def _write_port(port: int) -> None:
     _SETTINGS_DB.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(_SETTINGS_DB) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('mcp_port', ?)", (str(port),))
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('mcp_port', ?)",
+            (str(port),),
+        )
 
 
 def _clear_port() -> None:
