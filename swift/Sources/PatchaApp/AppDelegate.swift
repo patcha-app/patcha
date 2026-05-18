@@ -20,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mcpManager.start()
         settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store, authManager: authManager, mcpManager: mcpManager)
         menuBarController = MenuBarController(daemonManager: daemonManager, mcpManager: mcpManager, settingsWindowController: settingsWindowController, settingsStore: store)
+        Installer.installIfNeeded()
         PermissionsManager.requestIfNeeded()
 
         authCancellable = authManager.$isSignedIn

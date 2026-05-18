@@ -27,7 +27,7 @@ cd patcha
 uv sync
 ```
 
-Set your OpenAI key (or patcha will prompt on first run):
+Set your OpenAI key (or patcha will prompt on first run): (wont be needed if connected to patcha API)
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." >> ~/.patcha/.env

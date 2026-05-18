@@ -3,7 +3,12 @@ set -e
 
 cd "$(dirname "$0")"
 
-VERSION=$(python3 -c "
+if ! command -v create-dmg &>/dev/null; then
+    echo "Installing create-dmg..."
+    brew install create-dmg
+fi
+
+VERSION=$(uv run python3 -c "
 import tomllib
 with open('pyproject.toml', 'rb') as f:
     print(tomllib.load(f)['project']['version'])
@@ -58,15 +63,15 @@ echo "  Python executables built."
 # Step 5: Assemble .dmg staging area
 echo ""
 echo "[5/5] Staging .dmg contents..."
-DMG_STAGE="dist/dmg_stage/patcha"
-rm -rf dist/dmg_stage
+DMG_STAGE="dist/dmg_stage"
+rm -rf "$DMG_STAGE"
 mkdir -p "$DMG_STAGE"
 
-cp dist/bin/patcha "$DMG_STAGE/"
-cp dist/bin/patcha-mcp "$DMG_STAGE/"
 cp -r dist/Patcha.app "$DMG_STAGE/"
-cp cli/dmg_install.sh "$DMG_STAGE/install.sh"
-chmod +x "$DMG_STAGE/install.sh"
+cp dist/bin/patcha "$DMG_STAGE/Patcha.app/Contents/Resources/"
+cp dist/bin/patcha-mcp "$DMG_STAGE/Patcha.app/Contents/Resources/"
+chmod +x "$DMG_STAGE/Patcha.app/Contents/Resources/patcha" \
+         "$DMG_STAGE/Patcha.app/Contents/Resources/patcha-mcp"
 
 echo "  Contents staged at $DMG_STAGE"
 
@@ -76,12 +81,16 @@ echo "Creating .dmg..."
 DMG_PATH="dist/patcha-${VERSION}.dmg"
 rm -f "$DMG_PATH"
 
-hdiutil create \
-    -volname "patcha" \
-    -srcfolder dist/dmg_stage \
-    -ov \
-    -format UDZO \
-    "$DMG_PATH"
+create-dmg \
+    --volname "Patcha" \
+    --background "assets/dmg-background.png" \
+    --window-size 660 400 \
+    --icon-size 128 \
+    --icon "Patcha.app" 180 185 \
+    --app-drop-link 480 185 \
+    --no-internet-enable \
+    "$DMG_PATH" \
+    "$DMG_STAGE/"
 
 echo ""
 echo "Done: $DMG_PATH"
