@@ -7,17 +7,6 @@ struct AccountPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "person.circle")
-                    .font(.title2)
-                Text("Account")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 32)
-            .padding(.bottom, 16)
-
             Form {
                 Section("Signed In As") {
                     HStack(spacing: 12) {

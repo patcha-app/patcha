@@ -8,9 +8,6 @@ struct PlaceholderPane: View {
             Image(systemName: section.systemImage)
                 .font(.system(size: 40))
                 .foregroundStyle(.tertiary)
-            Text(section.title)
-                .font(.title2)
-                .fontWeight(.semibold)
             Text("Coming soon")
                 .foregroundStyle(.secondary)
         }

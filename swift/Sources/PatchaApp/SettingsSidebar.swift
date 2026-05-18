@@ -10,22 +10,8 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let icon = NSApp.applicationIconImage {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 40, height: 40)
-                }
-                Text("Settings")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                Text("v\(appVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 52)
-            .padding(.bottom, 16)
+            Spacer()
+                .frame(height: 52)
 
             ForEach(SettingsSection.allCases, id: \.self) { s in
                 SidebarNavItem(section: s, isSelected: selected == s) {
@@ -34,6 +20,18 @@ struct SettingsSidebar: View {
             }
 
             Spacer()
+
+            VStack(alignment: .leading, spacing: 4) {
+                if let icon = NSApp.applicationIconImage {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 40, height: 40)
+                }
+                (Text("patcha ") + Text("v\(appVersion)").foregroundColor(.secondary))
+                    .font(.caption)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 20)
         }
     }
 }
@@ -45,7 +43,8 @@ struct SidebarNavItem: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let accent = colorScheme == .dark ? PatchaTheme.accent : PatchaTheme.lightAccent
+        let accent = PatchaTheme.accent
+        let bgColor = PatchaTheme.bg(for: colorScheme)
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: section.systemImage)
@@ -58,12 +57,12 @@ struct SidebarNavItem: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? accent.opacity(0.15) : Color.clear)
+                    .fill(isSelected ? accent : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? accent : Color.primary)
+        .foregroundStyle(isSelected ? bgColor : Color.primary)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
     }
