@@ -180,7 +180,6 @@ _SETTINGS_DB = (
 )
 
 
-
 def _write_port(port: int) -> None:
     _SETTINGS_DB.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(_SETTINGS_DB) as conn:
