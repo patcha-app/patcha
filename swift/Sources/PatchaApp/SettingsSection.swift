@@ -1,7 +1,7 @@
 import Foundation
 
 enum SettingsSection: CaseIterable, Hashable {
-    case permissions, general, memories, modelPreference, account
+    case permissions, general, memories, modelPreference, integrations, account
 
     var title: String {
         switch self {
@@ -9,6 +9,7 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "General"
         case .memories:        return "Memories"
         case .modelPreference: return "Model Preference"
+        case .integrations:    return "Integrations"
         case .account:         return "Account"
         }
     }
@@ -19,6 +20,7 @@ enum SettingsSection: CaseIterable, Hashable {
         case .general:         return "gearshape"
         case .memories:        return "clock"
         case .modelPreference: return "cpu"
+        case .integrations:    return "link"
         case .account:         return "person.circle"
         }
     }

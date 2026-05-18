@@ -35,15 +35,17 @@ enum PatchaTheme {
 struct SettingsRootView: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var authManager: AuthManager
+    @ObservedObject var mcpManager: MCPManager
     var daemonManager: DaemonManager?
     @State private var section: SettingsSection = .permissions
     @StateObject private var permissionsVM: AppPermissionsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
-    init(store: SettingsStore, daemonManager: DaemonManager?, authManager: AuthManager) {
+    init(store: SettingsStore, daemonManager: DaemonManager?, authManager: AuthManager, mcpManager: MCPManager) {
         self.store = store
         self.daemonManager = daemonManager
         self.authManager = authManager
+        self.mcpManager = mcpManager
         self._permissionsVM = StateObject(wrappedValue: AppPermissionsViewModel(store: store))
     }
 
@@ -62,6 +64,8 @@ struct SettingsRootView: View {
             PlaceholderPane(section: .memories)
         case .modelPreference:
             PlaceholderPane(section: .modelPreference)
+        case .integrations:
+            IntegrationsPane(mcpManager: mcpManager)
         case .account:
             AccountPane(authManager: authManager)
         }

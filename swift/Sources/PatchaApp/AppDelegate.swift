@@ -18,7 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         daemonManager = DaemonManager()
         mcpManager = MCPManager()
         mcpManager.start()
-        settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store, authManager: authManager)
+        settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store, authManager: authManager, mcpManager: mcpManager)
         menuBarController = MenuBarController(daemonManager: daemonManager, mcpManager: mcpManager, settingsWindowController: settingsWindowController, settingsStore: store)
         PermissionsManager.requestIfNeeded()
 

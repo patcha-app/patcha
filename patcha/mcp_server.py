@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import socket
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -181,16 +180,6 @@ _SETTINGS_DB = (
 )
 
 
-def _find_free_port(start: int, attempts: int = 10) -> int:
-    for port in range(start, start + attempts):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError(f"No free port found in range {start}–{start + attempts - 1}")
-
 
 def _write_port(port: int) -> None:
     _SETTINGS_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +216,7 @@ def _clear_port() -> None:
     help="Serve over stdio (default).",
 )
 @click.option(
-    "--port", default=7861, show_default=True, help="Port for HTTP transport."
+    "--port", default=6969, show_default=True, help="Port for HTTP transport."
 )
 @click.option(
     "--host", default="127.0.0.1", show_default=True, help="Host for HTTP transport."
@@ -235,11 +224,10 @@ def _clear_port() -> None:
 def main(transport: str, port: int, host: str) -> None:
     logging.basicConfig(level=logging.WARNING)
     if transport == "http":
-        actual_port = _find_free_port(port)
-        _write_port(actual_port)
+        _write_port(port)
         try:
             app = _build_http_app()
-            uvicorn.run(app, host=host, port=actual_port)
+            uvicorn.run(app, host=host, port=port)
         finally:
             _clear_port()
     else:

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SQLite3
 
 @MainActor class MCPManager: ObservableObject {
     @Published var isRunning = false
@@ -37,7 +38,26 @@ import Foundation
         }
     }
 
+    private func killStaleOnPort(_ port: Int) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-ti", "tcp:\(port)"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        try? task.run()
+        task.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        for pidStr in output.split(separator: "\n") {
+            if let pid = Int32(pidStr.trimmingCharacters(in: .whitespaces)) {
+                kill(pid, SIGTERM)
+                NSLog("[MCPManager] killed stale process %d on port %d", pid, port)
+            }
+        }
+    }
+
     private func launchProcess() {
+        killStaleOnPort(6969)
         let (execURL, args, workDir) = resolveExecutable()
 
         guard FileManager.default.isExecutableFile(atPath: execURL.path) else {
@@ -58,7 +78,7 @@ import Foundation
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         env["PATCHA_ENV"] = "production"
         if let token = authToken {
-            env["PATCHA_AUTH_TOKEN"] = token
+            env["PATCHA_ACCESS_TOKEN"] = token
         }
         proc.environment = env
 
@@ -88,6 +108,8 @@ import Foundation
         }
         source.resume()
         processSource = source
+
+        Task { await self.refreshClientConfigs() }
     }
 
     private func handleProcessExit() {
@@ -141,6 +163,49 @@ import Foundation
             }
         }
         return nil
+    }
+
+    private func refreshClientConfigs() async {
+        // Poll until the server writes its port (up to 5s after launch)
+        var port = 0
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            port = mcpPort()
+            if port > 0 { break }
+        }
+        guard port > 0 else { return }
+
+        let mcpURL = "http://127.0.0.1:\(port)/mcp/"
+        let paths = [
+            NSHomeDirectory() + "/.claude.json",
+        ]
+        for path in paths {
+            guard let data = FileManager.default.contents(atPath: path),
+                  var config = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  var servers = config["mcpServers"] as? [String: Any],
+                  servers["patcha"] != nil
+            else { continue }
+            servers["patcha"] = ["type": "http", "url": mcpURL]
+            config["mcpServers"] = servers
+            if let updated = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted]) {
+                try? updated.write(to: URL(fileURLWithPath: path))
+                NSLog("[MCPManager] updated patcha MCP URL to %@ in %@", mcpURL, path)
+            }
+        }
+    }
+
+    func mcpPort() -> Int {
+        let dbPath = NSHomeDirectory() + "/Library/Application Support/patcha/settings.db"
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return 6969 }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        let sql = "SELECT value FROM settings WHERE key='mcp_port'"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 6969 }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              let cStr = sqlite3_column_text(stmt, 0) else { return 6969 }
+        return Int(String(cString: cStr)) ?? 6969
     }
 
     private func detectProjectDir() -> String {

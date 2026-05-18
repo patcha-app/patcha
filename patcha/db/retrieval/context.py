@@ -190,8 +190,10 @@ def get_recent_activity(
 
     if app_filter:
         rows = [
-            r for r in rows
-            if (r.get("payload") or {}).get("metadata", {}).get("app_name") == app_filter
+            r
+            for r in rows
+            if (r.get("payload") or {}).get("metadata", {}).get("app_name")
+            == app_filter
         ]
 
     rows = _dedup_by_similarity(rows, config.working_memory_dedup_threshold)

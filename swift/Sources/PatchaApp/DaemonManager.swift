@@ -119,7 +119,7 @@ enum DaemonStatus: Equatable {
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         env["PATCHA_ENV"] = "production"
         if let token = authToken {
-            env["PATCHA_AUTH_TOKEN"] = token
+            env["PATCHA_ACCESS_TOKEN"] = token
         }
         proc.environment = env
 

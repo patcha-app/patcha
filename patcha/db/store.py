@@ -104,7 +104,9 @@ class VectorStore:
             )
             log.debug("keyword index ensured on metadata.app_name")
         except Exception as e:
-            log.debug("metadata.app_name keyword index skipped (may already exist): %s", e)
+            log.debug(
+                "metadata.app_name keyword index skipped (may already exist): %s", e
+            )
 
     def store_event(self, event: Event) -> bool:
         if not event.embedding:
@@ -328,11 +330,15 @@ class VectorStore:
 
         if date_filter:
             filter_conditions.append(
-                FieldCondition(key="date", match=MatchValue(value=date_filter.isoformat()))
+                FieldCondition(
+                    key="date", match=MatchValue(value=date_filter.isoformat())
+                )
             )
         if category_filter:
             filter_conditions.append(
-                FieldCondition(key="category", match=MatchValue(value=category_filter.value))
+                FieldCondition(
+                    key="category", match=MatchValue(value=category_filter.value)
+                )
             )
         if project_filter:
             filter_conditions.append(
@@ -357,7 +363,9 @@ class VectorStore:
                 with_payload=True,
                 with_vectors=False,
             )
-            log.debug("fulltext candidates: %d results for query=%r", len(points), query[:50])
+            log.debug(
+                "fulltext candidates: %d results for query=%r", len(points), query[:50]
+            )
             return [{"id": p.id, "score": 0.0, "payload": p.payload} for p in points]
         except Exception as e:
             log.error("fulltext candidate fetch failed: %s", e)

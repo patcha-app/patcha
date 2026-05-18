@@ -36,7 +36,7 @@ class Config(BaseModel):
     enable_accessibility_collector: bool = True
 
     # patcha cloud API
-    patcha_api_url: str = "https://api.patcha.dev"
+    patcha_api_url: str = "https://api.patcha.app"
     patcha_access_token: str = ""
     patcha_refresh_token: str = ""
 
@@ -58,7 +58,7 @@ class Config(BaseModel):
             enable_terminal_collector=_bool("ENABLE_TERMINAL_COLLECTOR"),
             enable_window_collector=_bool("ENABLE_WINDOW_COLLECTOR"),
             enable_accessibility_collector=_bool("ENABLE_ACCESSIBILITY_COLLECTOR"),
-            patcha_api_url=os.getenv("PATCHA_API_URL", "https://api.patcha.dev"),
+            patcha_api_url=os.getenv("PATCHA_API_URL", "https://api.patcha.app"),
             patcha_access_token=os.getenv("PATCHA_ACCESS_TOKEN", ""),
             patcha_refresh_token=os.getenv("PATCHA_REFRESH_TOKEN", ""),
         )
