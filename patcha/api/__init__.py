@@ -271,7 +271,7 @@ async def health_check():
             },
             "config": {
                 "qdrant_url": config.qdrant_url,
-                "openai_api_configured": bool(config.openai_api_key),
+                "authenticated": bool(config.patcha_access_token),
             },
         }
     except Exception as e:

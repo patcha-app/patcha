@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from collections import defaultdict, Counter
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 from patcha.db.models import Category, DailySummary, Task, DailyTaskSummary, TaskStatus
 from patcha.db.store import VectorStore
@@ -17,7 +17,7 @@ from patcha.prompts import render_system, render_user
 class DailySummarizer:
     def __init__(self, vector_store: VectorStore):
         self.vector_store = vector_store
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
     def generate_daily_summary(self, target_date: date) -> Optional[DailySummary]:
@@ -307,7 +307,7 @@ class DailySummarizer:
 class TaskSummarizer:
     def __init__(self, task_store: TaskStore):
         self.task_store = task_store
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
         self.summaries_dir = config.data_dir / "task_summaries"
         self.summaries_dir.mkdir(exist_ok=True)

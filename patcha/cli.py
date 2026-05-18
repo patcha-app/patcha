@@ -40,6 +40,8 @@ _preprocessor: Optional[EventPreprocessor] = None
 _vector_store: Optional[VectorStore] = None
 
 _COMMANDS_WITHOUT_KEY = {
+    "login",
+    "logout",
     "start-daemon",
     "stop-daemon",
     "daemon-status",
@@ -49,17 +51,10 @@ _COMMANDS_WITHOUT_KEY = {
 
 
 def _ensure_api_key() -> None:
-    if config.openai_api_key:
+    if config.patcha_access_token:
         return
-    console.print("[yellow]No OpenAI API key configured.[/yellow]")
-    key = click.prompt("Enter your OpenAI API key", hide_input=True)
-    env_file = Path.home() / ".patcha" / ".env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(env_file, "a") as f:
-        f.write(f"OPENAI_API_KEY={key}\n")
-    os.environ["OPENAI_API_KEY"] = key
-    config.openai_api_key = key
-    console.print("[green]API key saved to ~/.patcha/.env[/green]")
+    console.print("[yellow]Not logged in. Please run: patcha login[/yellow]")
+    raise SystemExit(1)
 
 
 def _get_preprocessor() -> EventPreprocessor:
@@ -523,7 +518,7 @@ def status():
         table.add_row("Qdrant URL", config.qdrant_url)
         table.add_row("Data Directory", str(config.data_dir))
         table.add_row(
-            "OpenAI API", "Configured" if config.openai_api_key else "Not configured"
+            "Auth", "Logged in" if config.patcha_access_token else "Not logged in"
         )
 
         console.print(table)

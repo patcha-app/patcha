@@ -13,8 +13,12 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MatchText,
     Range,
     PointIdsList,
+    PayloadSchemaType,
+    TextIndexParams,
+    TokenizerType,
 )
 
 from patcha.db.models import Event, Category
@@ -68,8 +72,41 @@ class VectorStore:
                 log.info("created collection: %s", self.collection_name)
             else:
                 log.debug("collection already exists: %s", self.collection_name)
+
+            self._ensure_indexes()
         except Exception as e:
             log.error("error ensuring collection exists: %s", e, exc_info=True)
+
+    def _ensure_indexes(self) -> None:
+        try:
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="raw_content",
+                field_schema=TextIndexParams(
+                    type=PayloadSchemaType.TEXT,
+                    tokenizer=TokenizerType.WORD,
+                    min_token_len=2,
+                    max_token_len=40,
+                    lowercase=True,
+                ),
+                wait=False,
+            )
+            log.info("text index ensured on raw_content")
+        except Exception as e:
+            log.debug("raw_content text index skipped (may already exist): %s", e)
+
+        try:
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="metadata.app_name",
+                field_schema=PayloadSchemaType.KEYWORD,
+                wait=False,
+            )
+            log.debug("keyword index ensured on metadata.app_name")
+        except Exception as e:
+            log.debug(
+                "metadata.app_name keyword index skipped (may already exist): %s", e
+            )
 
     def store_event(self, event: Event) -> bool:
         if not event.embedding:
@@ -211,6 +248,7 @@ class VectorStore:
         category_filter: Optional[Category] = None,
         project_filter: Optional[str] = None,
         type_filter: Optional[str] = None,
+        app_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
 
         filter_conditions = []
@@ -243,6 +281,14 @@ class VectorStore:
                 FieldCondition(key="type", match=MatchValue(value=type_filter))
             )
 
+        if app_filter:
+            log.debug("search filter: app_name=%s", app_filter)
+            filter_conditions.append(
+                FieldCondition(
+                    key="metadata.app_name", match=MatchValue(value=app_filter)
+                )
+            )
+
         query_filter = Filter(must=filter_conditions) if filter_conditions else None
         log.debug(
             "searching with %d filter(s), limit=%d", len(filter_conditions), limit
@@ -266,6 +312,63 @@ class VectorStore:
 
         except Exception as e:
             log.error("error searching events: %s", e)
+            return []
+
+    def fetch_fulltext_candidates(
+        self,
+        query: str,
+        limit: int = 50,
+        date_filter: Optional[date] = None,
+        category_filter: Optional[Category] = None,
+        project_filter: Optional[str] = None,
+        type_filter: Optional[str] = None,
+        app_filter: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        filter_conditions: list = [
+            FieldCondition(key="raw_content", match=MatchText(text=query))
+        ]
+
+        if date_filter:
+            filter_conditions.append(
+                FieldCondition(
+                    key="date", match=MatchValue(value=date_filter.isoformat())
+                )
+            )
+        if category_filter:
+            filter_conditions.append(
+                FieldCondition(
+                    key="category", match=MatchValue(value=category_filter.value)
+                )
+            )
+        if project_filter:
+            filter_conditions.append(
+                FieldCondition(key="project", match=MatchValue(value=project_filter))
+            )
+        if type_filter:
+            filter_conditions.append(
+                FieldCondition(key="type", match=MatchValue(value=type_filter))
+            )
+        if app_filter:
+            filter_conditions.append(
+                FieldCondition(
+                    key="metadata.app_name", match=MatchValue(value=app_filter)
+                )
+            )
+
+        try:
+            points, _ = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(must=filter_conditions),
+                limit=min(limit, 100),
+                with_payload=True,
+                with_vectors=False,
+            )
+            log.debug(
+                "fulltext candidates: %d results for query=%r", len(points), query[:50]
+            )
+            return [{"id": p.id, "score": 0.0, "payload": p.payload} for p in points]
+        except Exception as e:
+            log.error("fulltext candidate fetch failed: %s", e)
             return []
 
     def get_events_by_date(

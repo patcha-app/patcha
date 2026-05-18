@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 import numpy as np
 
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 from patcha.db.models import Event
 from patcha.db.store import VectorStore
@@ -12,7 +12,6 @@ from patcha.process import EventPreprocessor
 from patcha.db.graph import KnowledgeGraph
 from patcha.db.entities import EntityExtractor
 from patcha.db.models import Entity, Relationship, GraphContext
-from patcha.config import config
 
 
 class GraphRAGSystem:
@@ -33,7 +32,7 @@ class GraphRAGSystem:
         self.knowledge_graph = knowledge_graph or KnowledgeGraph()
         self.entity_extractor = entity_extractor or EntityExtractor()
 
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
     def retrieve_enhanced_context(

@@ -5,6 +5,103 @@ from typing import Any
 
 import httpx
 
+
+class _EmbeddingData:
+    __slots__ = ("embedding",)
+
+    def __init__(self, embedding: list[float]) -> None:
+        self.embedding = embedding
+
+
+class _EmbeddingResponse:
+    __slots__ = ("data",)
+
+    def __init__(self, data: list[_EmbeddingData]) -> None:
+        self.data = data
+
+
+class _Message:
+    __slots__ = ("content",)
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _Choice:
+    __slots__ = ("message",)
+
+    def __init__(self, message: _Message) -> None:
+        self.message = message
+
+
+class _ChatResponse:
+    __slots__ = ("choices",)
+
+    def __init__(self, choices: list[_Choice]) -> None:
+        self.choices = choices
+
+
+class _Embeddings:
+    def __init__(self, api_client: "PatchaAPIClient") -> None:
+        self._client = api_client
+
+    def create(self, *, model: str, input: str | list[str]) -> _EmbeddingResponse:
+        payload = {"model": model, "input": input}
+        resp = self._client.proxy_embeddings(payload)
+        if resp is not None and resp.status_code == 401:
+            if self._client.refresh_tokens():
+                resp = self._client.proxy_embeddings(payload)
+        if resp is None:
+            raise RuntimeError("embeddings request failed: no response")
+        if resp.status_code == 401:
+            raise PermissionError("not authenticated — run: patcha login")
+        if resp.status_code != 200:
+            raise RuntimeError(f"embeddings request failed: HTTP {resp.status_code}")
+        return _EmbeddingResponse(
+            [_EmbeddingData(item["embedding"]) for item in resp.json()["data"]]
+        )
+
+
+class _ChatCompletions:
+    def __init__(self, api_client: "PatchaAPIClient") -> None:
+        self._client = api_client
+
+    def create(
+        self, *, model: str, messages: list[dict], **kwargs: Any
+    ) -> _ChatResponse:
+        payload: dict[str, Any] = {"model": model, "messages": messages, **kwargs}
+        resp = self._client.proxy_chat_completion(payload)
+        if resp is not None and resp.status_code == 401:
+            if self._client.refresh_tokens():
+                resp = self._client.proxy_chat_completion(payload)
+        if resp is None:
+            raise RuntimeError("chat completion request failed: no response")
+        if resp.status_code == 401:
+            raise PermissionError("not authenticated — run: patcha login")
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"chat completion request failed: HTTP {resp.status_code}"
+            )
+        choices = resp.json()["choices"]
+        return _ChatResponse(
+            [_Choice(_Message(c["message"]["content"])) for c in choices]
+        )
+
+
+class _Chat:
+    def __init__(self, api_client: "PatchaAPIClient") -> None:
+        self.completions = _ChatCompletions(api_client)
+
+
+class PatchaLLMClient:
+    """Drop-in replacement for openai.OpenAI that routes through patcha-api."""
+
+    def __init__(self) -> None:
+        self._api_client = PatchaAPIClient()
+        self.embeddings = _Embeddings(self._api_client)
+        self.chat = _Chat(self._api_client)
+
+
 _ENV_PATH = Path.home() / ".patcha" / ".env"
 
 
@@ -107,6 +204,14 @@ class PatchaAPIClient:
                 self._refresh_token = data["refresh_token"]
                 _save_tokens(self._access_token, self._refresh_token)
                 return True
+        except httpx.RequestError:
+            return False
+
+    def check_auth(self) -> bool:
+        try:
+            with httpx.Client(base_url=self._base_url, timeout=10.0) as client:
+                resp = client.get("/api/v1/auth/me", headers=self._auth_headers())
+                return resp.status_code == 200
         except httpx.RequestError:
             return False
 

@@ -4,6 +4,7 @@ import Combine
 class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController!
     var daemonManager: DaemonManager!
+    var mcpManager: MCPManager!
     var settingsWindowController: SettingsWindowController!
     var authManager: AuthManager!
 
@@ -15,8 +16,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let store = SettingsStore()
         authManager = AuthManager()
         daemonManager = DaemonManager()
-        settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store, authManager: authManager)
-        menuBarController = MenuBarController(daemonManager: daemonManager, settingsWindowController: settingsWindowController)
+        mcpManager = MCPManager()
+        mcpManager.start()
+        settingsWindowController = SettingsWindowController(daemonManager: daemonManager, settingsStore: store, authManager: authManager, mcpManager: mcpManager)
+        menuBarController = MenuBarController(daemonManager: daemonManager, mcpManager: mcpManager, settingsWindowController: settingsWindowController, settingsStore: store)
         Installer.installIfNeeded()
         PermissionsManager.requestIfNeeded()
 
@@ -40,11 +43,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor private func handleAuthState(signedIn: Bool) {
         if signedIn {
             daemonManager.authToken = authManager.session?.accessToken
+            mcpManager.authToken = authManager.session?.accessToken
             if case .stopped = daemonManager.status {
                 daemonManager.start()
             }
+            mcpManager.start()
         } else {
             if case .running = daemonManager.status { daemonManager.stop() }
+            mcpManager.stop()
             showLogin()
         }
     }
@@ -64,5 +70,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         daemonManager.stop()
+        mcpManager.stop()
     }
 }

@@ -3,9 +3,11 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, List, Dict, Any
+from typing import TYPE_CHECKING, List, Dict, Any, Optional
 
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine
 
 from patcha.config import config
 
@@ -102,6 +104,70 @@ def _dedup_by_similarity(
     return kept
 
 
+_RRF_K = 60
+
+
+def _tfidf_rank(query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not candidates:
+        return []
+
+    corpus = [c["payload"].get("raw_content", "") or "" for c in candidates]
+    if not any(corpus):
+        return candidates
+
+    try:
+        vectorizer = TfidfVectorizer(
+            min_df=1,
+            max_features=20000,
+            sublinear_tf=True,
+            strip_accents="unicode",
+            analyzer="word",
+            ngram_range=(1, 2),
+        )
+        all_texts = corpus + [query]
+        tfidf_matrix = vectorizer.fit_transform(all_texts)
+        query_vec = tfidf_matrix[-1]
+        doc_vecs = tfidf_matrix[:-1]
+        sims = sklearn_cosine(query_vec, doc_vecs).flatten()
+        ranked = sorted(zip(sims, candidates), key=lambda x: x[0], reverse=True)
+        return [{**c, "score": float(sim)} for sim, c in ranked]
+    except Exception as e:
+        log.warning("TF-IDF ranking failed, returning unranked: %s", e)
+        return candidates
+
+
+def _reciprocal_rank_fusion(
+    vector_results: List[Dict[str, Any]],
+    text_results: List[Dict[str, Any]],
+    limit: int,
+) -> List[Dict[str, Any]]:
+    scores: Dict[str, Dict[str, Any]] = {}
+
+    for rank_0, result in enumerate(vector_results):
+        doc_id = str(result["id"])
+        contribution = 1.0 / (_RRF_K + rank_0 + 1)
+        if doc_id not in scores:
+            scores[doc_id] = {"payload": result["payload"], "rrf_score": 0.0}
+        scores[doc_id]["rrf_score"] += contribution
+
+    for rank_0, result in enumerate(text_results):
+        doc_id = str(result["id"])
+        contribution = 1.0 / (_RRF_K + rank_0 + 1)
+        if doc_id not in scores:
+            scores[doc_id] = {"payload": result["payload"], "rrf_score": 0.0}
+        scores[doc_id]["rrf_score"] += contribution
+
+    merged = sorted(
+        [{"id": doc_id, **item} for doc_id, item in scores.items()],
+        key=lambda x: x["rrf_score"],
+        reverse=True,
+    )
+    return [
+        {"id": x["id"], "score": x["rrf_score"], "payload": x["payload"]}
+        for x in merged
+    ][:limit]
+
+
 def get_working_memory(store: "VectorStore", minutes: int = 15) -> str:
     since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
     rows = store.get_recent_events_with_vectors(since)
@@ -116,14 +182,26 @@ def get_working_memory(store: "VectorStore", minutes: int = 15) -> str:
     return f"# Working memory (last {minutes}m)\n" + "\n".join(lines)
 
 
-def get_recent_activity(store: "VectorStore", hours: int = 3) -> str:
+def get_recent_activity(
+    store: "VectorStore", hours: int = 3, app_filter: Optional[str] = None
+) -> str:
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     rows = store.get_recent_events_with_vectors(since)
+
+    if app_filter:
+        rows = [
+            r
+            for r in rows
+            if (r.get("payload") or {}).get("metadata", {}).get("app_name")
+            == app_filter
+        ]
+
     rows = _dedup_by_similarity(rows, config.working_memory_dedup_threshold)
     lines = [_format_line(r.get("payload", {})) for r in rows]
+    app_tag = f" (app={app_filter})" if app_filter else ""
     if not lines:
-        return f"# Recent activity (last {hours}h)\nNo activity recorded."
-    return f"# Recent activity (last {hours}h)\n" + "\n".join(lines)
+        return f"# Recent activity (last {hours}h){app_tag}\nNo activity recorded."
+    return f"# Recent activity (last {hours}h){app_tag}\n" + "\n".join(lines)
 
 
 def _format_detail(payload: dict) -> str:
@@ -169,7 +247,11 @@ def _format_detail(payload: dict) -> str:
 
 
 def search_activity(
-    store: "VectorStore", preprocessor: "EventPreprocessor", query: str, limit: int = 5
+    store: "VectorStore",
+    preprocessor: "EventPreprocessor",
+    query: str,
+    limit: int = 5,
+    app_filter: Optional[str] = None,
 ) -> str:
     try:
         embedding = preprocessor.generate_embedding(query)
@@ -180,16 +262,31 @@ def search_activity(
     if not embedding:
         return f'# Search results for "{query}"\nEmbedding failed — no vector returned.'
 
-    results = store.search_events(embedding, limit=limit)
-    if not results:
+    vector_results = store.search_events(embedding, limit=limit, app_filter=app_filter)
+
+    ft_candidates = store.fetch_fulltext_candidates(
+        query=query,
+        limit=min(limit * 5, 100),
+        app_filter=app_filter,
+    )
+    ft_ranked = _tfidf_rank(query, ft_candidates)[:limit]
+
+    merged = (
+        _reciprocal_rank_fusion(vector_results, ft_ranked, limit=limit)
+        if ft_ranked
+        else vector_results
+    )
+
+    if not merged:
         return f'# Search results for "{query}"\nNo results found.'
 
     lines = []
-    for r in results:
+    for r in merged:
         score = round(r.get("score", 0), 3)
         p = r.get("payload", {})
         ts = p.get("timestamp", "")[:16].replace("T", " ")
         line = _format_detail(p)
         lines.append(f"[score={score} | {ts}] {line.split('] ', 1)[-1]}")
 
-    return f'# Search results for "{query}"\n' + "\n\n".join(lines)
+    app_tag = f" (app={app_filter})" if app_filter else ""
+    return f'# Search results for "{query}"{app_tag}\n' + "\n\n".join(lines)

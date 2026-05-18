@@ -26,6 +26,10 @@ if [ -f Resources/AppIcon.icns ]; then
     cp Resources/AppIcon.icns "$CONTENTS/Resources/AppIcon.icns"
 fi
 
+if [ -d Resources/AppIcon.icon ]; then
+    cp -R Resources/AppIcon.icon "$CONTENTS/Resources/AppIcon.icon"
+fi
+
 echo "  Signing app bundle (ad-hoc)..."
 codesign --force --deep --sign - "$APP_BUNDLE"
 

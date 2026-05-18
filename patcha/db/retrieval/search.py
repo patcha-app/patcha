@@ -2,13 +2,12 @@
 
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 from patcha.db.models import Task, TaskSearchResult, Category
 from patcha.db.tasks import TaskStore
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
-from patcha.config import config
 
 
 class TaskAwareSearchService:
@@ -21,7 +20,7 @@ class TaskAwareSearchService:
         self.task_store = task_store
         self.vector_store = vector_store
         self.preprocessor = preprocessor
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
     def search(

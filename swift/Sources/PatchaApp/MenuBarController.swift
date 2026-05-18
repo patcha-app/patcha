@@ -1,10 +1,19 @@
 import AppKit
 import Combine
 
+private final class NoIconMenuItem: NSMenuItem {
+    override var image: NSImage? {
+        get { nil }
+        set { }
+    }
+}
+
 @MainActor class MenuBarController: NSObject {
     private var statusItem: NSStatusItem
     private var daemonManager: DaemonManager
+    private var mcpManager: MCPManager
     private var settingsWindowController: SettingsWindowController
+    private var settingsStore: SettingsStore
     private var cancellables = Set<AnyCancellable>()
 
     private lazy var grantAccessibilityItem: NSMenuItem = {
@@ -22,10 +31,14 @@ import Combine
     }()
 
     private var resumeNowItem: NSMenuItem!
+    private var mcpStatusItem: NSMenuItem!
+    private var mcpPollTimer: Timer?
 
-    init(daemonManager: DaemonManager, settingsWindowController: SettingsWindowController) {
+    init(daemonManager: DaemonManager, mcpManager: MCPManager, settingsWindowController: SettingsWindowController, settingsStore: SettingsStore) {
         self.daemonManager = daemonManager
+        self.mcpManager = mcpManager
         self.settingsWindowController = settingsWindowController
+        self.settingsStore = settingsStore
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -47,6 +60,27 @@ import Combine
             object: nil
         )
         refreshPermissions()
+        startMCPPolling()
+    }
+
+    private func startMCPPolling() {
+        checkMCPStatus()
+        mcpPollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.checkMCPStatus() }
+        }
+    }
+
+    private func checkMCPStatus() {
+        let port = Int(settingsStore.read(key: "mcp_port") ?? "") ?? 7861
+        guard let url = URL(string: "http://127.0.0.1:\(port)/mcp") else { return }
+        var request = URLRequest(url: url, timeoutInterval: 2)
+        request.httpMethod = "GET"
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            let isRunning = error == nil && (response as? HTTPURLResponse) != nil
+            DispatchQueue.main.async {
+                self?.mcpStatusItem?.title = "MCP Server: \(isRunning ? "Running" : "Stopped")"
+            }
+        }.resume()
     }
 
     private func buildMenu() {
@@ -57,6 +91,12 @@ import Combine
         menu.addItem(grantScreenRecordingItem)
 
         menu.addItem(.separator())
+
+        mcpStatusItem = NSMenuItem(title: "MCP Server: Checking...", action: nil, keyEquivalent: "")
+        mcpStatusItem.isEnabled = false
+        menu.addItem(mcpStatusItem)
+
+        menu.addItem(.separator())
         menu.addItem(buildPauseSubmenu())
 
         let restartItem = NSMenuItem(title: "Restart Daemon", action: #selector(restartDaemon), keyEquivalent: "r")
@@ -65,10 +105,9 @@ import Combine
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Open Settings", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        settingsItem.image = nil
-        menu.addItem(settingsItem)
+        let preferencesItem = NoIconMenuItem(title: "Preferences...", action: #selector(openSettings), keyEquivalent: ",")
+        preferencesItem.target = self
+        menu.addItem(preferencesItem)
 
         menu.addItem(buildResourcesSubmenu())
 
@@ -140,6 +179,9 @@ import Combine
         refreshPermissions()
         if case .stopped = daemonManager.status, PermissionsManager.accessibilityGranted() {
             daemonManager.start()
+        }
+        if !mcpManager.isRunning {
+            mcpManager.start()
         }
         updateMenuState()
     }

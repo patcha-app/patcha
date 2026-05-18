@@ -119,7 +119,7 @@ enum DaemonStatus: Equatable {
         env["PATH"] = [env["PATH"], extraPaths].compactMap { $0 }.joined(separator: ":")
         env["PATCHA_ENV"] = "production"
         if let token = authToken {
-            env["PATCHA_AUTH_TOKEN"] = token
+            env["PATCHA_ACCESS_TOKEN"] = token
         }
         proc.environment = env
 
@@ -176,9 +176,9 @@ enum DaemonStatus: Equatable {
             return
         }
 
-        // Exit code 2 signals a non-recoverable config error (e.g. missing API key).
+        // Exit code 2 signals the daemon is not authenticated.
         if exitCode == 2 {
-            NSLog("[DaemonManager] daemon exited with config error (code 2)")
+            NSLog("[DaemonManager] daemon exited with auth error (code 2)")
             status = .failed
             DaemonManager.showConfigErrorAlert()
             return

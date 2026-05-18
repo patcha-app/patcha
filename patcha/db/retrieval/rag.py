@@ -8,8 +8,7 @@ from collections import Counter
 from patcha.db.models import Event
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
-from patcha.config import config
-from openai import OpenAI
+from patcha.api_client import PatchaLLMClient
 
 
 class RAGSystem:
@@ -21,7 +20,7 @@ class RAGSystem:
     def __init__(self, vector_store: VectorStore, preprocessor: EventPreprocessor):
         self.vector_store = vector_store
         self.preprocessor = preprocessor
-        self.client = OpenAI(api_key=config.openai_api_key)
+        self.client = PatchaLLMClient()
         self.model_name = "gpt-4o-mini"
 
     def retrieve_context_for_task_analysis(

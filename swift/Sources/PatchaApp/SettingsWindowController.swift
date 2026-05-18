@@ -4,10 +4,10 @@ import SwiftUI
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private weak var daemonManager: DaemonManager?
 
-    init(daemonManager: DaemonManager, settingsStore: SettingsStore, authManager: AuthManager) {
+    init(daemonManager: DaemonManager, settingsStore: SettingsStore, authManager: AuthManager, mcpManager: MCPManager) {
         self.daemonManager = daemonManager
 
-        let view = SettingsRootView(store: settingsStore, daemonManager: daemonManager, authManager: authManager)
+        let view = SettingsRootView(store: settingsStore, daemonManager: daemonManager, authManager: authManager, mcpManager: mcpManager)
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = []
 
@@ -18,6 +18,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.setContentSize(NSSize(width: 700, height: 520))
         window.center()
+        window.isOpaque = true
+        window.backgroundColor = NSColor(name: nil) { appearance in
+            switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
+            case .darkAqua:
+                return NSColor(red: CGFloat(0x1A) / 255, green: CGFloat(0x1A) / 255, blue: CGFloat(0x1A) / 255, alpha: 1)
+            default:
+                return NSColor(red: CGFloat(0xF4) / 255, green: CGFloat(0xF4) / 255, blue: CGFloat(0xF5) / 255, alpha: 1)
+            }
+        }
 
         super.init(window: window)
         window.delegate = self
