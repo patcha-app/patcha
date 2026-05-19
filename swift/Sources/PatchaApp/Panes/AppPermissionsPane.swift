@@ -8,18 +8,9 @@ struct AppPermissionsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "shield")
-                            .font(.title2)
-                        Text("App Permissions")
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                    }
-                    Text("Control which applications Patcha is allowed to observe and extract context from.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Control which applications Patcha is allowed to observe and extract context from.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("Rescan Apps") {
                     viewModel.scan()
@@ -27,7 +18,7 @@ struct AppPermissionsPane: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 32)
+            .padding(.top, 20)
             .padding(.bottom, 16)
 
             if viewModel.isScanning {

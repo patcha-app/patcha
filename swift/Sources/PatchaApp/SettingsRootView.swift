@@ -1,36 +1,5 @@
 import SwiftUI
 
-extension Color {
-    init(hex: String) {
-        let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        var int: UInt64 = 0
-        Scanner(string: cleaned).scanHexInt64(&int)
-        let r, g, b, a: UInt64
-        switch cleaned.count {
-        case 6:
-            (r, g, b, a) = ((int >> 16) & 0xFF, (int >> 8) & 0xFF, int & 0xFF, 255)
-        case 8:
-            (r, g, b, a) = ((int >> 24) & 0xFF, (int >> 16) & 0xFF, (int >> 8) & 0xFF, int & 0xFF)
-        default:
-            (r, g, b, a) = (255, 255, 255, 255)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
-    }
-}
-
-enum PatchaTheme {
-    static let accent = Color(hex: "CDF064")
-    static let lightAccent = Color(hex: "A0BD4B")
-    static let sidebarTint = Color.black.opacity(0.18)
-    static let contentTint = Color.black.opacity(0.08)
-    static let softDivider = Color.primary.opacity(0.08)
-}
 
 struct SettingsRootView: View {
     @ObservedObject var store: SettingsStore
@@ -80,11 +49,11 @@ struct SettingsRootView: View {
                 HStack(spacing: 0) {
                     SettingsSidebar(selected: $section)
                         .frame(width: 220)
-                        .background(PatchaTheme.sidebarTint.ignoresSafeArea())
+                        .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
                         .ignoresSafeArea(edges: .top)
                     contentView
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(PatchaTheme.contentTint.ignoresSafeArea())
+                        .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
                         .ignoresSafeArea(edges: .top)
                 }
                 .frame(width: 700)
@@ -92,7 +61,7 @@ struct SettingsRootView: View {
                 .onAppear { permissionsVM.scan() }
             }
         }
-        .tint(colorScheme == .dark ? PatchaTheme.accent : PatchaTheme.lightAccent)
-        .accentColor(colorScheme == .dark ? PatchaTheme.accent : PatchaTheme.lightAccent)
+        .tint(PatchaTheme.accent)
+        .accentColor(PatchaTheme.accent)
     }
 }

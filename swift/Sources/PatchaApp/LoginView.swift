@@ -1,10 +1,6 @@
 import SwiftUI
 import AppKit
 
-private let bgLight = Color(hex: "#F4F4F5")
-private let bgDark = Color(hex: "#1A1A1A")
-private let accentDark = Color(hex: "#CDF064")
-private let accentLight = PatchaTheme.lightAccent
 
 struct LoginView: View {
     @ObservedObject var authManager: AuthManager
@@ -15,13 +11,9 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
 
-    private var bgColor: Color {
-        colorScheme == .dark ? bgDark : bgLight
-    }
-
     var body: some View {
         ZStack {
-            bgColor
+            PatchaTheme.bg(for: colorScheme)
 
             VStack(spacing: 24) {
                 if let icon = NSApp.applicationIconImage {
@@ -135,15 +127,14 @@ private struct AccentButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
-        let accent = colorScheme == .dark ? accentDark : accentLight
         configuration.label
             .font(.body.weight(.medium))
-            .foregroundColor(.black)
+            .foregroundColor(PatchaTheme.bg(for: colorScheme))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(accent.opacity(isDisabled ? 0.4 : configuration.isPressed ? 0.8 : 1.0))
+                    .fill(PatchaTheme.accent.opacity(isDisabled ? 0.4 : configuration.isPressed ? 0.8 : 1.0))
             )
     }
 }

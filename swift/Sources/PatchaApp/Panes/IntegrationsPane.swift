@@ -17,17 +17,6 @@ struct IntegrationsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "link")
-                    .font(.title2)
-                Text("Integrations")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 32)
-            .padding(.bottom, 16)
-
             Form {
                 Section("MCP Server") {
                     LabeledContent("Status") {
