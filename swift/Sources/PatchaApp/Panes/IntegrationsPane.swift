@@ -138,12 +138,37 @@ struct IntegrationsPane: View {
 
         Task {
             let result = writeConfig(path: configPath, mcpURL: mcpURL)
+            if case .connected = result, client == .claudeCode {
+                installClaudeIntegration()
+            }
             await MainActor.run {
                 switch client {
                 case .claudeCode: claudeCodeStatus = result
                 case .claudeDesktop: claudeDesktopStatus = result
                 }
             }
+        }
+    }
+
+    private func installClaudeIntegration() {
+        let patchaBin = NSHomeDirectory() + "/.local/bin/patcha"
+        guard FileManager.default.isExecutableFile(atPath: patchaBin) else {
+            NSLog("[IntegrationsPane] patcha binary not found at %@", patchaBin)
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: patchaBin)
+        process.arguments = ["install-claude", "--force"]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = NSHomeDirectory() + "/.local/bin:/usr/local/bin:/usr/bin:/bin"
+        env["PATCHA_ENV"] = "production"
+        process.environment = env
+        do {
+            try process.run()
+            process.waitUntilExit()
+            NSLog("[IntegrationsPane] install-claude exited with status %d", process.terminationStatus)
+        } catch {
+            NSLog("[IntegrationsPane] install-claude failed to launch: %@", error.localizedDescription)
         }
     }
 

@@ -246,6 +246,14 @@ def _format_detail(payload: dict) -> str:
     return base
 
 
+def list_apps(store: "VectorStore", limit: int = 100) -> str:
+    apps = store.list_apps(limit=limit)
+    if not apps:
+        return "# Apps in activity history\nNo app activity recorded."
+    lines = [f"{a['app_name']} ({a['count']} events)" for a in apps]
+    return "# Apps in activity history\n" + "\n".join(lines)
+
+
 def search_activity(
     store: "VectorStore",
     preprocessor: "EventPreprocessor",

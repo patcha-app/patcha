@@ -47,6 +47,7 @@ _COMMANDS_WITHOUT_KEY = {
     "daemon-status",
     "status",
     "config",
+    "install-claude",
 }
 
 
@@ -2305,6 +2306,46 @@ def login(email: str, password: str, do_register: bool):
             console.print("[green]Logged in successfully.[/green]")
         else:
             console.print("[red]Login failed. Check your credentials.[/red]")
+
+
+@cli.command("install-claude")
+@click.option("--force", is_flag=True, help="Overwrite existing files without prompting.")
+def install_claude(force: bool):
+    """Install the patcha slash command and skill into Claude Code (user scope)."""
+    import shutil
+
+    assets_dir = Path(__file__).parent / "assets" / "claude"
+    claude_dir = Path.home() / ".claude"
+
+    dst_cmd = claude_dir / "commands" / "patcha.md"
+    dst_skill = claude_dir / "skills" / "patcha"
+
+    if not force:
+        conflicts = []
+        if dst_cmd.exists():
+            conflicts.append(str(dst_cmd))
+        if dst_skill.exists():
+            conflicts.append(str(dst_skill))
+        if conflicts:
+            console.print("[yellow]The following already exist:[/yellow]")
+            for c in conflicts:
+                console.print(f"  {c}")
+            if not click.confirm("Overwrite?"):
+                console.print("Aborted.")
+                return
+
+    dst_cmd.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(assets_dir / "commands" / "patcha.md", dst_cmd)
+    console.print(f"[green]command  -> {dst_cmd}[/green]")
+
+    if dst_skill.exists():
+        shutil.rmtree(dst_skill)
+    shutil.copytree(assets_dir / "skills" / "patcha", dst_skill)
+    console.print(f"[green]skill    -> {dst_skill / 'SKILL.md'}[/green]")
+
+    console.print("\n[bold]Done. In Claude Code you can now use:[/bold]")
+    console.print("  /patcha <query>  — search activity history")
+    console.print("  /patcha          — show active apps + current context")
 
 
 @cli.command()

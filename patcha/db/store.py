@@ -488,6 +488,22 @@ class VectorStore:
         )
         return list(reversed(recent[:limit]))
 
+    def list_apps(self, limit: int = 100) -> List[Dict[str, Any]]:
+        try:
+            response = self.client.facet(
+                collection_name=self.collection_name,
+                key="metadata.app_name",
+                limit=limit,
+            )
+            return [
+                {"app_name": hit.value, "count": hit.count}
+                for hit in response.hits
+                if hit.value
+            ]
+        except Exception as e:
+            log.error("error listing apps: %s", e)
+            return []
+
     def get_collection_info(self) -> Dict[str, Any]:
         try:
             info = self.client.get_collection(self.collection_name)

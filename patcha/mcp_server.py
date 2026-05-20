@@ -20,6 +20,7 @@ from patcha.db.retrieval.context import (
     get_working_memory,
     get_recent_activity,
     search_activity,
+    list_apps,
 )
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
@@ -101,6 +102,25 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="list_apps",
+            description=(
+                "List all apps that have recorded activity in the history database, "
+                "along with their event counts. Use this to discover valid app names "
+                "before filtering other tools (search_activity, get_recent_activity) "
+                "by app."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of apps to return. Default 100.",
+                        "default": 100,
+                    }
+                },
+            },
+        ),
+        Tool(
             name="get_recent_activity",
             description=(
                 "Get a deduped log of the user's raw activity over the last N hours. "
@@ -142,6 +162,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         result = search_activity(
             _get_store(), _get_preprocessor(), query, limit=limit, app_filter=app
         )
+
+    elif name == "list_apps":
+        limit = arguments.get("limit", 100)
+        result = list_apps(_get_store(), limit=limit)
 
     elif name == "get_recent_activity":
         hours = arguments.get("hours", 3)
