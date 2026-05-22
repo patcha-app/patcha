@@ -1,5 +1,13 @@
 import SwiftUI
 
+@MainActor
+private struct GeneralPane_Previews: PreviewProvider {
+    static var previews: some View {
+        GeneralPane(store: SettingsStore(), daemonManager: DaemonManager())
+            .frame(width: 480, height: 400)
+    }
+}
+
 struct GeneralPane: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var daemonManager: DaemonManager

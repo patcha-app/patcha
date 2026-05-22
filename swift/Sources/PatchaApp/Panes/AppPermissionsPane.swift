@@ -1,6 +1,45 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private struct AppPermissionsPane_Previews: PreviewProvider {
+    static var vm: AppPermissionsViewModel {
+        let store = SettingsStore()
+        let v = AppPermissionsViewModel(store: store)
+        v.apps = [
+            AppEntry(id: "com.example.one", name: "Example App", icon: nil, isExcluded: false),
+            AppEntry(id: "com.example.two", name: "Another App", icon: nil, isExcluded: true),
+        ]
+        return v
+    }
+
+    static var previews: some View {
+        Group {
+            AppPermissionsPane(store: SettingsStore(), viewModel: vm)
+                .frame(width: 480, height: 400)
+                .previewDisplayName("Permissions Pane")
+
+            CollectorRow(iconName: "safari", name: "Browser", isEnabled: .constant(true))
+                .frame(width: 400)
+                .padding()
+                .previewDisplayName("Collector Row")
+
+            AppPermissionRow(
+                app: AppEntry(id: "com.example.app", name: "Example App", icon: nil, isExcluded: false),
+                onToggle: {}
+            )
+            .frame(width: 400)
+            .padding()
+            .previewDisplayName("App Permission Row")
+
+            SoftDivider()
+                .frame(width: 400)
+                .padding()
+                .previewDisplayName("Soft Divider")
+        }
+    }
+}
+
 struct AppPermissionsPane: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var viewModel: AppPermissionsViewModel

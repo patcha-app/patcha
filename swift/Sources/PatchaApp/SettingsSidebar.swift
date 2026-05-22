@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+private struct SettingsSidebar_Previews: PreviewProvider {
+    static var previews: some View {
+        SettingsSidebar(selected: .constant(.general))
+            .frame(width: 220, height: 500)
+    }
+}
+
 struct SettingsSidebar: View {
     @Binding var selected: SettingsSection
 

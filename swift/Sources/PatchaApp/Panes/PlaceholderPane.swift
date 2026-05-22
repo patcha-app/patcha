@@ -1,5 +1,12 @@
 import SwiftUI
 
+private struct PlaceholderPane_Previews: PreviewProvider {
+    static var previews: some View {
+        PlaceholderPane(section: .memories)
+            .frame(width: 480, height: 300)
+    }
+}
+
 struct PlaceholderPane: View {
     let section: SettingsSection
 

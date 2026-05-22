@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+public class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController!
     var daemonManager: DaemonManager!
     var mcpManager: MCPManager!
@@ -11,7 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isQuitting = false
     private var authCancellable: AnyCancellable?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let store = SettingsStore()
         authManager = AuthManager()
@@ -32,7 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
+    public func application(_ application: NSApplication, open urls: [URL]) {
         NSLog("[AppDelegate] application(_:open:) called with %d URL(s)", urls.count)
         for url in urls {
             NSLog("[AppDelegate] handling URL: %@", url.absoluteString)
@@ -59,7 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController.show()
     }
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isQuitting ? .terminateNow : .terminateCancel
     }
 
@@ -68,7 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         daemonManager.stop()
         mcpManager.stop()
     }

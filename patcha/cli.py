@@ -2309,7 +2309,9 @@ def login(email: str, password: str, do_register: bool):
 
 
 @cli.command("install-claude")
-@click.option("--force", is_flag=True, help="Overwrite existing files without prompting.")
+@click.option(
+    "--force", is_flag=True, help="Overwrite existing files without prompting."
+)
 def install_claude(force: bool):
     """Install the patcha slash command and skill into Claude Code (user scope)."""
     import shutil

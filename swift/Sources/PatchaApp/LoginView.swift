@@ -122,6 +122,14 @@ struct LoginView: View {
     }
 }
 
+@MainActor
+private struct LoginView_Previews: PreviewProvider {
+    static var previews: some View {
+        LoginView(authManager: AuthManager())
+            .frame(width: 400, height: 520)
+    }
+}
+
 private struct AccentButtonStyle: ButtonStyle {
     let isDisabled: Bool
     @Environment(\.colorScheme) private var colorScheme

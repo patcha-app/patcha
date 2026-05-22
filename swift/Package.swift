@@ -8,8 +8,8 @@ let package = Package(
         .package(url: "https://github.com/supabase/supabase-swift", from: "2.0.0"),
     ],
     targets: [
-        .executableTarget(
-            name: "PatchaApp",
+        .target(
+            name: "PatchaAppLib",
             dependencies: [
                 .product(name: "Supabase", package: "supabase-swift"),
             ],
@@ -21,6 +21,11 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
                 .linkedLibrary("sqlite3"),
             ]
+        ),
+        .executableTarget(
+            name: "PatchaApp",
+            dependencies: ["PatchaAppLib"],
+            path: "Sources/PatchaEntry"
         ),
     ]
 )

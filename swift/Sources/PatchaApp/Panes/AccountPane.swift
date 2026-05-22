@@ -1,5 +1,13 @@
 import SwiftUI
 
+@MainActor
+private struct AccountPane_Previews: PreviewProvider {
+    static var previews: some View {
+        AccountPane(authManager: AuthManager())
+            .frame(width: 480, height: 300)
+    }
+}
+
 struct AccountPane: View {
     @ObservedObject var authManager: AuthManager
     @State private var isSigningOut = false

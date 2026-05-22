@@ -1,5 +1,35 @@
 import SwiftUI
 
+@MainActor
+private struct SettingsRootView_Previews: PreviewProvider {
+    static var signedInAuth: AuthManager {
+        let auth = AuthManager()
+        auth.isSignedIn = true
+        return auth
+    }
+
+    static var previews: some View {
+        Group {
+            SettingsRootView(
+                store: SettingsStore(),
+                daemonManager: nil,
+                authManager: AuthManager(),
+                mcpManager: MCPManager()
+            )
+            .frame(width: 700, height: 500)
+            .previewDisplayName("Login")
+
+            SettingsRootView(
+                store: SettingsStore(),
+                daemonManager: nil,
+                authManager: signedInAuth,
+                mcpManager: MCPManager()
+            )
+            .frame(width: 700, height: 500)
+            .previewDisplayName("Settings")
+        }
+    }
+}
 
 struct SettingsRootView: View {
     @ObservedObject var store: SettingsStore

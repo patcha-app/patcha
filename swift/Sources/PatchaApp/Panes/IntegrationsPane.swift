@@ -1,6 +1,14 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private struct IntegrationsPane_Previews: PreviewProvider {
+    static var previews: some View {
+        IntegrationsPane(mcpManager: MCPManager())
+            .frame(width: 480, height: 400)
+    }
+}
+
 struct IntegrationsPane: View {
     @ObservedObject var mcpManager: MCPManager
     @State private var claudeCodeStatus: ConnectStatus = .idle
