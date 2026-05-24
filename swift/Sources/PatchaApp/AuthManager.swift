@@ -7,6 +7,7 @@ import Combine
 final class AuthManager: ObservableObject {
     @Published var session: Session? = nil
     @Published var isSignedIn: Bool = false
+    @Published var initialSessionLoaded: Bool = false
 
     init() {
         Task {
@@ -20,6 +21,9 @@ final class AuthManager: ObservableObject {
                     self.isSignedIn = false
                 default:
                     break
+                }
+                if !self.initialSessionLoaded {
+                    self.initialSessionLoaded = true
                 }
             }
         }
