@@ -191,10 +191,8 @@ enum DaemonStatus: Equatable {
         let alert = NSAlert()
         alert.messageText = "Patcha configuration error"
         alert.informativeText = """
-            The daemon could not start due to a missing configuration.
-
-            Make sure OPENAI_API_KEY is set in ~/.patcha/.env or the project .env file, \
-            then restart the daemon.
+            The daemon exited unexpectedly. Check that the project directory is correct \
+            and all dependencies are installed, then restart the daemon.
             """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
@@ -298,6 +296,14 @@ enum DaemonStatus: Equatable {
     private func detectProjectDir() -> String {
         if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
             return envDir
+        }
+
+        // Embedded at build time via Info.plist PatchaSourceRoot = $(SRCROOT)/../..
+        if let plistRoot = Bundle.main.infoDictionary?["PatchaSourceRoot"] as? String {
+            let resolved = (plistRoot as NSString).standardizingPath
+            if FileManager.default.fileExists(atPath: "\(resolved)/main.py") {
+                return resolved
+            }
         }
 
         // In .app bundle: bundle lives at <project>/dist/Patcha.app — two levels up is project root.

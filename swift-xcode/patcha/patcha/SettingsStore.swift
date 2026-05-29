@@ -15,6 +15,9 @@ final class SettingsStore: ObservableObject {
     @Published var pauseForInternal: Bool = false
     @Published var autoCheckUpdates: Bool = true
     @Published var onboardingCompleted: Bool = false
+    @Published var onboardingProfileDone: Bool = false
+    @Published var onboardingPermissionsDone: Bool = false
+    @Published var onboardingPrivacyDone: Bool = false
     @Published var profileRole: String = ""
     @Published var profileSource: String = ""
     @Published var profileTools: String = ""
@@ -64,8 +67,11 @@ final class SettingsStore: ObservableObject {
             case "excluded_app_names":   excludedAppNames = value
             case "pause_for_internal":   pauseForInternal = value == "true"
             case "auto_check_updates":   autoCheckUpdates = value == "true"
-            case "onboarding_completed": onboardingCompleted = value == "true"
-            case "profile_role":         profileRole = value
+            case "onboarding_completed":       onboardingCompleted = value == "true"
+            case "onboarding_profile_done":    onboardingProfileDone = value == "true"
+            case "onboarding_permissions_done": onboardingPermissionsDone = value == "true"
+            case "onboarding_privacy_done":    onboardingPrivacyDone = value == "true"
+            case "profile_role":               profileRole = value
             case "profile_source":       profileSource = value
             case "profile_tools":        profileTools = value
             case "profile_feedback_opt_in": profileFeedbackOptIn = value == "true"
@@ -98,8 +104,11 @@ final class SettingsStore: ObservableObject {
             ("excluded_app_names",   excludedAppNames),
             ("pause_for_internal",   pauseForInternal ? "true" : "false"),
             ("auto_check_updates",   autoCheckUpdates ? "true" : "false"),
-            ("onboarding_completed", onboardingCompleted ? "true" : "false"),
-            ("profile_role",         profileRole),
+            ("onboarding_completed",        onboardingCompleted ? "true" : "false"),
+            ("onboarding_profile_done",     onboardingProfileDone ? "true" : "false"),
+            ("onboarding_permissions_done", onboardingPermissionsDone ? "true" : "false"),
+            ("onboarding_privacy_done",     onboardingPrivacyDone ? "true" : "false"),
+            ("profile_role",                profileRole),
             ("profile_source",       profileSource),
             ("profile_tools",        profileTools),
             ("profile_feedback_opt_in", profileFeedbackOptIn ? "true" : "false"),

@@ -10,12 +10,21 @@ enum OnboardingStep: Int, CaseIterable {
 struct OnboardingView: View {
     @ObservedObject var store: SettingsStore
     @Environment(\.colorScheme) private var colorScheme
-    @State private var step: OnboardingStep = .profile
+    @State private var step: OnboardingStep
     @StateObject private var appsVM: AppPermissionsViewModel
 
     init(store: SettingsStore) {
         self.store = store
         self._appsVM = StateObject(wrappedValue: AppPermissionsViewModel(store: store))
+        let startStep: OnboardingStep
+        if !store.onboardingProfileDone {
+            startStep = .profile
+        } else if !store.onboardingPermissionsDone {
+            startStep = .permissions
+        } else {
+            startStep = .privacy
+        }
+        self._step = State(initialValue: startStep)
     }
 
     var body: some View {
@@ -24,19 +33,44 @@ struct OnboardingView: View {
 
             switch step {
             case .profile:
-                ProfileOnboardingStep(store: store, onContinue: { step = .permissions })
+                ProfileOnboardingStep(store: store, onContinue: completeProfile)
             case .permissions:
-                PermissionsOnboardingStep(onContinue: { step = .privacy })
+                PermissionsOnboardingStep(onContinue: completePermissions)
             case .privacy:
-                PrivacyOnboardingStep(store: store, appsVM: appsVM, onContinue: complete)
+                PrivacyOnboardingStep(store: store, appsVM: appsVM, onContinue: completePrivacy)
             }
         }
         .background(OnboardingWindowSizer(size: NSSize(width: 980, height: 720)))
     }
 
-    private func complete() {
+    private func completeProfile() {
+        store.onboardingProfileDone = true
+        store.save {}
+        step = .permissions
+    }
+
+    private func completePermissions() {
+        store.onboardingPermissionsDone = true
+        store.save {}
+        step = .privacy
+    }
+
+    private func completePrivacy() {
+        store.onboardingPrivacyDone = true
         store.onboardingCompleted = true
         store.save {}
+        sendOnboardingAnalytics()
+    }
+
+    private func sendOnboardingAnalytics() {
+        // TBD: POST analytics payload to API once endpoint is defined
+        let payload: [String: Any] = [
+            "role": store.profileRole,
+            "source": store.profileSource,
+            "tools": store.profileTools,
+            "feedback_opt_in": store.profileFeedbackOptIn,
+        ]
+        NSLog("[Onboarding] analytics payload: %@", payload.description)
     }
 }
 
@@ -221,6 +255,8 @@ private struct PermissionsOnboardingStep: View {
     @State private var pollTimer: Timer?
     @State private var activationObserver: NSObjectProtocol?
     @State private var fdaArmed: Bool = PermissionsManager.fdaProbingArmed()
+    @State private var accessibilityArmed: Bool = false
+    @State private var screenRecordingArmed: Bool = false
 
     var body: some View {
         ScrollView {
@@ -233,14 +269,16 @@ private struct PermissionsOnboardingStep: View {
                         description: "Reads what's on screen across your apps.",
                         systemImage: "display",
                         granted: status.screenRecording,
-                        action: grantScreenRecording
+                        action: grantScreenRecording,
+                        secondaryAction: screenRecordingArmed && !status.screenRecording ? ("Re-check", { refresh() }) : nil
                     )
                     permissionRow(
                         title: "Accessibility",
                         description: "Reads the window you're focused on.",
                         systemImage: "dot.circle",
                         granted: status.accessibility,
-                        action: grantAccessibility
+                        action: grantAccessibility,
+                        secondaryAction: accessibilityArmed && !status.accessibility ? ("Re-check", { refresh() }) : nil
                     )
                     permissionRow(
                         title: "Full Disk Access",
@@ -401,23 +439,15 @@ private struct PermissionsOnboardingStep: View {
     }
 
     private func grantScreenRecording() {
+        screenRecordingArmed = true
         PermissionsManager.requestScreenRecording()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            refresh()
-            if !PermissionsManager.screenRecordingGranted() {
-                PermissionsManager.openScreenRecordingSettings()
-            }
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { refresh() }
     }
 
     private func grantAccessibility() {
+        accessibilityArmed = true
         PermissionsManager.requestAccessibility()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            refresh()
-            if !PermissionsManager.accessibilityGranted() {
-                PermissionsManager.openAccessibilitySettings()
-            }
-        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { refresh() }
     }
 
     private func grantFullDiskAccess() {

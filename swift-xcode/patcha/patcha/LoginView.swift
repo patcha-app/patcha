@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 // MARK: - LoginView
 
@@ -17,16 +16,16 @@ struct LoginView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 0) {
-                leftPane
-                    .frame(width: geo.size.width / 2, height: geo.size.height)
-                    .background(PatchaTheme.bg(for: colorScheme))
+        HStack(spacing: 0) {
+            leftPane
+                .frame(width: 400)
+                .frame(maxHeight: .infinity)
+                .background(PatchaTheme.bg(for: colorScheme))
 
-                rightPane
-                    .frame(width: geo.size.width / 2, height: geo.size.height)
-            }
+            rightPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .disabled(isLoading)
     }
@@ -132,9 +131,8 @@ private extension LoginView {
 
     var rightPane: some View {
         ZStack {
-            if let url = Bundle.main.url(forResource: "login-bg", withExtension: "png", subdirectory: LoginView.assetsSubdirectory),
-               let nsImage = NSImage(contentsOf: url) {
-                Image(nsImage: nsImage)
+            if NSImage(named: "login-bg") != nil {
+                Image("login-bg")
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -159,8 +157,6 @@ private extension LoginView {
 // MARK: - Actions
 
 private extension LoginView {
-    static let assetsSubdirectory = "AppIcon.icon/Assets"
-
     func submit() {
         errorMessage = nil
         isLoading = true
@@ -221,14 +217,11 @@ private struct LoginField: View {
 
 private struct GoogleGLogo: View {
     var body: some View {
-        if let url = Bundle.main.url(forResource: "google", withExtension: "svg", subdirectory: LoginView.assetsSubdirectory),
-           let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 18, height: 18)
-                .accessibilityHidden(true)
-        }
+        Image("google")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 18, height: 18)
+            .accessibilityHidden(true)
     }
 }
 

@@ -167,14 +167,17 @@ import SQLite3
     }
 
     private func refreshClientConfigs() async {
-        // Poll until the server writes its port (up to 5s after launch)
         var port = 0
         for _ in 0..<10 {
             try? await Task.sleep(nanoseconds: 500_000_000)
+            guard isRunning else {
+                NSLog("[MCPManager] process exited before port was ready — skipping config update")
+                return
+            }
             port = mcpPort()
             if port > 0 { break }
         }
-        guard port > 0 else { return }
+        guard port > 0, isRunning else { return }
 
         let mcpURL = "http://127.0.0.1:\(port)/mcp/"
         let paths = [
@@ -198,20 +201,27 @@ import SQLite3
     func mcpPort() -> Int {
         let dbPath = NSHomeDirectory() + "/Library/Application Support/patcha/settings.db"
         var db: OpaquePointer?
-        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return 6969 }
+        guard sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_close(db) }
         var stmt: OpaquePointer?
         let sql = "SELECT value FROM settings WHERE key='mcp_port'"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 6969 }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_step(stmt) == SQLITE_ROW,
-              let cStr = sqlite3_column_text(stmt, 0) else { return 6969 }
-        return Int(String(cString: cStr)) ?? 6969
+              let cStr = sqlite3_column_text(stmt, 0) else { return 0 }
+        return Int(String(cString: cStr)) ?? 0
     }
 
     private func detectProjectDir() -> String {
         if let envDir = ProcessInfo.processInfo.environment["PATCHA_PROJECT_DIR"] {
             return envDir
+        }
+
+        if let plistRoot = Bundle.main.infoDictionary?["PatchaSourceRoot"] as? String {
+            let resolved = (plistRoot as NSString).standardizingPath
+            if FileManager.default.fileExists(atPath: "\(resolved)/main.py") {
+                return resolved
+            }
         }
 
         let bundlePath = Bundle.main.bundlePath
@@ -233,6 +243,7 @@ import SQLite3
             }
         }
 
+        NSLog("[MCPManager] could not detect project dir; set PATCHA_PROJECT_DIR env var")
         return (Bundle.main.bundlePath as NSString).deletingLastPathComponent
     }
 }

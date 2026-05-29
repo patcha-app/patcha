@@ -34,7 +34,11 @@ struct PermissionsManager {
     }
 
     static func screenRecordingGranted() -> Bool {
-        CGPreflightScreenCaptureAccess()
+        // CGPreflightScreenCaptureAccess can return stale false on macOS 15+ until
+        // CGRequestScreenCaptureAccess is called to force a TCC state refresh.
+        if CGPreflightScreenCaptureAccess() { return true }
+        CGRequestScreenCaptureAccess()
+        return CGPreflightScreenCaptureAccess()
     }
 
     static func fullDiskAccessGranted() -> Bool {
@@ -94,20 +98,32 @@ struct PermissionsManager {
     }
 
     static func openAccessibilitySettings() {
-        openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        openSettings(
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            fallback: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        )
     }
 
     static func openScreenRecordingSettings() {
-        openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        openSettings(
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
+            fallback: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        )
     }
 
     static func openFullDiskAccessSettings() {
-        openSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        openSettings(
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+            fallback: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+        )
     }
 
-    private static func openSettings(_ urlString: String) {
-        if let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
+    private static func openSettings(_ urlString: String, fallback: String? = nil) {
+        let strings = [urlString] + (fallback.map { [$0] } ?? [])
+        for string in strings {
+            if let url = URL(string: string), NSWorkspace.shared.open(url) {
+                return
+            }
         }
     }
 

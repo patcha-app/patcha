@@ -37,6 +37,8 @@
 	<string>Patcha needs Accessibility access to track active windows and screen content.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>PatchaSourceRoot</key>
+	<string>$(SRCROOT)/../..</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Patcha needs Screen Recording to capture on-screen text.</string>
 </dict>

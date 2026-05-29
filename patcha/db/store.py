@@ -71,7 +71,26 @@ class VectorStore:
                 )
                 log.info("created collection: %s", self.collection_name)
             else:
-                log.debug("collection already exists: %s", self.collection_name)
+                info = self.client.get_collection(self.collection_name)
+                existing_size = info.config.params.vectors.size
+                if existing_size != self.vector_size:
+                    log.warning(
+                        "collection '%s' has vector size %d but config expects %d — "
+                        "recreating (existing data will be lost)",
+                        self.collection_name,
+                        existing_size,
+                        self.vector_size,
+                    )
+                    self.client.delete_collection(self.collection_name)
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=self.vector_size, distance=Distance.COSINE
+                        ),
+                    )
+                    log.info("recreated collection: %s (size=%d)", self.collection_name, self.vector_size)
+                else:
+                    log.debug("collection already exists: %s", self.collection_name)
 
             self._ensure_indexes()
         except Exception as e:
