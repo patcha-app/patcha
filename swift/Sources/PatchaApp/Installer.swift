@@ -1,10 +1,18 @@
 import Foundation
+import ServiceManagement
 
 enum Installer {
     private static let installedKey = "cliInstalled"
 
     static func installIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: installedKey) else { return }
+
+        do {
+            try SMAppService.mainApp.register()
+            NSLog("[Installer] registered as login item")
+        } catch {
+            NSLog("[Installer] failed to register login item: %@", error.localizedDescription)
+        }
 
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser.path

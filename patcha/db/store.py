@@ -88,7 +88,11 @@ class VectorStore:
                             size=self.vector_size, distance=Distance.COSINE
                         ),
                     )
-                    log.info("recreated collection: %s (size=%d)", self.collection_name, self.vector_size)
+                    log.info(
+                        "recreated collection: %s (size=%d)",
+                        self.collection_name,
+                        self.vector_size,
+                    )
                 else:
                     log.debug("collection already exists: %s", self.collection_name)
 
