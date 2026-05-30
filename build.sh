@@ -19,7 +19,7 @@ echo "Building patcha ${VERSION}..."
 # Step 1: build native macOS menu bar app
 echo ""
 echo "[1/5] Building Patcha.app (Swift menu bar app)..."
-bash swift/build_app.sh
+bash swift-xcode/patcha/build_app.sh
 echo "  Patcha.app built."
 
 # Step 2: compile Swift helper binaries (accessibility helpers)
