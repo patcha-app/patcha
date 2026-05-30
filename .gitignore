@@ -16,3 +16,4 @@ DerivedData/
 .env
 .env.development
 .plans/*
+swift-xcode/patcha/.build/

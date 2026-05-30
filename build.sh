@@ -14,13 +14,26 @@ with open('pyproject.toml', 'rb') as f:
     print(tomllib.load(f)['project']['version'])
 ")
 
+SKIP_APP=false
+for arg in "$@"; do
+    [[ "$arg" == "--skip-app" ]] && SKIP_APP=true
+done
+
 echo "Building patcha ${VERSION}..."
 
 # Step 1: build native macOS menu bar app
 echo ""
-echo "[1/5] Building Patcha.app (Swift menu bar app)..."
-bash swift-xcode/patcha/build_app.sh
-echo "  Patcha.app built."
+if $SKIP_APP; then
+    echo "[1/5] Skipping Patcha.app build (--skip-app)."
+    if [[ ! -d "dist/Patcha.app" ]]; then
+        echo "Error: dist/Patcha.app not found. Run without --skip-app first."
+        exit 1
+    fi
+else
+    echo "[1/5] Building Patcha.app (Swift menu bar app)..."
+    bash swift-xcode/patcha/build_app.sh
+    echo "  Patcha.app built."
+fi
 
 # Step 2: compile Swift helper binaries (accessibility helpers)
 echo ""
