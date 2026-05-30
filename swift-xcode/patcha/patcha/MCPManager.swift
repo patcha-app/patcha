@@ -42,7 +42,7 @@ import SQLite3
     private func killStaleOnPort(_ port: Int) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        task.arguments = ["-ti", "tcp:\(port)"]
+        task.arguments = ["-ti", "tcp:\(port)", "-sTCP:LISTEN"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = Pipe()
