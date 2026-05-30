@@ -166,16 +166,27 @@ class GitCollector:
         try:
             repo = Repo(self.repo_path)
 
-            for stash in repo.git.stash("list").split("\n"):
+            stash_lines = repo.git.stash(
+                "list", "--format=%gd%x00%H%x00%ct%x00%gs"
+            ).split("\n")
+            for stash in stash_lines:
                 if not stash.strip():
                     continue
 
-                stash_parts = stash.split(": ")
-                if len(stash_parts) < 3:
+                stash_parts = stash.split("\x00", 3)
+                if len(stash_parts) != 4:
                     continue
 
-                stash_name = stash_parts[0]
-                stash_message = ": ".join(stash_parts[2:])
+                stash_name, stash_hash, stash_timestamp, stash_message = stash_parts
+                try:
+                    stash_time = datetime.fromtimestamp(
+                        int(stash_timestamp), tz=timezone.utc
+                    )
+                except ValueError:
+                    stash_time = datetime.now(timezone.utc)
+
+                if since and stash_time < since:
+                    continue
 
                 try:
                     stash_info = repo.git.stash("show", "--stat", stash_name)
@@ -189,7 +200,7 @@ class GitCollector:
                 git_stash = GitStash(
                     name=stash_name,
                     message=stash_message,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=stash_time,
                     files_changed=files_changed,
                 )
 
@@ -199,8 +210,10 @@ class GitCollector:
                     source="git",
                     project=self._get_project_name(),
                     raw_content=json.dumps(git_stash.model_dump(), default=str),
+                    source_doc_id=f"{self.repo_path.resolve()}:stash:{stash_hash}",
                     metadata={
                         "repo_path": str(self.repo_path),
+                        "stash_hash": stash_hash,
                         "files_count": len(files_changed),
                     },
                 )
