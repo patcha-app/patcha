@@ -40,7 +40,7 @@ struct OnboardingView: View {
                 PrivacyOnboardingStep(store: store, appsVM: appsVM, onContinue: completePrivacy)
             }
         }
-        .background(OnboardingWindowSizer(size: NSSize(width: 980, height: 720)))
+        .background(OnboardingWindowSizer(size: NSSize(width: 900, height: 620)))
     }
 
     private func completeProfile() {
@@ -116,6 +116,7 @@ private struct ProfileOnboardingStep: View {
             .frame(maxWidth: 920, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .scrollIndicators(.hidden)
         .onAppear(perform: prefill)
     }
 
@@ -127,30 +128,24 @@ private struct ProfileOnboardingStep: View {
                     .frame(width: 28, height: 28)
             }
             Text("patcha")
-                .font(.system(size: 16, design: .serif))
+                .font(.instrumentSerif(16))
         }
     }
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("PROFILE")
-                .font(.system(size: 12, design: .serif))
+                .font(.instrumentSerif(12))
                 .tracking(2)
                 .foregroundStyle(.secondary)
 
-            (
-                Text("Hello — we'd like to ")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .foregroundColor(.primary)
-                + Text("get to know you.")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .italic()
-                    .foregroundColor(PatchaTheme.accent)
-            )
-            .lineSpacing(2)
+            Text("Hello — we'd like to \(Text("get to know you.").font(.instrumentSerifItalic(44)).foregroundColor(PatchaTheme.accent))")
+                .font(.instrumentSerif(44))
+                .foregroundColor(.secondary)
+                .lineSpacing(2)
 
             Text("Three questions. Helps prioritize what we build next.")
-                .font(.system(size: 14))
+                .font(.britanica(14))
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 8)
@@ -161,15 +156,13 @@ private struct ProfileOnboardingStep: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(number)
-                    .font(.system(size: 16, design: .serif))
-                    .italic()
+                    .font(.instrumentSerifItalic(16))
                     .foregroundStyle(.secondary)
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.britanica(15))
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 13, design: .serif))
-                        .italic()
+                        .font(.instrumentSerifItalic(13))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -189,7 +182,7 @@ private struct ProfileOnboardingStep: View {
                         .frame(width: 28, height: 28)
                     if feedbackOptIn {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.britanica(14))
                             .foregroundColor(PatchaTheme.bg(for: colorScheme))
                     }
                 }
@@ -198,9 +191,9 @@ private struct ProfileOnboardingStep: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Reach out for feedback when it matters.")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.britanica(14))
                 Text("Patcha is early. Your replies shape what we build next — and we'll only ever email you when it really matters. Never for marketing.")
-                    .font(.system(size: 13))
+                    .font(.britanica(13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -267,7 +260,7 @@ private struct PermissionsOnboardingStep: View {
                     permissionRow(
                         title: "Screen Recording",
                         description: "Reads what's on screen across your apps.",
-                        systemImage: "display",
+                        systemImage: "display.fill",
                         granted: status.screenRecording,
                         action: grantScreenRecording,
                         secondaryAction: screenRecordingArmed && !status.screenRecording ? ("Re-check", { refresh() }) : nil
@@ -275,7 +268,7 @@ private struct PermissionsOnboardingStep: View {
                     permissionRow(
                         title: "Accessibility",
                         description: "Reads the window you're focused on.",
-                        systemImage: "dot.circle",
+                        systemImage: "dot.circle.fill",
                         granted: status.accessibility,
                         action: grantAccessibility,
                         secondaryAction: accessibilityArmed && !status.accessibility ? ("Re-check", { refresh() }) : nil
@@ -283,7 +276,7 @@ private struct PermissionsOnboardingStep: View {
                     permissionRow(
                         title: "Full Disk Access",
                         description: "Reads your browser and terminal history.",
-                        systemImage: "doc.text",
+                        systemImage: "doc.text.fill",
                         granted: status.fullDiskAccess,
                         action: grantFullDiskAccess,
                         secondaryAction: fdaArmed && !status.fullDiskAccess ? ("Re-check", { refresh() }) : nil
@@ -298,6 +291,7 @@ private struct PermissionsOnboardingStep: View {
             .frame(maxWidth: 920, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .scrollIndicators(.hidden)
         .onAppear {
             refresh()
             startPolling()
@@ -327,30 +321,21 @@ private struct PermissionsOnboardingStep: View {
                     .frame(width: 28, height: 28)
             }
             Text("patcha")
-                .font(.system(size: 16, design: .serif))
+                .font(.instrumentSerif(16))
         }
     }
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("ALMOST THERE")
-                .font(.system(size: 12, design: .serif))
+                .font(.instrumentSerif(12))
                 .tracking(2)
                 .foregroundStyle(.secondary)
 
-            (
-                Text("Patcha needs ")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .foregroundColor(.primary)
-                + Text("three permissions")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .italic()
-                    .foregroundColor(PatchaTheme.accent)
-                + Text(" to get to work.")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .foregroundColor(.primary)
-            )
-            .lineSpacing(2)
+            Text("Patcha needs \(Text("three permissions").font(.instrumentSerifItalic(44)).foregroundColor(PatchaTheme.accent)) to get to work.")
+                .font(.instrumentSerif(44))
+                .foregroundColor(.secondary)
+                .lineSpacing(2)
         }
         .padding(.top, 8)
     }
@@ -363,15 +348,15 @@ private struct PermissionsOnboardingStep: View {
                     .fill(Color.primary.opacity(0.06))
                     .frame(width: 48, height: 48)
                 Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .regular))
+                    .font(.britanica(18))
                     .foregroundColor(.primary.opacity(0.7))
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.britanica(15))
                 Text(description)
-                    .font(.system(size: 13))
+                    .font(.britanica(13))
                     .foregroundStyle(.secondary)
             }
 
@@ -382,7 +367,7 @@ private struct PermissionsOnboardingStep: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(PatchaTheme.accent)
                     Text("Granted")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.britanica(13))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8)
@@ -393,7 +378,7 @@ private struct PermissionsOnboardingStep: View {
                     if let (label, secondary) = secondaryAction {
                         Button(label, action: secondary)
                             .buttonStyle(.plain)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.britanica(11))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -413,8 +398,7 @@ private struct PermissionsOnboardingStep: View {
     private var footer: some View {
         VStack(spacing: 14) {
             Text("All three are required.")
-                .font(.system(size: 13, design: .serif))
-                .italic()
+                .font(.instrumentSerifItalic(13))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
             HStack {
@@ -478,6 +462,7 @@ private struct PrivacyOnboardingStep: View {
             .frame(maxWidth: 920, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+        .scrollIndicators(.hidden)
         .onAppear {
             if appsVM.apps.isEmpty { appsVM.scan() }
         }
@@ -491,30 +476,24 @@ private struct PrivacyOnboardingStep: View {
                     .frame(width: 28, height: 28)
             }
             Text("patcha")
-                .font(.system(size: 16, design: .serif))
+                .font(.instrumentSerif(16))
         }
     }
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("PRIVACY")
-                .font(.system(size: 12, design: .serif))
+                .font(.instrumentSerif(12))
                 .tracking(2)
                 .foregroundStyle(.secondary)
 
-            (
-                Text("Decide what ")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .foregroundColor(.primary)
-                + Text("stays private.")
-                    .font(.system(size: 44, weight: .regular, design: .serif))
-                    .italic()
-                    .foregroundColor(PatchaTheme.accent)
-            )
-            .lineSpacing(2)
+            Text("Decide what \(Text("stays private.").font(.instrumentSerifItalic(44)).foregroundColor(PatchaTheme.accent))")
+                .font(.instrumentSerif(44))
+                .foregroundColor(.secondary)
+                .lineSpacing(2)
 
             Text("You've given Patcha access to your machine. Now take some of it back. These settings tell Patcha what to leave alone.")
-                .font(.system(size: 14))
+                .font(.britanica(14))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -528,15 +507,15 @@ private struct PrivacyOnboardingStep: View {
                     .fill(PatchaTheme.accent)
                     .frame(width: 36, height: 36)
                 Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.britanica(16))
+                    .foregroundColor(PatchaTheme.bg(for: colorScheme))
             }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Passwords, banking, and sensitive apps are off-limits by default.")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.britanica(14))
                 Text("Patcha auto-detects and ignores password managers, banking apps, and known financial sites — nothing to configure.")
-                    .font(.system(size: 13))
+                    .font(.britanica(13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -545,8 +524,8 @@ private struct PrivacyOnboardingStep: View {
 
             Button(action: {}) {
                 Text("How this works →")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .font(.britanica(13))
+                    .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
         }
@@ -574,7 +553,7 @@ private struct PrivacyOnboardingStep: View {
 private struct GrantButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.britanica(13))
             .foregroundColor(.white)
             .padding(.horizontal, 22)
             .padding(.vertical, 9)
@@ -611,7 +590,7 @@ private struct PillButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.britanica(13.5))
                 .foregroundColor(isSelected ? PatchaTheme.bg(for: colorScheme) : .primary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 9)
@@ -643,7 +622,7 @@ struct OnboardingPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .font(.britanica(14))
             .foregroundColor(PatchaTheme.bg(for: colorScheme))
             .padding(.horizontal, 24)
             .padding(.vertical, 11)
@@ -716,7 +695,7 @@ private struct OnboardingWindowSizer: NSViewRepresentable {
         frame.size = size
         frame.origin.x -= dx / 2
         frame.origin.y -= dy
-        window.minSize = NSSize(width: 800, height: 600)
+        window.minSize = NSSize(width: 800, height: 560)
         window.setFrame(frame, display: true, animate: true)
     }
 }

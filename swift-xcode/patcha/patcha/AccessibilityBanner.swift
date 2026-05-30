@@ -15,14 +15,14 @@ struct AccessibilityBanner: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                     Text("Accessibility is off — Patcha can't read the focused window.")
-                        .font(.system(size: 12.5))
-                        .foregroundColor(.primary)
+                        .font(.britanica(12.5))
+                        .foregroundColor(.secondary)
                     Spacer(minLength: 8)
                     Button("Open Settings") {
                         PermissionsManager.openAccessibilitySettings()
                     }
                     .buttonStyle(.borderless)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.britanica(12.5))
                     .foregroundColor(PatchaTheme.accent)
                 }
                 .padding(.horizontal, 14)

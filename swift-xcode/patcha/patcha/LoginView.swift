@@ -47,7 +47,7 @@ private extension LoginView {
             fields
             if let error = errorMessage {
                 Text(error)
-                    .font(.caption)
+                    .font(.britanica(13))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -62,10 +62,10 @@ private extension LoginView {
     var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(isSignUp ? "Create your account" : "Welcome back")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.britanica(22))
+                .foregroundStyle(.secondary)
             Text(isSignUp ? "Start tracking your activity in seconds." : "Sign in to continue to Patcha.")
-                .font(.system(size: 12))
+                .font(.britanica(13))
                 .foregroundStyle(.secondary)
         }
     }
@@ -80,7 +80,7 @@ private extension LoginView {
     var actions: some View {
         VStack(spacing: 10) {
             Button(isSignUp ? "Create Account" : "Sign In") { submit() }
-                .buttonStyle(AccentButtonStyle(isDisabled: isFormDisabled))
+                .buttonStyle(AccentButtonStyle(isDisabled: isFormDisabled, fullWidth: true))
                 .disabled(isFormDisabled)
 
             divider
@@ -92,7 +92,7 @@ private extension LoginView {
                 HStack(spacing: 10) {
                     GoogleGLogo()
                     Text("Continue with Google")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.britanica(13))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
@@ -104,7 +104,7 @@ private extension LoginView {
     var divider: some View {
         HStack(spacing: 10) {
             Rectangle().fill(PatchaTheme.softDivider).frame(height: 1)
-            Text("or").font(.caption2).foregroundStyle(.secondary)
+            Text("or").font(.britanica(11)).foregroundStyle(.secondary)
             Rectangle().fill(PatchaTheme.softDivider).frame(height: 1)
         }
         .padding(.vertical, 2)
@@ -122,7 +122,7 @@ private extension LoginView {
                     .foregroundStyle(PatchaTheme.accent)
                     .fontWeight(.medium)
             }
-            .font(.caption)
+            .font(.britanica(13))
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
@@ -146,7 +146,7 @@ private extension LoginView {
                     endPoint: .bottomTrailing
                 )
                 Text("Patcha")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .font(.britanica(56))
                     .foregroundStyle(.white.opacity(0.18))
             }
         }
@@ -189,7 +189,7 @@ private struct LoginField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.britanica(11))
                 .foregroundStyle(.secondary)
 
             Group {
@@ -200,7 +200,7 @@ private struct LoginField: View {
                 }
             }
             .textFieldStyle(.plain)
-            .font(.system(size: 13))
+            .font(.britanica(13))
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(
@@ -227,23 +227,6 @@ private struct GoogleGLogo: View {
 
 // MARK: - Button Styles
 
-private struct AccentButtonStyle: ButtonStyle {
-    let isDisabled: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundColor(PatchaTheme.bg(for: colorScheme))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(PatchaTheme.accent.opacity(isDisabled ? 0.4 : configuration.isPressed ? 0.8 : 1.0))
-            )
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
 
 private struct GoogleButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme

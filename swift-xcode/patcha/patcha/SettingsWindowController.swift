@@ -13,10 +13,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(contentViewController: hosting)
         window.title = "Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.setContentSize(NSSize(width: 700, height: 520))
+        window.setContentSize(NSSize(width: 900, height: 620))
+        window.minSize = NSSize(width: 800, height: 560)
         window.center()
         window.isOpaque = true
         window.backgroundColor = NSColor(name: nil) { appearance in
@@ -64,6 +65,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         windowMenu.addItem(
             NSMenuItem(title: "Minimize", action: #selector(NSWindow.miniaturize(_:)), keyEquivalent: "m")
         )
+        let fullScreenItem = NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+        fullScreenItem.keyEquivalentModifierMask = [.command, .control]
+        windowMenu.addItem(fullScreenItem)
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
 

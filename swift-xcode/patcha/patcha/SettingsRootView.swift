@@ -62,8 +62,7 @@ struct SettingsRootView: View {
                             .ignoresSafeArea(edges: .top)
                     }
                 }
-                .frame(width: 700)
-                .frame(maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onAppear { permissionsVM.scan() }
             }
         }

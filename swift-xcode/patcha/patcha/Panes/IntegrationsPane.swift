@@ -16,113 +16,167 @@ struct IntegrationsPane: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Form {
-                Section("MCP Server") {
-                    LabeledContent("Status") {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(mcpManager.isRunning ? Color.green : Color.red)
-                                .frame(width: 8, height: 8)
-                            if mcpManager.isRunning {
-                                let url = "http://127.0.0.1:\(String(mcpManager.mcpPort()))/mcp/"
-                                Text(url)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .onTapGesture {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString(url, forType: .string)
-                                    }
-                                    .help("Click to copy URL")
-                            } else {
-                                Text("Not running")
-                                    .foregroundStyle(.secondary)
-                            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                mcpServerSection
+                connectClientsSection
+                instructionsSection
+            }
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .background(ScrollerHider())
+    }
+
+    private var mcpServerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "MCP Server")
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Status")
+                        .font(.britanica(13))
+                    Spacer()
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(mcpManager.isRunning ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
+                        if mcpManager.isRunning {
+                            let url = "http://127.0.0.1:\(String(mcpManager.mcpPort()))/mcp/"
+                            Text(url)
+                                .font(.britanica(13))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .onTapGesture {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(url, forType: .string)
+                                }
+                                .help("Click to copy URL")
+                        } else {
+                            Text("Not running")
+                                .font(.britanica(13))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
+            )
+        }
+    }
 
-                Section("Connect AI Clients") {
-                    LabeledContent("Claude Code") {
-                        HStack(spacing: 8) {
-                            statusLabel(claudeCodeStatus)
-                            Button("Connect") { connect(.claudeCode) }
-                                .disabled(!mcpManager.isRunning)
-                        }
-                    }
-                    .task(id: claudeCodeStatus) {
-                        guard case .connected = claudeCodeStatus else { return }
-                        try? await Task.sleep(for: .seconds(4))
-                        claudeCodeStatus = .idle
-                    }
+    private var connectClientsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Connect AI Clients")
 
-                    LabeledContent("Claude Desktop") {
-                        HStack(spacing: 8) {
-                            statusLabel(claudeDesktopStatus)
-                            Button("Connect") { connect(.claudeDesktop) }
-                                .disabled(!mcpManager.isRunning)
-                        }
-                    }
-                    .task(id: claudeDesktopStatus) {
-                        guard case .connected = claudeDesktopStatus else { return }
-                        try? await Task.sleep(for: .seconds(4))
-                        claudeDesktopStatus = .idle
-                    }
-
-                    LabeledContent("ChatGPT / OpenAI") {
-                        HStack(spacing: 8) {
-                            if urlCopied {
-                                Text("Copied!")
-                                    .foregroundStyle(.secondary)
-                                    .font(.callout)
-                            }
-                            Button("Copy MCP URL") {
-                                let port = mcpManager.mcpPort()
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(
-                                    "http://127.0.0.1:\(port)/mcp/",
-                                    forType: .string
-                                )
-                                urlCopied = true
-                            }
-                            .disabled(!mcpManager.isRunning)
-                        }
-                    }
-                    .task(id: urlCopied) {
-                        guard urlCopied else { return }
-                        try? await Task.sleep(for: .seconds(3))
-                        urlCopied = false
-                    }
+            VStack(spacing: 0) {
+                clientRow(label: "Claude Code", status: claudeCodeStatus) {
+                    connect(.claudeCode)
+                }
+                .task(id: claudeCodeStatus) {
+                    guard case .connected = claudeCodeStatus else { return }
+                    try? await Task.sleep(for: .seconds(4))
+                    claudeCodeStatus = .idle
                 }
 
-                Section {
-                    Text("ChatGPT: paste the URL in Settings \u{2192} Integrations \u{2192} Add MCP Server.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("OpenAI API: pass it as a remote_mcp tool in your Responses API call.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                SoftDivider().padding(.horizontal, 16)
+
+                clientRow(label: "Claude Desktop", status: claudeDesktopStatus) {
+                    connect(.claudeDesktop)
+                }
+                .task(id: claudeDesktopStatus) {
+                    guard case .connected = claudeDesktopStatus else { return }
+                    try? await Task.sleep(for: .seconds(4))
+                    claudeDesktopStatus = .idle
+                }
+
+                SoftDivider().padding(.horizontal, 16)
+
+                HStack {
+                    Text("ChatGPT / OpenAI")
+                        .font(.britanica(13))
+                    Spacer()
+                    HStack(spacing: 8) {
+                        if urlCopied {
+                            Text("Copied!")
+                                .font(.britanica(13))
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Copy MCP URL") {
+                            let port = mcpManager.mcpPort()
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(
+                                "http://127.0.0.1:\(port)/mcp/",
+                                forType: .string
+                            )
+                            urlCopied = true
+                        }
+                        .disabled(!mcpManager.isRunning)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .task(id: urlCopied) {
+                    guard urlCopied else { return }
+                    try? await Task.sleep(for: .seconds(3))
+                    urlCopied = false
                 }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
+            )
+        }
+    }
+
+    private var instructionsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("ChatGPT: paste the URL in Settings → Integrations → Add MCP Server.")
+                .font(.britanica(13))
+                .foregroundStyle(.secondary)
+            Text("OpenAI API: pass it as a remote_mcp tool in your Responses API call.")
+                .font(.britanica(13))
+                .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
-    private func statusLabel(_ status: ConnectStatus) -> some View {
-        switch status {
-        case .idle:
-            EmptyView()
-        case .connected:
-            Text("Connected")
-                .foregroundStyle(.secondary)
-                .font(.callout)
-        case .failed(let msg):
-            Text(msg)
-                .foregroundStyle(.red)
-                .font(.callout)
+    private func clientRow(label: String, status: ConnectStatus, action: @escaping () -> Void) -> some View {
+        HStack {
+            Text(label)
+                .font(.britanica(13))
+            Spacer()
+            HStack(spacing: 8) {
+                switch status {
+                case .idle:
+                    EmptyView()
+                case .connected:
+                    Text("Connected")
+                        .font(.britanica(13))
+                        .foregroundStyle(.secondary)
+                case .failed(let msg):
+                    Text(msg)
+                        .font(.britanica(13))
+                        .foregroundStyle(.red)
+                }
+                Button("Connect", action: action)
+                    .disabled(!mcpManager.isRunning)
+            }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
     }
 
     private func connect(_ client: Client) {

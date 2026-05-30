@@ -12,6 +12,8 @@ struct AppPermissionsPane: View {
             content
         } else {
             ScrollView { content.padding(.bottom, 20) }
+                .scrollIndicators(.hidden)
+                .background(ScrollerHider())
         }
     }
 
@@ -26,33 +28,42 @@ struct AppPermissionsPane: View {
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Background sources")
-                .font(.system(size: 14, weight: .semibold))
+            SectionHeader(title: "Background sources")
             Text("Turn off any source and Patcha stops indexing it. Your screen is still seen — these are just specific data streams.")
-                .font(.caption)
+                .font(.britanica(13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(alignment: .top, spacing: 12) {
+            LazyVStack(spacing: 0) {
                 SourceTile(
-                    iconName: "terminal",
+                    iconName: "terminal.fill",
                     name: "Terminal",
                     description: "Shell history, commands, output.",
                     isOn: persistingBinding(get: { store.enableTerminal }, set: { store.enableTerminal = $0 })
                 )
+                SoftDivider().padding(.horizontal, 14)
                 SourceTile(
                     iconName: "arrow.triangle.branch",
                     name: "Git",
                     description: "Commits, branches, staging.",
                     isOn: persistingBinding(get: { store.enableGit }, set: { store.enableGit = $0 })
                 )
+                SoftDivider().padding(.horizontal, 14)
                 SourceTile(
-                    iconName: "globe",
+                    iconName: "globe.fill",
                     name: "Browser history",
                     description: "URLs and titles you visit.",
                     isOn: persistingBinding(get: { store.enableBrowser }, set: { store.enableBrowser = $0 })
                 )
             }
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
+            )
             .padding(.top, 4)
         }
     }
@@ -61,26 +72,26 @@ struct AppPermissionsPane: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Exclude specific apps")
-                        .font(.system(size: 14, weight: .semibold))
+                    SectionHeader(title: "Exclude specific apps")
                     Text("When any of these is in focus, Patcha looks away completely — no screen, no text, nothing.")
-                        .font(.caption)
+                        .font(.britanica(13))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button("Rescan") { viewModel.scan() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .font(.britanica(13))
+                    .foregroundStyle(PatchaTheme.accent)
             }
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
+                    .font(.britanica(13))
                 TextField("Search apps", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.britanica(13))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -110,13 +121,13 @@ struct AppPermissionsPane: View {
             let items = filteredApps
             if items.isEmpty {
                 Text(searchText.isEmpty ? "No apps detected." : "No apps match “\(searchText)”.")
-                    .font(.caption)
+                    .font(.britanica(13))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.primary.opacity(0.04))
+                            .fill(Color.primary.opacity(0.05))
                     )
             } else {
                 LazyVStack(spacing: 0) {
@@ -128,8 +139,8 @@ struct AppPermissionsPane: View {
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
                 )
             }
         }
@@ -156,43 +167,37 @@ private struct SourceTile: View {
     let name: String
     let description: String
     @Binding var isOn: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(PatchaTheme.accent.opacity(isOn ? 0.9 : 0.25))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: iconName)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(isOn ? .white : .primary.opacity(0.6))
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(PatchaTheme.accent.opacity(isOn ? 0.9 : 0.25))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: iconName)
+                            .font(.britanica(14))
+                            .foregroundColor(isOn ? PatchaTheme.bg(for: colorScheme) : .primary.opacity(0.6))
+                    }
+                    Text(name)
+                        .font(.britanica(13))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                Toggle("", isOn: $isOn)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .tint(PatchaTheme.accent)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(name)
-                    .font(.system(size: 14, weight: .semibold))
                 Text(description)
-                    .font(.caption)
+                    .font(.britanica(13))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 8)
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(PatchaTheme.accent)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(PatchaTheme.accent.opacity(isOn ? 0.08 : 0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(PatchaTheme.accent.opacity(isOn ? 0.35 : 0.15), lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
@@ -216,8 +221,8 @@ struct AppPermissionRow: View {
                     .frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
-                Image(systemName: "app")
-                    .font(.body)
+                Image(systemName: "app.fill")
+                    .font(.britanica(13))
                     .frame(width: 28, height: 28)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -225,7 +230,7 @@ struct AppPermissionRow: View {
                     )
             }
             Text(app.name)
-                .font(.body)
+                .font(.britanica(13))
                 .lineLimit(1)
             Spacer()
             Toggle("", isOn: Binding(
@@ -239,4 +244,23 @@ struct AppPermissionRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
+}
+
+struct ScrollerHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            var v: NSView? = view
+            while let parent = v?.superview {
+                if let scrollView = parent as? NSScrollView {
+                    scrollView.hasVerticalScroller = false
+                    scrollView.hasHorizontalScroller = false
+                    break
+                }
+                v = parent
+            }
+        }
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) {}
 }

@@ -27,8 +27,8 @@ struct SettingsSidebar: View {
                         .resizable()
                         .frame(width: 40, height: 40)
                 }
-                (Text("patcha ") + Text("v\(appVersion)").foregroundColor(.secondary))
-                    .font(.caption)
+                Text("patcha \(Text("v\(appVersion)").foregroundColor(.secondary))")
+                    .font(.britanica(13))
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 20)
@@ -50,7 +50,7 @@ struct SidebarNavItem: View {
                 Image(systemName: section.systemImage)
                     .frame(width: 16)
                 Text(section.title)
-                    .font(.callout)
+                    .font(.britanica(13))
                 Spacer()
             }
             .padding(.horizontal, 12)

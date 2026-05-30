@@ -49,7 +49,7 @@ class _Embeddings:
         payload = {"model": model, "input": input}
         resp = self._client.proxy_embeddings(payload)
         if resp is not None and resp.status_code == 401:
-            if self._client.refresh_tokens():
+            if self._client._recover_auth():
                 resp = self._client.proxy_embeddings(payload)
         if resp is None:
             raise RuntimeError("embeddings request failed: no response")
@@ -72,7 +72,7 @@ class _ChatCompletions:
         payload: dict[str, Any] = {"model": model, "messages": messages, **kwargs}
         resp = self._client.proxy_chat_completion(payload)
         if resp is not None and resp.status_code == 401:
-            if self._client.refresh_tokens():
+            if self._client._recover_auth():
                 resp = self._client.proxy_chat_completion(payload)
         if resp is None:
             raise RuntimeError("chat completion request failed: no response")
@@ -103,6 +103,18 @@ class PatchaLLMClient:
 
 
 _ENV_PATH = Path.home() / ".patcha" / ".env"
+
+# Access token written by the macOS app. The app owns the refresh token and keeps
+# this file up to date; the daemon re-reads it when its in-memory token 401s,
+# avoiding a full daemon restart on every token rotation.
+_TOKEN_FILE = Path.home() / ".patcha" / "access_token"
+
+
+def _read_token_file() -> str:
+    try:
+        return _TOKEN_FILE.read_text().strip()
+    except OSError:
+        return ""
 
 
 def _save_tokens(access_token: str, refresh_token: str) -> None:
@@ -135,13 +147,29 @@ class PatchaAPIClient:
         from patcha.config import config as patcha_config
 
         self._base_url = patcha_config.patcha_api_url.rstrip("/")
-        self._access_token = patcha_config.patcha_access_token or ""
+        self._access_token = _read_token_file() or patcha_config.patcha_access_token or ""
         self._refresh_token = patcha_config.patcha_refresh_token or ""
 
     def _auth_headers(self) -> dict[str, str]:
         if self._access_token:
             return {"Authorization": f"Bearer {self._access_token}"}
         return {}
+
+    def reload_token(self) -> bool:
+        """Re-read the access token written by the macOS app.
+
+        Returns True if a different, non-empty token was loaded.
+        """
+        token = _read_token_file()
+        if token and token != self._access_token:
+            self._access_token = token
+            return True
+        return False
+
+    def _recover_auth(self) -> bool:
+        """Attempt to recover from a 401: prefer the app-written token file,
+        falling back to a refresh-token exchange for CLI usage."""
+        return self.reload_token() or self.refresh_tokens()
 
     @property
     def is_authenticated(self) -> bool:
@@ -211,6 +239,8 @@ class PatchaAPIClient:
         try:
             with httpx.Client(base_url=self._base_url, timeout=10.0) as client:
                 resp = client.get("/api/v1/auth/me", headers=self._auth_headers())
+                if resp.status_code == 401 and self._recover_auth():
+                    resp = client.get("/api/v1/auth/me", headers=self._auth_headers())
                 return resp.status_code == 200
         except httpx.RequestError:
             return False
