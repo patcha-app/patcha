@@ -35,7 +35,7 @@ struct IntegrationsPane: View {
             VStack(spacing: 0) {
                 HStack {
                     Text("Status")
-                        .font(.britanica(13))
+                        .font(.pBody)
                     Spacer()
                     HStack(spacing: 6) {
                         Circle()
@@ -44,7 +44,7 @@ struct IntegrationsPane: View {
                         if mcpManager.isRunning {
                             let url = "http://127.0.0.1:\(String(mcpManager.mcpPort()))/mcp/"
                             Text(url)
-                                .font(.britanica(13))
+                                .font(.pBody)
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .onTapGesture {
@@ -54,7 +54,7 @@ struct IntegrationsPane: View {
                                 .help("Click to copy URL")
                         } else {
                             Text("Not running")
-                                .font(.britanica(13))
+                                .font(.pBody)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -102,12 +102,12 @@ struct IntegrationsPane: View {
 
                 HStack {
                     Text("ChatGPT / OpenAI")
-                        .font(.britanica(13))
+                        .font(.pBody)
                     Spacer()
                     HStack(spacing: 8) {
                         if urlCopied {
                             Text("Copied!")
-                                .font(.britanica(13))
+                                .font(.pBody)
                                 .foregroundStyle(.secondary)
                         }
                         Button("Copy MCP URL") {
@@ -144,10 +144,10 @@ struct IntegrationsPane: View {
     private var instructionsSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("ChatGPT: paste the URL in Settings → Integrations → Add MCP Server.")
-                .font(.britanica(13))
+                .font(.pBody)
                 .foregroundStyle(.secondary)
             Text("OpenAI API: pass it as a remote_mcp tool in your Responses API call.")
-                .font(.britanica(13))
+                .font(.pBody)
                 .foregroundStyle(.secondary)
         }
     }
@@ -156,7 +156,7 @@ struct IntegrationsPane: View {
     private func clientRow(label: String, status: ConnectStatus, action: @escaping () -> Void) -> some View {
         HStack {
             Text(label)
-                .font(.britanica(13))
+                .font(.pBody)
             Spacer()
             HStack(spacing: 8) {
                 switch status {
@@ -164,11 +164,11 @@ struct IntegrationsPane: View {
                     EmptyView()
                 case .connected:
                     Text("Connected")
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .foregroundStyle(.secondary)
                 case .failed(let msg):
                     Text(msg)
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .foregroundStyle(.red)
                 }
                 Button("Connect", action: action)

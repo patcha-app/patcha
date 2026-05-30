@@ -47,7 +47,7 @@ private extension LoginView {
             fields
             if let error = errorMessage {
                 Text(error)
-                    .font(.britanica(13))
+                    .font(.pBody)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -62,10 +62,10 @@ private extension LoginView {
     var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(isSignUp ? "Create your account" : "Welcome back")
-                .font(.britanica(22))
+                .font(.pTitle)
                 .foregroundStyle(.secondary)
             Text(isSignUp ? "Start tracking your activity in seconds." : "Sign in to continue to Patcha.")
-                .font(.britanica(13))
+                .font(.pBody)
                 .foregroundStyle(.secondary)
         }
     }
@@ -92,7 +92,7 @@ private extension LoginView {
                 HStack(spacing: 10) {
                     GoogleGLogo()
                     Text("Continue with Google")
-                        .font(.britanica(13))
+                        .font(.pBodyStrong)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
@@ -104,7 +104,7 @@ private extension LoginView {
     var divider: some View {
         HStack(spacing: 10) {
             Rectangle().fill(PatchaTheme.softDivider).frame(height: 1)
-            Text("or").font(.britanica(11)).foregroundStyle(.secondary)
+            Text("or").font(.pCaption).foregroundStyle(.secondary)
             Rectangle().fill(PatchaTheme.softDivider).frame(height: 1)
         }
         .padding(.vertical, 2)
@@ -122,7 +122,7 @@ private extension LoginView {
                     .foregroundStyle(PatchaTheme.accent)
                     .fontWeight(.medium)
             }
-            .font(.britanica(13))
+            .font(.pBody)
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
@@ -146,7 +146,7 @@ private extension LoginView {
                     endPoint: .bottomTrailing
                 )
                 Text("Patcha")
-                    .font(.britanica(56))
+                    .font(.pHeroMark)
                     .foregroundStyle(.white.opacity(0.18))
             }
         }
@@ -189,7 +189,7 @@ private struct LoginField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.britanica(11))
+                .font(.pCaption)
                 .foregroundStyle(.secondary)
 
             Group {
@@ -200,7 +200,7 @@ private struct LoginField: View {
                 }
             }
             .textFieldStyle(.plain)
-            .font(.britanica(13))
+            .font(.pBody)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(

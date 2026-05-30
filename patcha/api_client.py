@@ -147,7 +147,9 @@ class PatchaAPIClient:
         from patcha.config import config as patcha_config
 
         self._base_url = patcha_config.patcha_api_url.rstrip("/")
-        self._access_token = _read_token_file() or patcha_config.patcha_access_token or ""
+        self._access_token = (
+            _read_token_file() or patcha_config.patcha_access_token or ""
+        )
         self._refresh_token = patcha_config.patcha_refresh_token or ""
 
     def _auth_headers(self) -> dict[str, str]:

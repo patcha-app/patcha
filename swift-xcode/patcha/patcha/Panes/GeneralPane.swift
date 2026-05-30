@@ -62,7 +62,7 @@ struct GeneralPane: View {
                 if isPaused, let until = daemonManager.pausedUntil {
                     SettingsRow(label: "Status") {
                         Text("Paused · resumes \(until.formatted(.relative(presentation: .named)))")
-                            .font(.britanica(13))
+                            .font(.pBody)
                             .foregroundStyle(.secondary)
                     }
                     SoftDivider().padding(.horizontal, 16)
@@ -78,7 +78,7 @@ struct GeneralPane: View {
                             }
                         }
                         .labelsHidden()
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .frame(width: 160)
                     }
                     SoftDivider().padding(.horizontal, 16)
@@ -108,7 +108,7 @@ struct GeneralPane: View {
         HStack {
             if restartFeedback {
                 Text("Saved. Restarting daemon...")
-                    .font(.britanica(13))
+                    .font(.pBody)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -133,7 +133,7 @@ private struct SettingsToggleRow: View {
     var body: some View {
         HStack {
             Text(label)
-                .font(.britanica(13))
+                .font(.pBody)
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
@@ -153,7 +153,7 @@ private struct SettingsRow<Content: View>: View {
         HStack {
             if !label.isEmpty {
                 Text(label)
-                    .font(.britanica(13))
+                    .font(.pBody)
             }
             Spacer()
             content()

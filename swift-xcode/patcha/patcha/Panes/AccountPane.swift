@@ -12,7 +12,7 @@ struct AccountPane: View {
                 profileSection
                 if let error = errorMessage {
                     Text(error)
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .foregroundStyle(.red)
                 }
                 signOutSection
@@ -32,7 +32,7 @@ struct AccountPane: View {
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Image(systemName: "person.circle.fill")
-                        .font(.britanica(36))
+                        .font(.pIconAvatar)
                         .foregroundStyle(.secondary)
                 }
                 .frame(width: 40, height: 40)
@@ -41,10 +41,10 @@ struct AccountPane: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if let name = authManager.session?.user.userMetadata["full_name"]?.stringValue {
                         Text(name)
-                            .font(.britanica(13))
+                            .font(.pBodyStrong)
                     }
                     Text(authManager.session?.user.email ?? "—")
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -67,7 +67,7 @@ struct AccountPane: View {
 
             HStack {
                 Text("Signed in")
-                    .font(.britanica(13))
+                    .font(.pBody)
                 Spacer()
                 Button(isSigningOut ? "Signing out…" : "Sign Out") {
                     isSigningOut = true

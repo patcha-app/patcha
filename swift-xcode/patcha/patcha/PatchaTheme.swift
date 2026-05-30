@@ -37,7 +37,7 @@ struct SectionHeader: View {
     let title: String
     var body: some View {
         Text(title.uppercased())
-            .font(.britanicaSemiExpandedBold(11))
+            .font(.pSectionLabel)
             .tracking(1.2)
             .foregroundStyle(.primary)
     }
@@ -46,12 +46,11 @@ struct SectionHeader: View {
 struct AccentButtonStyle: ButtonStyle {
     var isDisabled: Bool = false
     var fullWidth: Bool = false
-    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.britanica(13))
-            .foregroundColor(PatchaTheme.bg(for: colorScheme))
+            .font(.pBodyStrong)
+            .foregroundColor(.black)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.vertical, 9)
             .padding(.horizontal, fullWidth ? 0 : 16)
@@ -64,19 +63,30 @@ struct AccentButtonStyle: ButtonStyle {
 }
 
 extension Font {
-    static func britanica(_ size: CGFloat) -> Font {
-        .custom("Britanica-Bold", size: size)
-    }
+    static let pCaption       = Font.custom("Britanica-Bold", size: 11)
+    static let pCaptionStrong = Font.custom("Britanica-Bold", size: 11)
+    static let pBody          = Font.custom("Britanica-Bold", size: 13)
+    static let pBodyStrong    = Font.custom("Britanica-Bold", size: 13)
+    static let pCallout       = Font.custom("Britanica-Bold", size: 14)
+    static let pCalloutStrong = Font.custom("Britanica-Bold", size: 14)
+    static let pSubheadline   = Font.custom("Britanica-Bold", size: 15)
+    static let pHeadline      = Font.custom("Britanica-Bold", size: 16)
+    static let pTitle         = Font.custom("Britanica-ExtraBoldSemiExpanded", size: 22)
+    static let pHeroMark      = Font.custom("Britanica-ExtraBoldSemiExpanded", size: 56)
 
-    static func britanicaSemiExpandedBold(_ size: CGFloat) -> Font {
-        .custom("Britanica-BoldSemiExpanded", size: size)
-    }
+    static let pSectionLabel  = Font.custom("Britanica-BoldSemiExpanded", size: 11)
 
-    static func instrumentSerif(_ size: CGFloat) -> Font {
-        .custom("InstrumentSerif-Regular", size: size)
-    }
+    static let pEyebrow       = Font.custom("InstrumentSerif-Regular", size: 12)
+    static let pBrandmark     = Font.custom("InstrumentSerif-Regular", size: 16)
+    static let pNumeral       = Font.custom("InstrumentSerif-Italic",  size: 16)
+    static let pNoteItalic    = Font.custom("InstrumentSerif-Italic",  size: 13)
+    static let pDisplay       = Font.custom("InstrumentSerif-Regular", size: 44)
+    static let pDisplayItalic = Font.custom("InstrumentSerif-Italic",  size: 44)
 
-    static func instrumentSerifItalic(_ size: CGFloat) -> Font {
-        .custom("InstrumentSerif-Italic", size: size)
-    }
+    static let pIconSmall     = Font.custom("Britanica-Bold", size: 13)
+    static let pIconMedium    = Font.custom("Britanica-Bold", size: 14)
+    static let pIconLarge     = Font.custom("Britanica-Bold", size: 16)
+    static let pIconXLarge    = Font.custom("Britanica-Bold", size: 18)
+    static let pIconAvatar    = Font.custom("Britanica-Bold", size: 36)
+    static let pIconEmpty     = Font.custom("Britanica-Bold", size: 40)
 }

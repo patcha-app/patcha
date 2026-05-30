@@ -30,7 +30,7 @@ struct AppPermissionsPane: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Background sources")
             Text("Turn off any source and Patcha stops indexing it. Your screen is still seen — these are just specific data streams.")
-                .font(.britanica(13))
+                .font(.pBody)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -74,24 +74,24 @@ struct AppPermissionsPane: View {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionHeader(title: "Exclude specific apps")
                     Text("When any of these is in focus, Patcha looks away completely — no screen, no text, nothing.")
-                        .font(.britanica(13))
+                        .font(.pBody)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button("Rescan") { viewModel.scan() }
                     .buttonStyle(.plain)
-                    .font(.britanica(13))
+                    .font(.pBodyStrong)
                     .foregroundStyle(PatchaTheme.accent)
             }
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                    .font(.britanica(13))
+                    .font(.pIconSmall)
                 TextField("Search apps", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.britanica(13))
+                    .font(.pBody)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -121,7 +121,7 @@ struct AppPermissionsPane: View {
             let items = filteredApps
             if items.isEmpty {
                 Text(searchText.isEmpty ? "No apps detected." : "No apps match “\(searchText)”.")
-                    .font(.britanica(13))
+                    .font(.pBody)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity)
@@ -178,15 +178,15 @@ private struct SourceTile: View {
                             .fill(PatchaTheme.accent.opacity(isOn ? 0.9 : 0.25))
                             .frame(width: 32, height: 32)
                         Image(systemName: iconName)
-                            .font(.britanica(14))
+                            .font(.pIconMedium)
                             .foregroundColor(isOn ? PatchaTheme.bg(for: colorScheme) : .primary.opacity(0.6))
                     }
                     Text(name)
-                        .font(.britanica(13))
+                        .font(.pBodyStrong)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(description)
-                    .font(.britanica(13))
+                    .font(.pBody)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -222,7 +222,7 @@ struct AppPermissionRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
                 Image(systemName: "app.fill")
-                    .font(.britanica(13))
+                    .font(.pIconSmall)
                     .frame(width: 28, height: 28)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -230,7 +230,7 @@ struct AppPermissionRow: View {
                     )
             }
             Text(app.name)
-                .font(.britanica(13))
+                .font(.pBody)
                 .lineLimit(1)
             Spacer()
             Toggle("", isOn: Binding(

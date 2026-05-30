@@ -6,7 +6,7 @@ struct PlaceholderPane: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: section.systemImage)
-                .font(.britanica(40))
+                .font(.pIconEmpty)
                 .foregroundStyle(.tertiary)
             Text("Coming soon")
                 .foregroundStyle(.secondary)
