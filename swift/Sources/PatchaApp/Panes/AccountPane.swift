@@ -65,3 +65,8 @@ struct AccountPane: View {
         }
     }
 }
+#Preview {
+    AccountPane(authManager: AuthManager())
+        .frame(width: 600, height: 400)
+}
+

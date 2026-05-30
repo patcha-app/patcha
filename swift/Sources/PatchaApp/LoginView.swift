@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 
-
 struct LoginView: View {
     @ObservedObject var authManager: AuthManager
     @Environment(\.colorScheme) private var colorScheme
@@ -12,96 +11,143 @@ struct LoginView: View {
     @State private var isLoading = false
 
     var body: some View {
-        ZStack {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                leftPane
+                    .frame(width: geo.size.width / 2, height: geo.size.height)
+                    .background(PatchaTheme.bg(for: colorScheme))
+
+                rightPane(width: geo.size.width / 2, height: geo.size.height)
+                    .frame(width: geo.size.width / 2, height: geo.size.height)
+            }
+        }
+        .ignoresSafeArea()
+        .disabled(isLoading)
+    }
+
+    private var leftPane: some View {
+        ZStack(alignment: .topLeading) {
             PatchaTheme.bg(for: colorScheme)
 
-            VStack(spacing: 24) {
-                if let icon = NSApp.applicationIconImage {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 64, height: 64)
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(isSignUp ? "Create your account" : "Welcome back")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text(isSignUp ? "Start tracking your activity in seconds." : "Sign in to continue to Patcha.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                 }
-
-                Text(isSignUp ? "Create Account" : "Sign in to Patcha")
-                    .font(.title2)
-                    .fontWeight(.semibold)
 
                 VStack(spacing: 10) {
-                    TextField("Email", text: $email)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                        )
+                    LoginField(
+                        title: "Email",
+                        text: $email,
+                        isSecure: false,
+                        colorScheme: colorScheme
+                    )
 
-                    SecureField("Password", text: $password)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.primary.opacity(0.06))
-                        )
+                    LoginField(
+                        title: "Password",
+                        text: $password,
+                        isSecure: true,
+                        colorScheme: colorScheme
+                    )
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.primary.opacity(0.03))
-                )
 
                 if let error = errorMessage {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Button(isSignUp ? "Create Account" : "Sign In") {
                         submit()
                     }
                     .buttonStyle(AccentButtonStyle(isDisabled: email.isEmpty || password.isEmpty || isLoading))
                     .disabled(email.isEmpty || password.isEmpty || isLoading)
-                    .frame(maxWidth: .infinity)
 
-                    Button(isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up") {
-                        isSignUp.toggle()
-                        errorMessage = nil
+                    HStack(spacing: 10) {
+                        Rectangle()
+                            .fill(PatchaTheme.softDivider)
+                            .frame(height: 1)
+                        Text("or")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Rectangle()
+                            .fill(PatchaTheme.softDivider)
+                            .frame(height: 1)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.vertical, 2)
+
+                    Button {
+                        do {
+                            try authManager.signInWithGoogle()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            GoogleGLogo()
+                            Text("Continue with Google")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                    }
+                    .buttonStyle(GoogleButtonStyle(colorScheme: colorScheme))
+                }
+
+                Button {
+                    isSignUp.toggle()
+                    errorMessage = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(isSignUp ? "Already have an account?" : "Don't have an account?")
+                            .foregroundStyle(.secondary)
+                        Text(isSignUp ? "Sign In" : "Sign Up")
+                            .foregroundStyle(PatchaTheme.accent)
+                            .fontWeight(.medium)
+                    }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
-
-                HStack(spacing: 12) {
-                    Rectangle()
-                        .fill(PatchaTheme.softDivider)
-                        .frame(height: 1)
-                    Text("or")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Rectangle()
-                        .fill(PatchaTheme.softDivider)
-                        .frame(height: 1)
-                }
-
-                Button("Continue with Google") {
-                    do {
-                        try authManager.signInWithGoogle()
-                    } catch {
-                        errorMessage = error.localizedDescription
-                    }
-                }
-                .buttonStyle(AccentButtonStyle(isDisabled: false))
+                .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
+                .padding(.top, 4)
             }
-            .padding(32)
+            .frame(maxWidth: 320)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.horizontal, 36)
         }
-        .ignoresSafeArea()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .disabled(isLoading)
+    }
+
+    private func rightPane(width: CGFloat, height: CGFloat) -> some View {
+        ZStack {
+            if let url = Bundle.main.url(forResource: "login-bg", withExtension: "png", subdirectory: "AppIcon.icon/Assets"),
+               let nsImage = NSImage(contentsOf: url) {
+                Image(nsImage: nsImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: width, height: height, alignment: .bottomTrailing)
+                    .clipped()
+            } else {
+                LinearGradient(
+                    colors: [
+                        PatchaTheme.accent.opacity(colorScheme == .dark ? 0.35 : 0.22),
+                        PatchaTheme.accent.opacity(colorScheme == .dark ? 0.15 : 0.08)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Text("Patcha")
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.18))
+            }
+        }
+        .clipped()
     }
 
     private func submit() {
@@ -111,7 +157,10 @@ struct LoginView: View {
             defer { isLoading = false }
             do {
                 if isSignUp {
-                    try await authManager.signUp(email: email, password: password)
+                    let hasSession = try await authManager.signUp(email: email, password: password)
+                    if !hasSession {
+                        errorMessage = "Check your email to confirm your account."
+                    }
                 } else {
                     try await authManager.signIn(email: email, password: password)
                 }
@@ -122,19 +171,93 @@ struct LoginView: View {
     }
 }
 
+private struct LoginField: View {
+    let title: String
+    @Binding var text: String
+    let isSecure: Bool
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Group {
+                if isSecure {
+                    SecureField("", text: $text)
+                } else {
+                    TextField("", text: $text)
+                }
+            }
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.10), lineWidth: 1)
+            )
+        }
+    }
+}
+
+private struct GoogleGLogo: View {
+    var body: some View {
+        if let url = Bundle.main.url(forResource: "google", withExtension: "svg", subdirectory: "AppIcon.icon/Assets"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 private struct AccentButtonStyle: ButtonStyle {
     let isDisabled: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.medium))
+            .font(.system(size: 13, weight: .semibold))
             .foregroundColor(PatchaTheme.bg(for: colorScheme))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(PatchaTheme.accent.opacity(isDisabled ? 0.4 : configuration.isPressed ? 0.8 : 1.0))
             )
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct GoogleButtonStyle: ButtonStyle {
+    let colorScheme: ColorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        let bg: Color = colorScheme == .dark
+            ? Color.white.opacity(configuration.isPressed ? 0.10 : 0.06)
+            : Color.white
+        let border = Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.15)
+        let fg: Color = colorScheme == .dark ? .white : .black
+
+        return configuration.label
+            .foregroundStyle(fg)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(bg)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(border, lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

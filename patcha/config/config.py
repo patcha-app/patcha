@@ -11,7 +11,6 @@ load_dotenv(_DEFAULT_patcha_DIR / ".env", override=True)
 
 
 class Config(BaseModel):
-    openai_api_key: str = ""
     qdrant_url: str = "http://localhost:6333"
     qdrant_path: Path = _DEFAULT_patcha_DIR / "qdrant_storage"
     data_dir: Path = _DEFAULT_patcha_DIR / "data"
@@ -46,7 +45,6 @@ class Config(BaseModel):
             return os.getenv(key, str(default)).lower() not in ("false", "0", "no")
 
         return cls(
-            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             qdrant_url=os.getenv("QDRANT_URL", "http://localhost:6333"),
             qdrant_path=Path(
                 os.getenv("QDRANT_PATH", str(_DEFAULT_patcha_DIR / "qdrant_storage"))

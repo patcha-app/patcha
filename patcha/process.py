@@ -105,6 +105,9 @@ class EventPreprocessor:
     def process_event(self, event: Event) -> List[Event]:
         log.debug("processing event type=%s source=%s", event.type, event.source)
         text = _build_embedding_text(event)
+        if not text:
+            log.debug("skipping event with empty text type=%s", event.type)
+            return []
         chunks = chunk_text(
             text, config.max_embedding_tokens, config.embedding_chunk_overlap
         )
@@ -164,6 +167,10 @@ class EventPreprocessor:
                     if event.source_doc_id:
                         chunk_event.source_doc_id = f"{event.source_doc_id}::chunk::{i}"
                     pairs.append((chunk_event, chunk))
+
+        pairs = [(event, text) for event, text in pairs if text]
+        if not pairs:
+            return []
 
         texts = [text for _, text in pairs]
         try:

@@ -45,16 +45,22 @@ struct SettingsRootView: View {
             if !authManager.isSignedIn {
                 LoginView(authManager: authManager)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !store.onboardingCompleted {
+                OnboardingView(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 0) {
-                    SettingsSidebar(selected: $section)
-                        .frame(width: 220)
-                        .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
-                        .ignoresSafeArea(edges: .top)
-                    contentView
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
-                        .ignoresSafeArea(edges: .top)
+                VStack(spacing: 0) {
+                    AccessibilityBanner()
+                    HStack(spacing: 0) {
+                        SettingsSidebar(selected: $section)
+                            .frame(width: 220)
+                            .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
+                            .ignoresSafeArea(edges: .top)
+                        contentView
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
+                            .ignoresSafeArea(edges: .top)
+                    }
                 }
                 .frame(width: 700)
                 .frame(maxHeight: .infinity)

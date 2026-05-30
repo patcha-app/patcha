@@ -7,6 +7,7 @@ import Combine
 final class AuthManager: ObservableObject {
     @Published var session: Session? = nil
     @Published var isSignedIn: Bool = false
+    @Published var initialSessionLoaded: Bool = false
 
     init() {
         Task {
@@ -21,6 +22,9 @@ final class AuthManager: ObservableObject {
                 default:
                     break
                 }
+                if !self.initialSessionLoaded {
+                    self.initialSessionLoaded = true
+                }
             }
         }
     }
@@ -29,14 +33,15 @@ final class AuthManager: ObservableObject {
         try await supabase.auth.signIn(email: email, password: password)
     }
 
-    func signUp(email: String, password: String) async throws {
-        try await supabase.auth.signUp(email: email, password: password)
+    func signUp(email: String, password: String) async throws -> Bool {
+        let response = try await supabase.auth.signUp(email: email, password: password)
+        return response.session != nil
     }
 
     func signInWithGoogle() throws {
         let url = try supabase.auth.getOAuthSignInURL(
             provider: .google,
-            redirectTo: URL(string: "patcha://auth/callback")!
+            redirectTo: URL(string: PatchaConfig.authCallbackURL)!
         )
         NSWorkspace.shared.open(url)
     }
