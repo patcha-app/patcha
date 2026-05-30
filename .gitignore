@@ -8,6 +8,10 @@ __pycache__/
 dist/
 build/
 swift/.build/
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.swp
 *.log
 .env
 .env.development
