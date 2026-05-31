@@ -1,9 +1,9 @@
 import time
 import signal
-import sys
 import os
 import json
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -25,6 +25,7 @@ class ActivityDaemon:
         self.poll_interval = _settings.get("poll_interval") or poll_interval
         self.batch_size = batch_size
         self.running = False
+        self._stop_event = threading.Event()
         self.start_time = None
         self.last_collection_time = None
 
@@ -53,9 +54,11 @@ class ActivityDaemon:
         signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _signal_handler(self, signum, frame):
+        # Flag shutdown and wake the poll wait; let the run loop unwind through
+        # its finally block (stop recording thread, remove pid file) instead of
+        # exiting abruptly mid-collection and orphaning subprocesses.
         self.logger.info(f"Received signal {signum}, shutting down...")
         self.stop()
-        sys.exit(0)
 
     def start(self):
         self.running = True
@@ -87,9 +90,17 @@ class ActivityDaemon:
         from patcha.api_client import PatchaAPIClient
 
         api_client = PatchaAPIClient()
-        while not api_client.check_auth():
-            self.logger.warning("Could not reach patcha-api — retrying in 60s")
-            time.sleep(60)
+        is_production = os.getenv("PATCHA_ENV") == "production"
+        if is_production:
+            while not api_client.check_auth():
+                self.logger.warning("Could not reach patcha-api — retrying in 60s")
+                time.sleep(60)
+        elif not api_client.check_auth():
+            self.logger.warning(
+                "patcha-api auth failed — continuing in dev mode. Local embedding "
+                "and storage work offline; chat/LLM features stay unavailable until "
+                "you run: patcha login"
+            )
 
         self.preprocessor = EventPreprocessor()
 
@@ -110,7 +121,9 @@ class ActivityDaemon:
             while self.running:
                 self.collect_and_process()
                 if self.running:
-                    time.sleep(self.poll_interval)
+                    # Interruptible: stop() sets the event so a signal wakes us
+                    # immediately instead of waiting out the full interval.
+                    self._stop_event.wait(self.poll_interval)
         finally:
             if self.accessibility_collector:
                 self.accessibility_collector.stop_recording()
@@ -120,6 +133,7 @@ class ActivityDaemon:
 
     def stop(self):
         self.running = False
+        self._stop_event.set()
         self.logger.info("Stopping daemon...")
 
     def collect_and_process(self):
@@ -229,14 +243,13 @@ class ActivityDaemon:
                 new_events = new_future.result()
 
             if pending_events:
+                # process_pending() already removed this batch from the backlog
+                # file and kept the remainder, so no clear_pending() here.
                 try:
                     stored = self.vector_store.store_events(pending_events)
-                    self.preprocessor.clear_pending()
                     self.logger.info(f"Stored {stored} previously pending events")
                 except Exception as e:
-                    self.logger.error(
-                        f"Error storing pending events (kept on disk): {e}"
-                    )
+                    self.logger.error(f"Error storing pending events: {e}")
 
             total_stored = 0
             if new_events:

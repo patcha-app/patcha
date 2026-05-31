@@ -12,6 +12,7 @@ dependencies = [
     "pyobjc-framework-Quartz>=10.0",
     "qdrant-client>=1.7.0",
     "openai>=1.0.0",
+    "fastembed>=0.4.0",
     "click>=8.1.0",
     "rich>=13.0.0",
     "gitpython>=3.1.0",

@@ -46,6 +46,14 @@ _MIN_CONTENT_LEN = 60
 _MIN_DIFF_LEN = 30  # minimum new chars required to write a diff entry
 _FULL_REPLACE_RATIO = 0.8  # if diff is >80% of new content, store full text (new page)
 _MIN_DURATION_SECS = 4
+_MAX_WINDOW_KEYS = 1_000  # cap per-window state dicts to bound memory
+
+
+def _bounded_set(d: dict, key, value, cap: int = _MAX_WINDOW_KEYS) -> None:
+    """Set d[key]=value, evicting the oldest entry if a new key exceeds cap."""
+    if key not in d and len(d) >= cap:
+        d.pop(next(iter(d)))
+    d[key] = value
 _SKIP_APPS_BASE = {
     "Finder",
     "System Preferences",
@@ -301,7 +309,7 @@ class AccessibilityCollector:
             if digest == self._screenshot_hashes.get(_key):
                 logger.debug("Screenshot unchanged for %s, skipping OCR", app_name)
                 return None
-            self._screenshot_hashes[_key] = digest
+            _bounded_set(self._screenshot_hashes, _key, digest)
             ocr = subprocess.run(
                 [str(binary), tmp_path],
                 capture_output=True,
@@ -408,7 +416,13 @@ class AccessibilityCollector:
         if last:
             diff = self._content_diff(last, text)
             if len(diff) < _MIN_DIFF_LEN:
-                self._last_text[key] = text
+                logger.debug(
+                    "Skipping capture: only %d new chars (<%d) for %s",
+                    len(diff),
+                    _MIN_DIFF_LEN,
+                    app,
+                )
+                _bounded_set(self._last_text, key, text)
                 self._last_active_key = key
                 return
             diff_ratio = len(diff) / max(len(text), 1)
@@ -418,7 +432,7 @@ class AccessibilityCollector:
             raw_for_embed = text
             raw_text_truncated = False
 
-        self._last_text[key] = text
+        _bounded_set(self._last_text, key, text)
         self._last_active_key = key
 
         now = datetime.now(timezone.utc)
@@ -444,7 +458,7 @@ class AccessibilityCollector:
             "source_doc_id": f"screen::{ts_ms}::{short_hash}",
             "_meta": {
                 "schema_version": 2,
-                "text_embedder": "text-embedding-3-small",
+                "text_embedder": config.embedding_model_name,
             },
         }
         with open(self.log_file, "a") as f:
@@ -486,6 +500,12 @@ class AccessibilityCollector:
 
     def stop_recording(self) -> None:
         self._stop_event.set()
+        thread = self._thread
+        if thread and thread.is_alive():
+            # Wait for the current capture (screencapture + OCR, ~15s worst case)
+            # to finish so we don't leave an orphaned subprocess behind.
+            thread.join(timeout=_POLL_INTERVAL + 15)
+        self._thread = None
 
     def collect_screen_text(self, since: datetime) -> List:
         if not self.log_file.exists():

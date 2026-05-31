@@ -6,6 +6,10 @@ from typing import List, Tuple
 
 from patcha.config import config
 from patcha.db.models import Event, EventType
+from patcha.utils.jsonl import trim_jsonl
+
+_MAX_LOG_ROWS = 100_000
+_TRIM_EVERY = 1_000
 
 
 class WindowCollector:
@@ -19,6 +23,7 @@ class WindowCollector:
 
     def __init__(self):
         self.log_file: Path = config.data_dir / "window_log.jsonl"
+        self._write_count: int = 0
 
     def _get_active_window(self) -> Tuple[str, str]:
         try:
@@ -51,6 +56,10 @@ class WindowCollector:
         }
         with open(self.log_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
+
+        self._write_count += 1
+        if self._write_count % _TRIM_EVERY == 0:
+            trim_jsonl(self.log_file, _MAX_LOG_ROWS)
 
     def collect_windows(self, since: datetime) -> List[Event]:
         """Return completed window-focus sessions logged since `since`.

@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from patcha.api_client import PatchaLLMClient
+from patcha import embedding
 from patcha.config import config
 from patcha.db.models import Event, EventType
 from patcha.utils.chunking import chunk_text
@@ -40,6 +40,16 @@ class PendingEventStore:
     def clear(self) -> None:
         if self._path.exists():
             self._path.unlink()
+
+    def replace(self, events: List[Event]) -> None:
+        if not events:
+            self.clear()
+            return
+        tmp = self._path.with_suffix(".jsonl.tmp")
+        with open(tmp, "w") as f:
+            for event in events:
+                f.write(event.model_dump_json() + "\n")
+        tmp.replace(self._path)
 
 
 def _build_embedding_text(event: Event) -> str:
@@ -84,20 +94,14 @@ def _build_embedding_text(event: Event) -> str:
 
 class EventPreprocessor:
     def __init__(self):
-        self.client = PatchaLLMClient()
-        self.embedding_model = "text-embedding-3-small"
         self._pending_store = PendingEventStore()
 
     def generate_embedding(self, text: str) -> Optional[List[float]]:
         log.debug("generating embedding (len=%d chars)", len(text))
         try:
-            response = self.client.embeddings.create(
-                model=self.embedding_model,
-                input=text,
-            )
-            embedding = response.data[0].embedding
-            log.debug("embedding generated: dim=%d", len(embedding))
-            return embedding
+            vector = embedding.embed_one(text)
+            log.debug("embedding generated: dim=%d", len(vector))
+            return vector
         except Exception as e:
             log.error("embedding failed: %s: %s", type(e).__name__, e)
             raise
@@ -147,9 +151,15 @@ class EventPreprocessor:
         if not pending:
             return []
 
+        # Drain in bounded batches so a large backlog can't block the daemon
+        # cycle or spike memory by embedding everything at once.
+        limit = config.max_pending_per_cycle
+        batch = pending[:limit]
+        remainder = pending[limit:]
+
         # Expand events into (chunk_event, chunk_text) pairs
         pairs: List[tuple] = []
-        for event in pending:
+        for event in batch:
             text = _build_embedding_text(event)
             chunks = chunk_text(
                 text, config.max_embedding_tokens, config.embedding_chunk_overlap
@@ -170,23 +180,30 @@ class EventPreprocessor:
 
         pairs = [(event, text) for event, text in pairs if text]
         if not pairs:
+            # Nothing embeddable in this batch — drop it so it can't wedge the queue.
+            self._pending_store.replace(remainder)
             return []
 
         texts = [text for _, text in pairs]
         try:
-            response = self.client.embeddings.create(
-                model=self.embedding_model,
-                input=texts,
-            )
+            vectors = embedding.embed_many(texts)
             result = []
-            for (chunk_event, _), emb_data in zip(pairs, response.data):
-                chunk_event.embedding = emb_data.embedding
+            for (chunk_event, _), vector in zip(pairs, vectors):
+                chunk_event.embedding = vector
                 result.append(chunk_event)
+            # Persist the unprocessed remainder; this batch is now embedded and
+            # handed back to the caller to store.
+            self._pending_store.replace(remainder)
             log.info(
-                "bulk embedded %d pending events (%d chunks)", len(pending), len(result)
+                "bulk embedded %d/%d pending events (%d chunks, %d remaining)",
+                len(batch),
+                len(pending),
+                len(result),
+                len(remainder),
             )
             return result
         except Exception as e:
+            # Leave the file untouched so the batch is retried next cycle.
             log.error("bulk embedding of pending events failed: %s", e)
             return []
 

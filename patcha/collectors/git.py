@@ -10,8 +10,14 @@ from git import Repo
 from patcha.config import config
 from patcha.db.models import Event, EventType, GitCommit, GitStash
 from patcha.utils.guard import CollectorGuard
+from patcha.utils.jsonl import trim_jsonl
 
 logger = logging.getLogger(__name__)
+
+# Staging snapshots carry full diffs and are appended every poll, so keep a
+# tighter bound than the lightweight window/screen logs.
+_STAGE_MAX_LOG_ROWS = 20_000
+_STAGE_TRIM_EVERY = 500
 
 
 class GitCollector:
@@ -19,6 +25,7 @@ class GitCollector:
         self.repo_path = Path(repo_path) if repo_path else Path.cwd()
         self._commits_guard = CollectorGuard("git_commits")
         self._stashes_guard = CollectorGuard("git_stashes")
+        self._stage_write_count: int = 0
 
     def is_git_repo(self) -> bool:
         try:
@@ -262,6 +269,10 @@ class GitCollector:
                 }
                 with open(snapshot_file, "a") as f:
                     f.write(json.dumps(entry) + "\n")
+
+                self._stage_write_count += 1
+                if self._stage_write_count % _STAGE_TRIM_EVERY == 0:
+                    trim_jsonl(snapshot_file, _STAGE_MAX_LOG_ROWS)
 
             except Exception:
                 continue

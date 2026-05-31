@@ -690,6 +690,18 @@ def stop_daemon():
         console.print(f"[red]Permission denied. Cannot stop daemon (PID: {pid})[/red]")
 
 
+@cli.command()
+@click.option(
+    "--dry-run", is_flag=True, help="Report what would be re-embedded without writing"
+)
+@click.option("--batch-size", "-b", default=128, help="Points per embedding batch")
+def reembed(dry_run: bool, batch_size: int):
+    """Re-embed stored vectors with the local FastEmbed model."""
+    from patcha.db.migrations.reembed import reembed as run_reembed
+
+    run_reembed(dry_run=dry_run, batch_size=batch_size)
+
+
 @cli.command("daemon-status")
 def daemon_status_cmd():
     """Show daemon status."""
