@@ -264,3 +264,17 @@ struct ScrollerHider: NSViewRepresentable {
     }
     func updateNSView(_ view: NSView, context: Context) {}
 }
+
+#Preview {
+    let store = SettingsStore()
+    let viewModel = AppPermissionsViewModel(store: store)
+    viewModel.apps = [
+        AppEntry(id: "com.example.xcode", name: "Xcode", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.slack", name: "Slack", icon: nil, isExcluded: true),
+        AppEntry(id: "com.example.notes", name: "Notes", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.safari", name: "Safari", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.terminal", name: "Terminal", icon: nil, isExcluded: false),
+    ]
+    return AppPermissionsPane(store: store, viewModel: viewModel)
+        .frame(width: 560, height: 700)
+}
