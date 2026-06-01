@@ -12,6 +12,8 @@ from sklearn.cluster import DBSCAN, HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
 
 from patcha.config import config
+from patcha.config import settings as _settings
+from patcha.db.activity_graph import ActivityGraph
 from patcha.db.models import Category, Event, EventType, Task, TaskPriority, TaskStatus
 from patcha.db.retrieval.rag import RAGSystem
 from patcha.db.store import VectorStore
@@ -1222,6 +1224,9 @@ class DailyCompactor:
         self.task_store = TaskStore()
         preprocessor = EventPreprocessor()
         self.task_identifier = TaskIdentifier(preprocessor, vector_store=None)
+        self.activity_graph = (
+            ActivityGraph() if _settings.get("enable_activity_graph") else None
+        )
 
     def _reconstruct_events(self, raw_records: list) -> List[Event]:
         events = []
@@ -1396,6 +1401,15 @@ class DailyCompactor:
                 }
             for task in tasks:
                 self.vector_store.store_task(task)
+            if self.activity_graph:
+                # Activity ids use the same {type}_{ts_iso} scheme TaskIdentifier
+                # assigns (see _create_task_from_*). Resolve each back to its event so
+                # the graph can link Task -> ScreenEvent/etc via its (label, ts_ms) index.
+                event_lookup = {
+                    f"{e.type.value}_{e.timestamp.isoformat()}": e for e in events
+                }
+                for task in tasks:
+                    self.activity_graph.upsert_task(task, event_lookup)
             self.vector_store.delete_events_by_date(target_date)
             if date_str not in state["compacted_dates"]:
                 state["compacted_dates"].append(date_str)

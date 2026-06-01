@@ -30,6 +30,7 @@ class Config(BaseModel):
     max_pending_per_cycle: int = 500
     working_memory_dedup_threshold: float = 0.95
     daily_compaction_min_activities: int = 2
+    session_gap_seconds: int = 600
     browser_history_paths: dict = {
         "chrome": "~/Library/Application Support/Google/Chrome/Default/History",
         "arc": "~/Library/Application Support/Arc/User Data/Default/History",

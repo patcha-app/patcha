@@ -141,8 +141,7 @@ def _reembed_collection(
         client.upsert(
             collection_name=name,
             points=[
-                PointStruct(id=p.id, vector=p.vector, payload=p.payload)
-                for p in points
+                PointStruct(id=p.id, vector=p.vector, payload=p.payload) for p in points
             ],
         )
         if offset is None:

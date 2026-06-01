@@ -15,6 +15,7 @@ from patcha.collectors.accessibility import AccessibilityCollector
 from patcha.compaction import DailyCompactor
 from patcha.process import EventPreprocessor
 from patcha.db.store import VectorStore
+from patcha.db.activity_graph import ActivityGraph
 from patcha.db.models import Event, EventType
 from patcha.config import config, settings as _settings
 from patcha.utils.guard import CollectorGuard
@@ -48,6 +49,9 @@ class ActivityDaemon:
         self.preprocessor = EventPreprocessor()
         self.vector_store = VectorStore()
         self.daily_compactor = DailyCompactor()
+        self.activity_graph = (
+            ActivityGraph() if _settings.get("enable_activity_graph") else None
+        )
         self._guards: dict = {}
 
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -262,6 +266,14 @@ class ActivityDaemon:
                 f"Successfully processed and stored {total_stored}/{len(all_events)} events"
             )
 
+            if self.activity_graph:
+                try:
+                    self._update_activity_graph(
+                        (pending_events or []) + (new_events or [])
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Activity graph update skipped: {e}")
+
             try:
                 self.daily_compactor.maybe_compact_previous_days()
             except Exception as e:
@@ -282,6 +294,22 @@ class ActivityDaemon:
 
         except Exception as e:
             self.logger.error(f"Error in collection cycle: {e}")
+
+    def _update_activity_graph(self, events):
+        # One node per logical event: skip non-first chunks (they share a base id and
+        # would otherwise create FOLLOWED_BY self-loops). Order by timestamp so the
+        # FOLLOWED_BY chain and session assignment are temporally correct.
+        logical = [
+            e for e in events if not (e.metadata or {}).get("chunk_index", 0)
+        ]
+        logical.sort(key=lambda e: e.timestamp)
+        prev_id = None
+        for event in logical:
+            session_id = self.activity_graph.current_session(event.timestamp)
+            node_id = self.activity_graph.upsert_event(
+                event, prev_event_id=prev_id, session_id=session_id
+            )
+            prev_id = node_id
 
     def get_status(self):
         return daemon_status()

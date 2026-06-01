@@ -54,6 +54,8 @@ def _bounded_set(d: dict, key, value, cap: int = _MAX_WINDOW_KEYS) -> None:
     if key not in d and len(d) >= cap:
         d.pop(next(iter(d)))
     d[key] = value
+
+
 _SKIP_APPS_BASE = {
     "Finder",
     "System Preferences",

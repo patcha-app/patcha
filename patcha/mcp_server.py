@@ -21,6 +21,12 @@ from patcha.db.retrieval.context import (
     get_recent_activity,
     search_activity,
 )
+from patcha.db.retrieval.graph_context import (
+    get_activity_context,
+    get_session,
+    find_connected,
+)
+from patcha.db.activity_graph import ActivityGraph
 from patcha.db.store import VectorStore
 from patcha.process import EventPreprocessor
 
@@ -28,6 +34,7 @@ server = Server("patcha")
 
 _store: VectorStore | None = None
 _preprocessor: EventPreprocessor | None = None
+_graph: ActivityGraph | None = None
 
 
 def _get_store() -> VectorStore:
@@ -35,6 +42,13 @@ def _get_store() -> VectorStore:
     if _store is None:
         _store = VectorStore()
     return _store
+
+
+def _get_graph() -> ActivityGraph:
+    global _graph
+    if _graph is None:
+        _graph = ActivityGraph()
+    return _graph
 
 
 def _get_preprocessor() -> EventPreprocessor:
@@ -126,6 +140,89 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="get_activity_context",
+            description=(
+                "Get the temporal context around a moment of activity — what the user was "
+                "doing right before and after a specific event. Answers questions like "
+                "'what was I doing before I opened Slack?' or 'what happened around 2pm?'. "
+                "Anchor the moment by app name, by time, or both (the app's event nearest "
+                "that time). Returns the surrounding events in chronological order plus the "
+                "work session they belonged to. Use this for ordering/adjacency questions "
+                "that semantic search can't answer."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "description": "Anchor on the most relevant event from this app (e.g. 'Slack').",
+                    },
+                    "time": {
+                        "type": "string",
+                        "description": "Anchor near this ISO 8601 timestamp (e.g. '2026-06-01T14:30:00Z').",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["before", "after", "both"],
+                        "description": "Which side of the anchor to show. Default 'both'.",
+                        "default": "both",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "How many events on each side. Default 3.",
+                        "default": 3,
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="get_session",
+            description=(
+                "Get the full work session around a moment — every app and event between "
+                "two idle gaps. Answers 'what apps did I use in the same session as commit X?' "
+                "or 'show me everything from the session around 3pm'. Anchor by app name, "
+                "time, or both. Returns the session time span, the apps involved, and the "
+                "events in chronological order."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "description": "Anchor on the most relevant event from this app.",
+                    },
+                    "time": {
+                        "type": "string",
+                        "description": "Anchor near this ISO 8601 timestamp.",
+                    },
+                },
+            },
+        ),
+        Tool(
+            name="find_connected",
+            description=(
+                "Find every event structurally connected to a file, project, url, or app — "
+                "across event types. Answers 'show me all activity touching accessibility.py' "
+                "or 'everything related to the patcha project'. Provide exactly one of file, "
+                "project, url, or app. Returns the connected events in chronological order."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "File path, e.g. 'patcha/collectors/accessibility.py'.",
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "Project name, e.g. 'patcha'.",
+                    },
+                    "url": {"type": "string", "description": "Exact URL visited."},
+                    "app": {"type": "string", "description": "App name, e.g. 'Arc'."},
+                },
+            },
+        ),
     ]
 
 
@@ -147,6 +244,31 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         hours = arguments.get("hours", 3)
         app = arguments.get("app")
         result = get_recent_activity(_get_store(), hours=hours, app_filter=app)
+
+    elif name == "get_activity_context":
+        result = get_activity_context(
+            _get_graph(),
+            app=arguments.get("app"),
+            time=arguments.get("time"),
+            direction=arguments.get("direction", "both"),
+            count=arguments.get("count", 3),
+        )
+
+    elif name == "get_session":
+        result = get_session(
+            _get_graph(),
+            app=arguments.get("app"),
+            time=arguments.get("time"),
+        )
+
+    elif name == "find_connected":
+        result = find_connected(
+            _get_graph(),
+            file=arguments.get("file"),
+            project=arguments.get("project"),
+            url=arguments.get("url"),
+            app=arguments.get("app"),
+        )
 
     else:
         result = f"Unknown tool: {name}"
