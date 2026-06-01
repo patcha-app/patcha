@@ -299,9 +299,7 @@ class ActivityDaemon:
         # One node per logical event: skip non-first chunks (they share a base id and
         # would otherwise create FOLLOWED_BY self-loops). Order by timestamp so the
         # FOLLOWED_BY chain and session assignment are temporally correct.
-        logical = [
-            e for e in events if not (e.metadata or {}).get("chunk_index", 0)
-        ]
+        logical = [e for e in events if not (e.metadata or {}).get("chunk_index", 0)]
         logical.sort(key=lambda e: e.timestamp)
         prev_id = None
         for event in logical:

@@ -41,7 +41,10 @@ def _format_node(node: Optional[dict]) -> str:
         app = p.get("app_name") or ""
         title = p.get("window_title") or ""
         detail = f"{app} — {title}" if title else (app or p.get("project") or "")
-    if p.get("transition") == "switch" or p.get("trigger") in ("app_switch", "space_switch"):
+    if p.get("transition") == "switch" or p.get("trigger") in (
+        "app_switch",
+        "space_switch",
+    ):
         detail = f"[switch] {detail}"
     return f"[{_hhmm(ts)}] {etype}: {detail}".rstrip()
 
@@ -86,7 +89,7 @@ def get_activity_context(
     if session:
         apps = sorted(n["props"]["name"] for n in graph.apps_in_session(session["id"]))
         sp = session["props"]
-        span = f"{_hhmm(sp.get('started_at',''))} → {_hhmm(sp.get('ended_at',''))}"
+        span = f"{_hhmm(sp.get('started_at', ''))} → {_hhmm(sp.get('ended_at', ''))}"
         lines.append(f"\nSession: {span} | apps: {', '.join(apps)}")
 
     return f"{header}\n" + "\n".join(lines)
@@ -108,7 +111,7 @@ def get_session(
         return f"{header}\nAnchor event has no session."
 
     sp = session["props"]
-    span = f"{_hhmm(sp.get('started_at',''))} → {_hhmm(sp.get('ended_at',''))}"
+    span = f"{_hhmm(sp.get('started_at', ''))} → {_hhmm(sp.get('ended_at', ''))}"
     apps = sorted(n["props"]["name"] for n in graph.apps_in_session(session["id"]))
     events = sorted(
         graph.events_in_session(session["id"]),

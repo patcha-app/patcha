@@ -38,8 +38,20 @@ def _ingest(graph, events):
 
 
 def test_upsert_is_idempotent(graph):
-    ev1 = _event(T0, EventType.SCREEN, {"app_name": "Code", "window_title": "a.py"}, "x", "screen::1::aa")
-    ev2 = _event(T0 + timedelta(seconds=30), EventType.SCREEN, {"app_name": "Slack"}, "y", "screen::2::bb")
+    ev1 = _event(
+        T0,
+        EventType.SCREEN,
+        {"app_name": "Code", "window_title": "a.py"},
+        "x",
+        "screen::1::aa",
+    )
+    ev2 = _event(
+        T0 + timedelta(seconds=30),
+        EventType.SCREEN,
+        {"app_name": "Slack"},
+        "y",
+        "screen::2::bb",
+    )
 
     _ingest(graph, [ev1, ev2])
     first = graph.get_stats()
@@ -51,7 +63,13 @@ def test_upsert_is_idempotent(graph):
 
 
 def test_followed_by_and_switched_from(graph):
-    code = _event(T0, EventType.SCREEN, {"app_name": "Code", "window_title": "a.py"}, "x", "screen::1::aa")
+    code = _event(
+        T0,
+        EventType.SCREEN,
+        {"app_name": "Code", "window_title": "a.py"},
+        "x",
+        "screen::1::aa",
+    )
     slack = _event(
         T0 + timedelta(seconds=30),
         EventType.SCREEN,
@@ -73,7 +91,9 @@ def test_git_files_and_events_touching(graph):
     commit = _event(
         T0,
         EventType.GIT_COMMIT,
-        raw=json.dumps({"message": "fix", "files_changed": ["patcha/x.py", "patcha/y.py"]}),
+        raw=json.dumps(
+            {"message": "fix", "files_changed": ["patcha/x.py", "patcha/y.py"]}
+        ),
         sdi="repo:abc",
         project="patcha",
     )
@@ -85,8 +105,20 @@ def test_git_files_and_events_touching(graph):
 
 def test_session_split_on_idle_gap(graph):
     a = _event(T0, EventType.SCREEN, {"app_name": "Code"}, "x", "screen::1::aa")
-    b = _event(T0 + timedelta(seconds=30), EventType.SCREEN, {"app_name": "Slack"}, "y", "screen::2::bb")
-    far = _event(T0 + timedelta(seconds=30 + graph.gap_seconds + 60), EventType.SCREEN, {"app_name": "Code"}, "z", "screen::3::cc")
+    b = _event(
+        T0 + timedelta(seconds=30),
+        EventType.SCREEN,
+        {"app_name": "Slack"},
+        "y",
+        "screen::2::bb",
+    )
+    far = _event(
+        T0 + timedelta(seconds=30 + graph.gap_seconds + 60),
+        EventType.SCREEN,
+        {"app_name": "Code"},
+        "z",
+        "screen::3::cc",
+    )
 
     sid_a = graph.current_session(a.timestamp)
     graph.upsert_event(a, session_id=sid_a)
@@ -97,11 +129,20 @@ def test_session_split_on_idle_gap(graph):
 
     assert sid_a == sid_b
     assert sid_far != sid_a
-    assert sorted(n["props"]["name"] for n in graph.apps_in_session(sid_a)) == ["Code", "Slack"]
+    assert sorted(n["props"]["name"] for n in graph.apps_in_session(sid_a)) == [
+        "Code",
+        "Slack",
+    ]
 
 
 def test_persistence_reload(graph, tmp_path):
-    ev = _event(T0, EventType.SCREEN, {"app_name": "Code", "window_title": "a.py"}, "x", "screen::1::aa")
+    ev = _event(
+        T0,
+        EventType.SCREEN,
+        {"app_name": "Code", "window_title": "a.py"},
+        "x",
+        "screen::1::aa",
+    )
     _ingest(graph, [ev])
     stats = graph.get_stats()
 

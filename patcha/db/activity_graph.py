@@ -139,9 +139,7 @@ class ActivityGraph:
                 ts_ms = props.get("ts_ms")
                 if ts_ms is not None:
                     self._event_by_tskey[(row[1], int(ts_ms))] = row[0]
-            for row in conn.execute(
-                "SELECT src_id, type, dst_id FROM activity_edges"
-            ):
+            for row in conn.execute("SELECT src_id, type, dst_id FROM activity_edges"):
                 self._edge_keys.add((row[0], row[1], row[2]))
 
     # --- upsert primitives ------------------------------------------------
@@ -150,7 +148,10 @@ class ActivityGraph:
         now = datetime.now(timezone.utc).isoformat()
         existing = self.nodes.get(node_id)
         if existing:
-            merged = {**existing["props"], **{k: v for k, v in props.items() if v is not None}}
+            merged = {
+                **existing["props"],
+                **{k: v for k, v in props.items() if v is not None},
+            }
             existing["props"] = merged
             existing["updated_at"] = now
             self._persist_node(existing)
@@ -296,7 +297,11 @@ class ActivityGraph:
 
         if event.type in (EventType.SCREEN, EventType.WINDOW):
             self._link_app_window(event, node_id, meta)
-        elif event.type in (EventType.GIT_COMMIT, EventType.GIT_STASH, EventType.GIT_STAGED):
+        elif event.type in (
+            EventType.GIT_COMMIT,
+            EventType.GIT_STASH,
+            EventType.GIT_STAGED,
+        ):
             self._link_git(event, node_id)
         elif event.type == EventType.BROWSER:
             self._link_browser(event, node_id, meta)
@@ -319,9 +324,7 @@ class ActivityGraph:
             title = meta.get("window_title")
             if title:
                 win_id = f"window::{app}::{title}"
-                self.upsert_node(
-                    NODE_WINDOW, win_id, {"title": title, "app_name": app}
-                )
+                self.upsert_node(NODE_WINDOW, win_id, {"title": title, "app_name": app})
                 self.upsert_edge(node_id, win_id, EDGE_IN_WINDOW)
                 self.upsert_edge(win_id, app_id, EDGE_BELONGS_TO)
 
@@ -353,7 +356,9 @@ class ActivityGraph:
         if url:
             url_id = f"url::{url}"
             self.upsert_node(
-                NODE_URL, url_id, {"url": url, "domain": meta.get("domain") or data.get("domain")}
+                NODE_URL,
+                url_id,
+                {"url": url, "domain": meta.get("domain") or data.get("domain")},
             )
             self.upsert_edge(node_id, url_id, EDGE_VISITED)
 
@@ -374,7 +379,9 @@ class ActivityGraph:
                     "title": task.title,
                     "summary": task.description,
                     "project": task.project,
-                    "started_at": task.start_time.isoformat() if task.start_time else None,
+                    "started_at": task.start_time.isoformat()
+                    if task.start_time
+                    else None,
                     "ended_at": task.end_time.isoformat() if task.end_time else None,
                 },
             )
@@ -448,26 +455,34 @@ class ActivityGraph:
                 return node
         return None
 
-    def find_event(self, app: Optional[str] = None, at: Optional[datetime] = None) -> Optional[dict]:
+    def find_event(
+        self, app: Optional[str] = None, at: Optional[datetime] = None
+    ) -> Optional[dict]:
         """Resolve an anchor event node by app name and/or time. With both, picks the
         app's event nearest the given time; with neither, the most recent event."""
         candidates = [n for n in self.nodes.values() if "type" in n["props"]]
         if app:
             app_lc = app.lower()
             candidates = [
-                n for n in candidates
+                n
+                for n in candidates
                 if (n["props"].get("app_name") or "").lower() == app_lc
             ]
         if not candidates:
             return None
         if at is not None:
             target = _ts_ms(at)
-            return min(candidates, key=lambda n: abs(n["props"].get("ts_ms", 0) - target))
+            return min(
+                candidates, key=lambda n: abs(n["props"].get("ts_ms", 0) - target)
+            )
         return max(candidates, key=lambda n: n["props"].get("ts_ms", 0))
 
     def events_in_session(self, session_id: str) -> List[dict]:
-        return [self.get_node(nid) for nid in self._src_of(session_id, EDGE_DURING)
-                if self.get_node(nid)]
+        return [
+            self.get_node(nid)
+            for nid in self._src_of(session_id, EDGE_DURING)
+            if self.get_node(nid)
+        ]
 
     def session_at(self, ts: datetime) -> Optional[dict]:
         for node in self.nodes.values():
@@ -476,7 +491,11 @@ class ActivityGraph:
             started = node["props"].get("started_at")
             ended = node["props"].get("ended_at")
             if started and ended:
-                if datetime.fromisoformat(started) <= ts <= datetime.fromisoformat(ended):
+                if (
+                    datetime.fromisoformat(started)
+                    <= ts
+                    <= datetime.fromisoformat(ended)
+                ):
                     return node
         return None
 
@@ -521,7 +540,9 @@ class ActivityGraph:
                             seen.add(other)
                             nxt.append(other)
             frontier = nxt
-        return [self.get_node(nid) for nid in seen if nid != node_id and self.get_node(nid)]
+        return [
+            self.get_node(nid) for nid in seen if nid != node_id and self.get_node(nid)
+        ]
 
     def get_stats(self) -> Dict[str, int]:
         labels: Dict[str, int] = {}

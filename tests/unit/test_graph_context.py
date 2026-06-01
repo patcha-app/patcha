@@ -30,19 +30,41 @@ def _event(t, etype, meta=None, raw="", sdi=None, project=None):
 def graph(tmp_path):
     g = ActivityGraph(db_path=str(tmp_path / "graph.db"))
     events = [
-        _event(T0, EventType.SCREEN, {"app_name": "Zed", "window_title": "accessibility.py"}, "x", "screen::1::aa"),
-        _event(T0 + timedelta(minutes=2), EventType.TERMINAL, raw=json.dumps({"command": "pytest"}), sdi="term::1", project="patcha"),
+        _event(
+            T0,
+            EventType.SCREEN,
+            {"app_name": "Zed", "window_title": "accessibility.py"},
+            "x",
+            "screen::1::aa",
+        ),
+        _event(
+            T0 + timedelta(minutes=2),
+            EventType.TERMINAL,
+            raw=json.dumps({"command": "pytest"}),
+            sdi="term::1",
+            project="patcha",
+        ),
         _event(
             T0 + timedelta(minutes=4),
             EventType.SCREEN,
-            {"app_name": "Slack", "window_title": "general", "trigger": "app_switch", "transition": "switch"},
+            {
+                "app_name": "Slack",
+                "window_title": "general",
+                "trigger": "app_switch",
+                "transition": "switch",
+            },
             "y",
             "screen::2::bb",
         ),
         _event(
             T0 + timedelta(minutes=6),
             EventType.GIT_COMMIT,
-            raw=json.dumps({"message": "fix", "files_changed": ["patcha/collectors/accessibility.py"]}),
+            raw=json.dumps(
+                {
+                    "message": "fix",
+                    "files_changed": ["patcha/collectors/accessibility.py"],
+                }
+            ),
             sdi="repo::abc",
             project="patcha",
         ),
