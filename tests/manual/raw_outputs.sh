@@ -2,10 +2,13 @@
 # Show raw JSON output from ax_content and ocr binaries.
 # OCR mirrors real usage: runs ax_content first, crops to its frame if source=ocr_needed.
 #
-# Usage: ./tests/manual/raw_outputs.sh [--ax-only] [--ocr-only] [--pretty]
-#   --ax-only   show ax_content output only, skip OCR
-#   --ocr-only  skip ax_content display, but still use it for frame crop
-#   --pretty    pipe JSON output through python3 -m json.tool
+# Run the production OCR pipeline (ax_content --frame-only → cursor-centered crop → OCR →
+# _reconstruct_layout) and print the reconstructed TEXT as it would be stored.
+#
+# Usage: ./tests/manual/raw_outputs.sh [--ax-only] [--raw-obs] [--pretty]
+#   --ax-only   show ax_content --frame-only metadata only, skip OCR
+#   --raw-obs   also dump the raw OCR coordinate observations (debugging)
+#   --pretty    prettify any JSON shown (frame metadata, raw observations)
 
 set -euo pipefail
 
@@ -20,12 +23,12 @@ TMP_IMG="$(mktemp /tmp/patcha_ocr_XXXXXX.png)"
 mkdir -p "$ROOT/data"
 
 AX_ONLY=false
-OCR_ONLY=false
+RAW_OBS=false
 PRETTY=false
 for arg in "$@"; do
-    [[ "$arg" == "--ax-only"  ]] && AX_ONLY=true
-    [[ "$arg" == "--ocr-only" ]] && OCR_ONLY=true
-    [[ "$arg" == "--pretty"   ]] && PRETTY=true
+    [[ "$arg" == "--ax-only" ]] && AX_ONLY=true
+    [[ "$arg" == "--raw-obs" ]] && RAW_OBS=true
+    [[ "$arg" == "--pretty"  ]] && PRETTY=true
 done
 
 pretty() {
@@ -46,14 +49,17 @@ if [[ ! -f "$AX_BIN" || "$AX_SRC" -nt "$AX_BIN" ]]; then
     echo "► Done." >&2
 fi
 
-# --- run ax_content, capture output ---
-AX_JSON=$("$AX_BIN" || true)
+# --- countdown so you can move cursor into the target app/column before capture ---
+echo "► Capturing in 4s — switch to the app and position cursor in the column you want..." >&2
+for i in 4 3 2 1; do printf "\r  %ds " $i >&2; sleep 1; done
+printf "\r  capturing...    \n" >&2
 
-if ! $OCR_ONLY; then
-    echo "" >&2
-    echo "=== ax_content raw output ===" >&2
-    echo "$AX_JSON" | pretty
-fi
+# --- run ax_content in --frame-only mode (production path: metadata + cursor-centered crop) ---
+AX_JSON=$("$AX_BIN" --frame-only || true)
+
+echo "" >&2
+echo "=== ax_content --frame-only output ===" >&2
+echo "$AX_JSON" | pretty
 
 if $AX_ONLY; then exit 0; fi
 
@@ -67,36 +73,14 @@ fi
 echo "" >&2
 echo "=== screencapture + ocr raw output ===" >&2
 
-AX_SOURCE=$(echo "$AX_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('source',''))" 2>/dev/null || true)
-echo "► ax source: ${AX_SOURCE:-unknown}" >&2
-
-# Build screencapture command — crop to AX frame (+50px pad) when source=ocr_needed
+# Build screencapture command — capture exactly the focused window by its CGWindowID.
 CAP_CMD=(screencapture -x)
-if [[ "$AX_SOURCE" == "ocr_needed" ]] && command -v python3 &>/dev/null; then
-    CROP=$(echo "$AX_JSON" | python3 - <<'PYEOF'
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    f = d.get("frame")
-    if f and f.get("w", 0) > 0 and f.get("h", 0) > 0:
-        pad = 50
-        x = max(0, int(f["x"]) - pad)
-        y = max(0, int(f["y"]) - pad)
-        w = int(f["w"]) + pad * 2
-        h = int(f["h"]) + pad * 2
-        print(f"{x},{y},{w},{h}")
-except (json.JSONDecodeError, TypeError):
-    pass
-PYEOF
-    )
-    if [[ -n "$CROP" ]]; then
-        echo "► cropping to frame: $CROP (+ 50px pad)" >&2
-        CAP_CMD+=(-R "$CROP")
-    else
-        echo "► no frame in AX output, full-screen capture" >&2
-    fi
+WIN_ID=$(echo "$AX_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('window_id') or '')" 2>/dev/null || true)
+if [[ -n "$WIN_ID" ]]; then
+    echo "► capturing focused window id=$WIN_ID (-o -l)" >&2
+    CAP_CMD+=(-o -l "$WIN_ID")
 else
-    echo "► AX extracted text directly — capturing full screen for comparison" >&2
+    echo "► no window_id in AX output, full-screen capture" >&2
 fi
 
 "${CAP_CMD[@]}" "$TMP_IMG"
@@ -108,4 +92,29 @@ if [[ "$IMG_BYTES" -lt 10000 ]]; then
     exit 1
 fi
 
-"$OCR_BIN" "$TMP_IMG" | pretty
+OCR_JSON=$("$OCR_BIN" "$TMP_IMG")
+
+# Raw coordinate observations only when explicitly requested (debugging).
+if $RAW_OBS; then
+    echo "" >&2
+    echo "=== raw OCR observations ===" >&2
+    echo "$OCR_JSON" | pretty
+fi
+
+# Headline output: the reconstructed TEXT, exactly as production stores it — including the
+# cursor/input-based pane selection (select_x derived from cursor_x/focus_x and the capture rect).
+echo "" >&2
+echo "=== reconstructed layout (_reconstruct_layout) ===" >&2
+OCR_JSON="$OCR_JSON" AX_JSON="$AX_JSON" "$ROOT/.venv/bin/python" -c "
+import os, json
+from patcha.collectors.accessibility import AccessibilityCollector as AC
+obs = json.loads(os.environ['OCR_JSON'])
+ax = json.loads(os.environ['AX_JSON'] or '{}')
+# Window-id capture: image bounds == window frame, so normalize cursor by the frame.
+f = ax.get('frame') or {}
+cap_x = int(f['x']) if f else None
+cap_w = int(f['w']) if f else None
+select_x = AC._select_x_in_capture(ax.get('cursor_x'), ax.get('focus_x'), cap_x, cap_w)
+print(f'(select_x={select_x}  cap_x={cap_x} cap_w={cap_w})')
+print(AC._reconstruct_layout(obs, select_x=select_x))
+"
