@@ -73,31 +73,14 @@ fi
 echo "" >&2
 echo "=== screencapture + ocr raw output ===" >&2
 
-# Build screencapture command — crop to the cursor-centered frame (+50px pad).
+# Build screencapture command — capture exactly the focused window by its CGWindowID.
 CAP_CMD=(screencapture -x)
-if command -v python3 &>/dev/null; then
-    CROP=$(echo "$AX_JSON" | python3 - <<'PYEOF'
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    f = d.get("frame")
-    if f and f.get("w", 0) > 0 and f.get("h", 0) > 0:
-        pad = 50
-        x = max(0, int(f["x"]) - pad)
-        y = max(0, int(f["y"]) - pad)
-        w = int(f["w"]) + pad * 2
-        h = int(f["h"]) + pad * 2
-        print(f"{x},{y},{w},{h}")
-except (json.JSONDecodeError, TypeError):
-    pass
-PYEOF
-    )
-    if [[ -n "$CROP" ]]; then
-        echo "► cropping to cursor-centered frame: $CROP (+ 50px pad)" >&2
-        CAP_CMD+=(-R "$CROP")
-    else
-        echo "► no frame in AX output, full-screen capture" >&2
-    fi
+WIN_ID=$(echo "$AX_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('window_id') or '')" 2>/dev/null || true)
+if [[ -n "$WIN_ID" ]]; then
+    echo "► capturing focused window id=$WIN_ID (-o -l)" >&2
+    CAP_CMD+=(-o -l "$WIN_ID")
+else
+    echo "► no window_id in AX output, full-screen capture" >&2
 fi
 
 "${CAP_CMD[@]}" "$TMP_IMG"
@@ -118,12 +101,20 @@ if $RAW_OBS; then
     echo "$OCR_JSON" | pretty
 fi
 
-# Headline output: the reconstructed TEXT, exactly as production stores it.
+# Headline output: the reconstructed TEXT, exactly as production stores it — including the
+# cursor/input-based pane selection (select_x derived from cursor_x/focus_x and the capture rect).
 echo "" >&2
 echo "=== reconstructed layout (_reconstruct_layout) ===" >&2
-echo "$OCR_JSON" | "$ROOT/.venv/bin/python" -c "
-import sys, json
-from patcha.collectors.accessibility import AccessibilityCollector
-obs = json.load(sys.stdin)
-print(AccessibilityCollector._reconstruct_layout(obs))
+OCR_JSON="$OCR_JSON" AX_JSON="$AX_JSON" "$ROOT/.venv/bin/python" -c "
+import os, json
+from patcha.collectors.accessibility import AccessibilityCollector as AC
+obs = json.loads(os.environ['OCR_JSON'])
+ax = json.loads(os.environ['AX_JSON'] or '{}')
+# Window-id capture: image bounds == window frame, so normalize cursor by the frame.
+f = ax.get('frame') or {}
+cap_x = int(f['x']) if f else None
+cap_w = int(f['w']) if f else None
+select_x = AC._select_x_in_capture(ax.get('cursor_x'), ax.get('focus_x'), cap_x, cap_w)
+print(f'(select_x={select_x}  cap_x={cap_x} cap_w={cap_w})')
+print(AC._reconstruct_layout(obs, select_x=select_x))
 "

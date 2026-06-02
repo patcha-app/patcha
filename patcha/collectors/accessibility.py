@@ -253,13 +253,17 @@ class AccessibilityCollector:
         return splits
 
     @staticmethod
-    def _reconstruct_layout(observations: List[Dict]) -> str:
+    def _reconstruct_layout(
+        observations: List[Dict], select_x: Optional[float] = None
+    ) -> str:
         """Rebuild on-screen text from OCR observations (normalized coords, bottom-left origin).
 
-        Side-by-side panes are segmented into columns by x (a vertical-gutter projection) and read
-        column-major (each column top-to-bottom, columns left-to-right) so a chat sidebar, message
-        list, and thread panel don't interleave. All thresholds derive from `unit` = median text
-        height, so the output is invariant to screen/app zoom. Mirrors Swift `spatialJoin`.
+        Side-by-side panes are segmented into columns by x (a vertical-gutter projection). When
+        `select_x` is given (the cursor / focused-input x, normalized to the capture's [0,1]), only
+        the column the user is in is kept — matching the bounding box to the active pane. Otherwise
+        all columns are read column-major (each top-to-bottom, left-to-right) so a chat sidebar,
+        message list, and thread panel don't interleave. All thresholds derive from `unit` = median
+        text height, so the output is invariant to screen/app zoom. Mirrors Swift `spatialJoin`.
         """
         if not observations:
             return ""
@@ -317,13 +321,19 @@ class AccessibilityCollector:
                 lines.extend(emit_line(current))
             return lines
 
-        # Segment into columns by x, then read column-major (left-to-right).
+        # Segment into columns by x.
         splits = AccessibilityCollector._detect_column_splits(observations, unit)
         columns: List[List[Dict]] = [[] for _ in range(len(splits) + 1)]
         for o in observations:
             idx = sum(1 for s in splits if x_mid(o) > s)
             columns[idx].append(o)
 
+        # If we know where the cursor/input is, keep only that column (the active pane).
+        if select_x is not None and splits:
+            active = sum(1 for s in splits if select_x > s)
+            columns = [columns[active]]
+
+        # Read the kept column(s) column-major (left-to-right).
         lines: List[str] = []
         for col_obs in columns:
             if not col_obs:
@@ -343,11 +353,36 @@ class AccessibilityCollector:
 
         return "\n".join(cleaned)[:4000]
 
+    @staticmethod
+    def _select_x_in_capture(
+        cursor_x: Optional[float],
+        focus_x: Optional[float],
+        cap_x: Optional[int],
+        cap_w: Optional[int],
+    ) -> Optional[float]:
+        """Map the cursor / focused-input screen-x into the capture's [0,1] range.
+
+        Prefer the cursor; fall back to keyboard focus when the cursor falls outside the captured
+        rect. Returns None (→ keep all columns) when neither lands inside or no crop was used.
+        """
+        if cap_x is None or not cap_w:
+            return None
+        for sx in (cursor_x, focus_x):
+            if sx is None:
+                continue
+            norm = (sx - cap_x) / cap_w
+            if 0.0 <= norm <= 1.0:
+                return norm
+        return None
+
     def _take_ocr_screenshot(
         self,
         app_name: str,
         window_title: str,
         frame: Optional[Dict] = None,
+        cursor_x: Optional[float] = None,
+        focus_x: Optional[float] = None,
+        window_id: Optional[int] = None,
     ) -> Optional[Dict]:
         if not _has_screen_recording_permission():
             logger.debug(
@@ -361,13 +396,21 @@ class AccessibilityCollector:
         os.close(fd)
         try:
             cap_cmd = ["screencapture", "-x"]
-            if frame and frame.get("w", 0) > 0 and frame.get("h", 0) > 0:
-                pad = 50
-                x = max(0, int(frame["x"]) - pad)
-                y = max(0, int(frame["y"]) - pad)
-                w = int(frame["w"]) + pad * 2
-                h = int(frame["h"]) + pad * 2
+            cap_x = cap_w = None  # capture rect left edge / width, for column selection
+            if window_id is not None:
+                # Capture exactly the focused window (no menu bar, desktop, or other apps).
+                # -o drops the drop-shadow so the image bounds match the window frame.
+                cap_cmd += ["-o", "-l", str(window_id)]
+                if frame and frame.get("w", 0) > 0:
+                    cap_x, cap_w = int(frame["x"]), int(frame["w"])
+            elif frame and frame.get("w", 0) > 0 and frame.get("h", 0) > 0:
+                # Fallback: crop to the window frame by coordinates (no padding).
+                x = max(0, int(frame["x"]))
+                y = max(0, int(frame["y"]))
+                w = int(frame["w"])
+                h = int(frame["h"])
                 cap_cmd += ["-R", f"{x},{y},{w},{h}"]
+                cap_x, cap_w = x, w
             cap_cmd.append(tmp_path)
             cap = subprocess.run(
                 cap_cmd,
@@ -393,9 +436,22 @@ class AccessibilityCollector:
             raw = ocr.stdout.strip()
             if not raw:
                 return None
+            # Normalize the cursor / focused-input x into the capture's [0,1] range so layout
+            # reconstruction can keep only the column (pane) the user is actually in. Prefer the
+            # cursor; fall back to keyboard focus when the cursor is outside the capture.
+            select_x = self._select_x_in_capture(cursor_x, focus_x, cap_x, cap_w)
+            logger.debug(
+                "OCR pane select_x=%s (cursor_x=%s focus_x=%s cap_x=%s cap_w=%s) for %s",
+                select_x,
+                cursor_x,
+                focus_x,
+                cap_x,
+                cap_w,
+                app_name,
+            )
             try:
                 observations = json.loads(raw)
-                text = self._reconstruct_layout(observations)
+                text = self._reconstruct_layout(observations, select_x=select_x)
             except (json.JSONDecodeError, TypeError, KeyError):
                 text = raw[:4000]
             if not text:
@@ -433,22 +489,34 @@ class AccessibilityCollector:
             logger.debug("Screen Recording permission not granted; skipping capture")
             return None
 
-        # ax_content --frame-only supplies app/window metadata + a cursor-centered crop frame.
+        # ax_content --frame-only supplies app/window metadata, the window frame, and the cursor /
+        # focused-input x used to pick the active pane (column).
         ax = self._get_ax_content(frame_only=True)
         if ax:
             app_name = ax.get("app", "")
             window_title = ax.get("window_title", "")
             frame = ax.get("frame")
+            cursor_x = ax.get("cursor_x")
+            focus_x = ax.get("focus_x")
+            window_id = ax.get("window_id")
         else:
-            # AX binary unavailable — fall back to applescript for app/window, full-window OCR.
+            # AX binary unavailable — fall back to applescript for app/window, full-screen OCR.
             app_name, window_title = self._get_app_name_fallback()
             frame = None
+            cursor_x = focus_x = window_id = None
 
         # Filter BEFORE OCR so banking/incognito/excluded windows are never screenshotted.
         if self._should_skip(app_name, window_title):
             return None
 
-        return self._take_ocr_screenshot(app_name, window_title, frame=frame)
+        return self._take_ocr_screenshot(
+            app_name,
+            window_title,
+            frame=frame,
+            cursor_x=cursor_x,
+            focus_x=focus_x,
+            window_id=window_id,
+        )
 
     @staticmethod
     def _content_diff(old: str, new: str) -> str:

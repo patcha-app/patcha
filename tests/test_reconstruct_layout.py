@@ -1,4 +1,9 @@
+import json
+from pathlib import Path
+
 from patcha.collectors.accessibility import AccessibilityCollector
+
+_FIXTURES = Path(__file__).parent / "fixtures"
 
 # Real OCR observations captured from a Slack thread panel (normalized coords, bottom-left origin
 # from Apple Vision — higher y = higher on screen).
@@ -129,6 +134,59 @@ def _three_columns():
     ):
         obs.append({"text": t, "x": 0.66, "y": 0.90 - i * 0.05, "w": 0.27, "h": h})
     return obs
+
+
+def test_select_x_keeps_only_active_pane():
+    obs = _three_columns()
+    # Cursor in the message column (x ~0.30-0.58, mid ~0.44).
+    out = AccessibilityCollector._reconstruct_layout(obs, select_x=0.45)
+    assert "Apurv 5:27 PM" in out  # message pane kept
+    assert "Threads" not in out  # sidebar dropped
+    assert "Anchal Sethi" not in out  # thread pane dropped
+
+    # Cursor in the thread panel (x ~0.66-0.93, mid ~0.79).
+    out2 = AccessibilityCollector._reconstruct_layout(obs, select_x=0.80)
+    assert "Anchal Sethi" in out2
+    assert "Apurv 5:27 PM" not in out2
+    assert "Threads" not in out2
+
+
+def test_select_x_none_keeps_all_columns():
+    obs = _three_columns()
+    out = AccessibilityCollector._reconstruct_layout(obs, select_x=None)
+    assert "Threads" in out and "Apurv 5:27 PM" in out and "Anchal Sethi" in out
+
+
+# Real full-window Slack OCR observations (3 panes: sidebar / messages / thread), captured via
+# the OCR binary. This is the ground-truth regression case for cursor-based pane selection.
+def _slack_full_window():
+    return json.loads((_FIXTURES / "slack_full_window.json").read_text())
+
+
+def test_real_slack_cursor_selects_thread_pane():
+    obs = _slack_full_window()
+    out = AccessibilityCollector._reconstruct_layout(obs, select_x=0.80)
+    assert "There are 59,552.828132 units available" in out  # thread content kept
+    assert "you can use prod konsole" not in out  # message column excluded
+    assert "ai-dev" not in out  # sidebar excluded
+
+
+def test_real_slack_cursor_selects_sidebar():
+    obs = _slack_full_window()
+    out = AccessibilityCollector._reconstruct_layout(obs, select_x=0.12)
+    assert "product-dev" in out  # channel list kept
+    assert "There are 59,552.828132 units available" not in out  # thread excluded
+
+
+def test_real_slack_no_cursor_keeps_all_panes_uninterleaved():
+    obs = _slack_full_window()
+    out = AccessibilityCollector._reconstruct_layout(obs, select_x=None)
+    lines = [ln for ln in out.splitlines() if ln]
+    # Thread body line must be contiguous, not interleaved with sidebar/message lines.
+    thread_line = "when the unit quantity is rounded to 3 decimal places."
+    body = "redemption, the API returns a 400 error. However, the redemption succeeds"
+    assert thread_line in lines and body in lines
+    assert abs(lines.index(thread_line) - lines.index(body)) == 1
 
 
 def test_columns_do_not_interleave():

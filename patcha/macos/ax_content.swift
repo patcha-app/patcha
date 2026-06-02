@@ -308,8 +308,29 @@ struct Out: Encodable {
     let app: String
     let window_title: String
     let content: String
-    let source: String  // "ax_focused" | "ax_web" | "ax_text" | "ocr_needed"
+    let source: String  // "ax_focused" | "ax_web" | "ax_text" | "ocr_needed" | "ocr"
     let frame: FrameRect?
+    // Absolute screen-x of the mouse cursor and the keyboard-focused element (left origin, px).
+    // Used by the OCR flow to select which detected column (pane) the user is actually in.
+    var cursor_x: Double? = nil
+    var focus_x: Double? = nil
+    // CGWindowID of the focused window, so the OCR flow can capture exactly that window
+    // (screencapture -l) instead of cropping the screen.
+    var window_id: Int? = nil
+}
+
+// CGWindowID of the frontmost normal window owned by `pid` (front-to-back order, layer 0).
+func frontmostWindowID(pid: pid_t) -> CGWindowID? {
+    let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    guard let infoList = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]]
+    else { return nil }
+    for info in infoList {
+        guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner == pid else { continue }
+        let layer = info[kCGWindowLayer as String] as? Int ?? -1
+        if layer != 0 { continue }  // skip menus/overlays; keep normal app windows
+        if let num = info[kCGWindowNumber as String] as? CGWindowID { return num }
+    }
+    return nil
 }
 
 func emit(_ out: Out) {
@@ -421,14 +442,20 @@ if CommandLine.arguments.contains("--frame-only") {
     let mousePos = NSEvent.mouseLocation
     let screenH  = Double(NSScreen.main?.frame.height ?? 900)
     let axY      = CGFloat(screenH - mousePos.y)  // flip Cocoa bottom-left → AX top-left
-    let win = axFrame(windowRoot)
-    // Prefer the AX pane (column) under the cursor; fall back to a tight cursor-centered box.
-    var crop = paneFrameUnderCursor(cursorX: Float(mousePos.x), cursorAXY: Float(axY), window: win)
+    // OCR the whole window; the OCR flow segments it into columns (panes) and keeps the one
+    // under the cursor/keyboard focus. Frame = window bounds (fallback to a cursor box if zero).
+    var crop = axFrame(windowRoot)
     if crop == .zero {
-        crop = cursorCenteredCrop(window: win, cursorX: CGFloat(mousePos.x), cursorAXY: axY)
+        crop = cursorCenteredCrop(window: .zero, cursorX: CGFloat(mousePos.x), cursorAXY: axY)
     }
+    // Keyboard-focused element x (e.g. the message input) — used when the cursor is outside the
+    // window or parked off-pane.
+    let fFrame = axEl(appEl, "AXFocusedUIElement" as CFString).map { axFrame($0) } ?? .zero
+    let focusX: Double? = fFrame == .zero ? nil : Double(fFrame.midX)
+    let winID = frontmostWindowID(pid: pid).map { Int($0) }
     emit(Out(app: appName, window_title: windowTitle, content: "",
-             source: "ocr", frame: toFrameRect(crop)))
+             source: "ocr", frame: toFrameRect(crop),
+             cursor_x: Double(mousePos.x), focus_x: focusX, window_id: winID))
     exit(0)
 }
 
@@ -674,34 +701,6 @@ func cursorCenteredCrop(window: CGRect, cursorX: CGFloat, cursorAXY: CGFloat) ->
     let x = max(bounds.minX, min(bounds.maxX - vpW, cursorX - vpW / 2))
     let y = max(bounds.minY, min(bounds.maxY - vpH, cursorAXY - vpH / 2))
     return CGRect(x: x, y: y, width: vpW, height: vpH)
-}
-
-// Find the on-screen PANE (column) under the cursor using AX geometry only — not text.
-// Walk up from the element under the cursor, keeping the largest ancestor frame that is still
-// narrower than `maxFrac` of the window. That isolates a single column (Slack sidebar / message
-// list / thread panel) rather than the whole window (one big AXWebArea) or a tiny line element.
-// Returns .zero when no usable pane frame is found (caller falls back to cursorCenteredCrop).
-func paneFrameUnderCursor(cursorX: Float, cursorAXY: Float, window: CGRect,
-                          maxFrac: CGFloat = 0.50, minFrac: CGFloat = 0.12) -> CGRect {
-    let sysEl = AXUIElementCreateSystemWide()
-    var hit: AXUIElement?
-    guard AXUIElementCopyElementAtPosition(sysEl, cursorX, cursorAXY, &hit) == .success,
-          let start = hit else { return .zero }
-
-    let winW = window == .zero ? (NSScreen.main?.frame.width ?? 1440) : window.width
-    var best: CGRect = .zero
-    var current: AXUIElement? = start
-    var hops = 0
-    while let c = current, hops < 25 {
-        let f = axFrame(c)
-        if f != .zero {
-            if f.width > winW * maxFrac { break }       // reached a full-width container; stop
-            if f.width >= winW * minFrac { best = f }    // a plausible pane/column
-        }
-        current = axEl(c, "AXParent" as CFString)
-        hops += 1
-    }
-    return best
 }
 
 // Read cursor position once — used by both Strategy 1 (fallback) and Strategy 2.
