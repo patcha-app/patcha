@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -159,13 +160,16 @@ class AccessibilityCollector:
         except (subprocess.TimeoutExpired, OSError):
             return ("", "")
 
-    def _get_ax_content(self) -> Optional[Dict]:
+    def _get_ax_content(self, frame_only: bool = False) -> Optional[Dict]:
         binary = self._ensure_ax_binary()
         if not binary:
             return None
+        args = [str(binary)]
+        if frame_only:
+            args.append("--frame-only")
         try:
             result = subprocess.run(
-                [str(binary)],
+                args,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -180,7 +184,7 @@ class AccessibilityCollector:
             return None
 
     @staticmethod
-    def _dedup_observations(observations: List[Dict]) -> List[Dict]:
+    def _dedup_observations(observations: List[Dict], dist: float) -> List[Dict]:
         deduped: List[Dict] = []
         for obs in observations:
             ox, oy = obs["x"] + obs["w"] / 2, obs["y"] + obs["h"] / 2
@@ -189,7 +193,7 @@ class AccessibilityCollector:
                 if kept["text"] == obs["text"]:
                     kx = kept["x"] + kept["w"] / 2
                     ky = kept["y"] + kept["h"] / 2
-                    if abs(kx - ox) < 0.03 and abs(ky - oy) < 0.03:
+                    if abs(kx - ox) < dist and abs(ky - oy) < dist:
                         duplicate = True
                         break
             if not duplicate:
@@ -197,11 +201,81 @@ class AccessibilityCollector:
         return deduped
 
     @staticmethod
+    def _detect_column_splits(observations: List[Dict], unit: float) -> List[float]:
+        """Find x-positions of vertical gutters separating side-by-side panes (columns).
+
+        Uses a token-coverage projection: bin the x-axis and count how many tokens span each bin.
+        A real gutter is a contiguous low-coverage run that few tokens cross — so a full-width
+        header (e.g. a search bar) crossing it doesn't merge the columns. Returns the gutter
+        midpoints (interior only), used to partition tokens into columns read in left-to-right
+        order. Zoom-invariant: bins are relative and the threshold is a fraction of peak coverage.
+        """
+        x0 = min(o["x"] for o in observations)
+        x1 = max(o["x"] + o["w"] for o in observations)
+        width = x1 - x0
+        if width < 4 * unit:  # too narrow to hold multiple columns
+            return []
+
+        nbins = 256
+        binw = width / nbins
+        cover = [0] * nbins
+        for o in observations:
+            bi = max(0, int((o["x"] - x0) / binw))
+            bj = min(nbins - 1, int((o["x"] + o["w"] - x0) / binw))
+            for b in range(bi, bj + 1):
+                cover[b] += 1
+
+        peak = max(cover)
+        if peak < 4:  # too sparse to confidently call it multi-column
+            return []
+        thresh = max(2.0, peak * 0.15)
+        min_gutter = max(
+            1, int((1.0 * unit) / binw)
+        )  # gutter must be ~1 line-height wide
+
+        splits: List[float] = []
+        run_start: Optional[int] = None
+        seen_high = False
+        for b in range(nbins):
+            if cover[b] < thresh:
+                if run_start is None:
+                    run_start = b
+            else:
+                # Only record interior gutters (a high-coverage column must precede them).
+                if (
+                    seen_high
+                    and run_start is not None
+                    and (b - run_start) >= min_gutter
+                ):
+                    splits.append(x0 + (run_start + b) / 2 * binw)
+                run_start = None
+                seen_high = True
+        return splits
+
+    @staticmethod
     def _reconstruct_layout(observations: List[Dict]) -> str:
+        """Rebuild on-screen text from OCR observations (normalized coords, bottom-left origin).
+
+        Side-by-side panes are segmented into columns by x (a vertical-gutter projection) and read
+        column-major (each column top-to-bottom, columns left-to-right) so a chat sidebar, message
+        list, and thread panel don't interleave. All thresholds derive from `unit` = median text
+        height, so the output is invariant to screen/app zoom. Mirrors Swift `spatialJoin`.
+        """
         if not observations:
             return ""
 
-        observations = AccessibilityCollector._dedup_observations(observations)
+        # Adaptive base unit: median text height (the per-observation `h`), scales with zoom.
+        heights = [o["h"] for o in observations if o.get("h") and o["h"] > 0]
+        unit = statistics.median(heights) if heights else 0.015
+
+        line_tol = 0.6 * unit  # tokens within this Δy_mid are on the same visual line
+        block_gap = 2.2 * unit  # vertical jump above this → blank line between blocks
+        dedup_dist = 1.0 * unit
+        hgap = 8.0 * unit  # within-line horizontal split (gutter/timestamp vs body)
+
+        observations = AccessibilityCollector._dedup_observations(
+            observations, dist=dedup_dist
+        )
 
         def x_mid(o: Dict) -> float:
             return o["x"] + o["w"] / 2
@@ -209,69 +283,65 @@ class AccessibilityCollector:
         def y_mid(o: Dict) -> float:
             return o["y"] + o["h"] / 2
 
-        def gap_splits(midpoints: List[float], min_gap: float) -> List[float]:
-            pts = sorted(midpoints)
-            splits = []
-            for i in range(1, len(pts)):
-                if pts[i] - pts[i - 1] > min_gap:
-                    splits.append((pts[i - 1] + pts[i]) / 2)
-            return splits
+        def emit_line(toks: List[Dict]) -> List[str]:
+            toks = sorted(toks, key=lambda o: o["x"])
+            out: List[str] = []
+            cur: List[str] = []
+            last_right = None
+            for o in toks:
+                if last_right is not None and (o["x"] - last_right) > hgap:
+                    out.append(" ".join(cur))
+                    cur = []
+                cur.append(o["text"])
+                last_right = o["x"] + o["w"]
+            if cur:
+                out.append(" ".join(cur))
+            return out
 
-        def assign(val: float, splits: List[float]) -> int:
-            return sum(1 for s in splits if val > s)
+        def assemble_column(col_obs: List[Dict]) -> List[str]:
+            """Top-to-bottom line reconstruction within a single column."""
+            ordered = sorted(col_obs, key=lambda o: (-y_mid(o), x_mid(o)))
+            lines: List[str] = []
+            current: List[Dict] = []
+            line_y: Optional[float] = None  # anchored to the top-most token on the line
+            for o in ordered:
+                if current and line_y is not None and (line_y - y_mid(o)) > line_tol:
+                    lines.extend(emit_line(current))
+                    if (line_y - y_mid(o)) > block_gap:
+                        lines.append("")  # blank line between distinct blocks/messages
+                    current = []
+                    line_y = None
+                current.append(o)
+                line_y = y_mid(o) if line_y is None else max(line_y, y_mid(o))
+            if current:
+                lines.extend(emit_line(current))
+            return lines
 
-        col_splits = gap_splits([x_mid(o) for o in observations], min_gap=0.02)
+        # Segment into columns by x, then read column-major (left-to-right).
+        splits = AccessibilityCollector._detect_column_splits(observations, unit)
+        columns: List[List[Dict]] = [[] for _ in range(len(splits) + 1)]
+        for o in observations:
+            idx = sum(1 for s in splits if x_mid(o) > s)
+            columns[idx].append(o)
 
-        cols: Dict[int, List] = {}
-        for obs in observations:
-            cols.setdefault(assign(x_mid(obs), col_splits), []).append(obs)
+        lines: List[str] = []
+        for col_obs in columns:
+            if not col_obs:
+                continue
+            if lines:
+                lines.append("")  # blank line between columns
+            lines.extend(assemble_column(col_obs))
 
-        section_parts = []
-        for ci in sorted(cols):
-            col_obs = cols[ci]
+        # Collapse runs of blank lines and strip trailing blanks.
+        cleaned: List[str] = []
+        for ln in lines:
+            if ln == "" and (not cleaned or cleaned[-1] == ""):
+                continue
+            cleaned.append(ln)
+        while cleaned and cleaned[-1] == "":
+            cleaned.pop()
 
-            row_splits = gap_splits(
-                sorted([y_mid(o) for o in col_obs], reverse=True),
-                min_gap=0.02,
-            )
-            row_splits_asc = sorted(row_splits)
-
-            def row_idx(o: Dict) -> int:
-                ym = y_mid(o)
-                return sum(1 for s in row_splits_asc if ym < s)
-
-            rows: Dict[int, List] = {}
-            for obs in col_obs:
-                rows.setdefault(row_idx(obs), []).append(obs)
-
-            col_lines = []
-            for ri in sorted(rows):
-                row_obs = sorted(rows[ri], key=lambda o: -y_mid(o))
-                lines: List[str] = []
-                current: List[Dict] = []
-                for obs in row_obs:
-                    if not current or abs(y_mid(current[-1]) - y_mid(obs)) <= 0.010:
-                        current.append(obs)
-                    else:
-                        lines.append(
-                            " ".join(
-                                o["text"] for o in sorted(current, key=lambda o: o["x"])
-                            )
-                        )
-                        current = [obs]
-                if current:
-                    lines.append(
-                        " ".join(
-                            o["text"] for o in sorted(current, key=lambda o: o["x"])
-                        )
-                    )
-                col_lines.extend(lines)
-                if ri < max(rows):
-                    col_lines.append("---")
-
-            section_parts.append("\n".join(col_lines))
-
-        return "\n\n===\n\n".join(section_parts)[:4000]
+        return "\n".join(cleaned)[:4000]
 
     def _take_ocr_screenshot(
         self,
@@ -344,32 +414,41 @@ class AccessibilityCollector:
             except OSError:
                 pass
 
+    def _should_skip(self, app_name: str, window_title: str) -> bool:
+        """Filter checks applied before OCR so we never capture sensitive windows."""
+        if app_name in _build_skip_apps():
+            logger.debug("Skipping capture for excluded app: %s", app_name)
+            return True
+        if is_incognito_window(window_title):
+            logger.debug("Skipping capture: incognito window (%s)", window_title)
+            return True
+        if is_banking_domain(window_title):
+            logger.debug("Skipping capture: banking site (%s)", window_title)
+            return True
+        return False
+
     def _get_screen_content(self) -> Optional[Dict]:
-        ax = self._get_ax_content()
+        # OCR-only capture: Screen Recording permission is mandatory.
+        if not _has_screen_recording_permission():
+            logger.debug("Screen Recording permission not granted; skipping capture")
+            return None
+
+        # ax_content --frame-only supplies app/window metadata + a cursor-centered crop frame.
+        ax = self._get_ax_content(frame_only=True)
         if ax:
             app_name = ax.get("app", "")
             window_title = ax.get("window_title", "")
-            source = ax.get("source", "ocr_needed")
-            logger.debug("AX result: app=%s source=%s", app_name, source)
+            frame = ax.get("frame")
+        else:
+            # AX binary unavailable — fall back to applescript for app/window, full-window OCR.
+            app_name, window_title = self._get_app_name_fallback()
+            frame = None
 
-            if source != "ocr_needed":
-                content = ax.get("content", "").strip()
-                if content:
-                    return {
-                        "app": app_name,
-                        "window_title": window_title,
-                        "text": content,
-                        "raw_text_source": "ax",
-                    }
+        # Filter BEFORE OCR so banking/incognito/excluded windows are never screenshotted.
+        if self._should_skip(app_name, window_title):
+            return None
 
-            # AX binary ran but content requires OCR; use app/window and frame from AX
-            return self._take_ocr_screenshot(
-                app_name, window_title, frame=ax.get("frame")
-            )
-
-        # AX binary unavailable — fall back to applescript for app name + OCR
-        app_name, window_title = self._get_app_name_fallback()
-        return self._take_ocr_screenshot(app_name, window_title)
+        return self._take_ocr_screenshot(app_name, window_title, frame=frame)
 
     @staticmethod
     def _content_diff(old: str, new: str) -> str:
@@ -387,15 +466,7 @@ class AccessibilityCollector:
             return
         app = data["app"]
         window_title = data["window_title"]
-        if app in _build_skip_apps():
-            logger.debug("Skipping capture for excluded app: %s", app)
-            return
-        if is_incognito_window(window_title):
-            logger.debug("Skipping capture: incognito window (%s)", window_title)
-            return
-        if is_banking_domain(window_title):
-            logger.debug("Skipping capture: banking site (%s)", window_title)
-            return
+        # Skip-app / incognito / banking filtering is applied pre-OCR in _get_screen_content.
         text = data["text"]
         if len(text.strip()) < _MIN_CONTENT_LEN:
             logger.debug(

@@ -44,17 +44,59 @@ func axFrameArea(_ el: AXUIElement) -> Double {
     return Double(r.width * r.height)
 }
 
-func extractText(_ el: AXUIElement, maxChars: Int = 4000) -> String? {
+// Compute a horizontal column band [minX, maxX] within a container, anchored on the focus point.
+// This isolates the pane the user is in (e.g. Slack's message list) from sidebars on the left
+// and thread/detail panels on the right.
+//   focusX:     screen X of the focused element or cursor (0 = unknown).
+//   focusWidth: width of the focused element — "useful" only when < 70% of the container width
+//               (a full-width frame is the container itself and gives no column information).
+// Returns (0, .infinity) when there is no usable focus hint and the viewport is narrow.
+func columnBounds(viewport: CGRect, focusX: CGFloat, focusWidth: CGFloat) -> (CGFloat, CGFloat) {
+    let usefulWidth = focusWidth > 0 && focusWidth < viewport.width * 0.70
+    if focusX > 0 && viewport.width > 600 {
+        if usefulWidth {
+            // Exact column from focused element frame + 80px left pad for sender avatars.
+            return (max(viewport.minX, focusX - focusWidth / 2 - 80),
+                    min(viewport.maxX, focusX + focusWidth / 2))
+        }
+        // Cursor-only or full-width focus: ±15% band around the point.
+        let half = viewport.width * 0.15
+        return (max(viewport.minX, focusX - half), min(viewport.maxX, focusX + half))
+    }
+    // No usable focus hint — skip leftmost 20% for wide viewports (sidebar heuristic).
+    return (viewport.width > 800 ? viewport.minX + viewport.width * 0.20 : 0, .infinity)
+}
+
+func extractText(_ el: AXUIElement, maxChars: Int = 4000,
+                 focusX: CGFloat = 0, focusWidth: CGFloat = 0) -> String? {
     let role = axStr(el, "AXRole" as CFString) ?? ""
 
-    // Web areas and rich-text editors (Notion, Slack — Electron AXTextArea with DOM children):
-    // use positioned subtree collection so table rows and inline elements stay on one line.
-    if role == "AXWebArea" { return extractWebText(el, maxChars: maxChars) }
+    // Web areas and rich-text editors (Notion, Slack — Electron apps expose either AXWebArea
+    // or AXTextArea with positioned DOM children): collect text nodes spatially so table rows
+    // and inline elements stay on one line, and apply a column band around the focus point.
+    if role == "AXWebArea" {
+        return extractWebText(el, maxChars: maxChars, focusX: focusX, focusWidth: focusWidth)
+    }
     if role == "AXTextArea" {
         let viewport = axFrame(el)
-        let nodes = gatherTextNodes(el, viewport: viewport, minX: 0)
+        let (minX, maxX) = columnBounds(viewport: viewport, focusX: focusX, focusWidth: focusWidth)
+
+        // Try the ARIA main landmark with column bounds applied. AXLandmarkMain maps to <main>
+        // but often wraps the full layout (sidebar + messages + thread panel), so the column
+        // filter is still needed.
+        if let main = findSubrole(el, "AXLandmarkMain") {
+            let nodes = gatherTextNodes(main, viewport: viewport, minX: minX, maxX: maxX)
+            if let t = spatialJoin(nodes, maxChars: maxChars) { return t }
+        }
+
+        // Direct column-filtered traversal over the full AXTextArea.
+        let nodes = gatherTextNodes(el, viewport: viewport, minX: minX, maxX: maxX)
         if let t = spatialJoin(nodes, maxChars: maxChars) { return t }
-        // No positioned children — fall through to string-range path below.
+
+        // Column filter produced nothing — return nil so the caller can try the next strategy.
+        // Do NOT fall through to AXVisibleCharacterRange/AXValue, which would return the full
+        // unfiltered window text and defeat the column filtering entirely.
+        if minX > 0 || maxX < .infinity { return nil }
     }
 
     // Native scroll views (Terminal, TextEdit): AXVisibleCharacterRange is accurate.
@@ -95,8 +137,9 @@ private struct TextNode {
     let frame: CGRect  // .zero means no position info
 }
 
-// Collect text nodes from a subtree, filtering by viewport and optional minX.
-private func gatherTextNodes(_ root: AXUIElement, viewport: CGRect, minX: CGFloat) -> [TextNode] {
+// Collect text nodes from a subtree, filtering by viewport, optional minX, and optional maxX.
+private func gatherTextNodes(_ root: AXUIElement, viewport: CGRect,
+                              minX: CGFloat = 0, maxX: CGFloat = .infinity) -> [TextNode] {
     let textRoles: Set<String> = ["AXStaticText", "AXHeading", "AXLink"]
     var nodes: [TextNode] = []
     var queue: [AXUIElement] = axEls(root, "AXChildren" as CFString)
@@ -106,7 +149,11 @@ private func gatherTextNodes(_ root: AXUIElement, viewport: CGRect, minX: CGFloa
         if textRoles.contains(role) {
             let f = axFrame(el)
             if viewport != .zero, f != .zero, !viewport.intersects(f) { continue }
+            // When column bounds are active, drop frameless nodes — they are UI chrome
+            // (icon labels, tooltips) that have no position and can't be placed in the layout.
+            if (minX > 0 || maxX < .infinity), f == .zero { continue }
             if minX > 0, f != .zero, f.midX < minX { continue }
+            if maxX < .infinity, f != .zero, f.midX > maxX { continue }
             let val = axStr(el, "AXValue" as CFString) ?? axStr(el, "AXTitle" as CFString) ?? ""
             let trimmed = val.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { nodes.append(TextNode(text: trimmed, frame: f)) }
@@ -144,18 +191,34 @@ private func spatialJoin(_ nodes: [TextNode], maxChars: Int) -> String? {
     // Nodes with no frame go at the end.
     let noFrame = nodes.filter { $0.frame == .zero }
 
+    // X-gap threshold: if two same-Y nodes are more than 30% of the total X span apart,
+    // treat them as separate items (e.g. sender name vs. message body in Slack).
+    let xMin = positioned.map { $0.frame.minX }.min() ?? 0
+    let xMax = positioned.map { $0.frame.maxX }.max() ?? (xMin + 1)
+    let xGapThreshold: CGFloat = max(100, (xMax - xMin) * 0.30)
+
     // Group into lines.
     var lines: [[String]] = []
     var currentLine: [String] = []
     var lastMidY: CGFloat = -9999
+    var lastMaxX: CGFloat = -9999
 
     for node in positioned {
-        if abs(node.frame.midY - lastMidY) > lineThreshold && !currentLine.isEmpty {
+        let yDiff = abs(node.frame.midY - lastMidY)
+        let xGap = currentLine.isEmpty ? 0 : (node.frame.minX - lastMaxX)
+        let newLine = (!currentLine.isEmpty && yDiff > lineThreshold) ||
+                      (!currentLine.isEmpty && yDiff <= lineThreshold && xGap > xGapThreshold)
+        if newLine {
             lines.append(currentLine)
             currentLine = []
+            // Insert a blank line between message blocks (large vertical jumps).
+            if yDiff > lineThreshold * 5 && !lines.isEmpty {
+                lines.append([])
+            }
         }
         currentLine.append(node.text)
         lastMidY = node.frame.midY
+        lastMaxX = node.frame.maxX
     }
     if !currentLine.isEmpty { lines.append(currentLine) }
     for node in noFrame { lines.append([node.text]) }
@@ -175,22 +238,28 @@ private func spatialJoin(_ nodes: [TextNode], maxChars: Int) -> String? {
 }
 
 func collectTextNodes(_ root: AXUIElement, maxChars: Int = 4000,
-                      viewport: CGRect = .zero, minX: CGFloat = 0) -> String? {
-    let nodes = gatherTextNodes(root, viewport: viewport, minX: minX)
+                      viewport: CGRect = .zero, minX: CGFloat = 0, maxX: CGFloat = .infinity) -> String? {
+    let nodes = gatherTextNodes(root, viewport: viewport, minX: minX, maxX: maxX)
     return spatialJoin(nodes, maxChars: maxChars)
 }
 
 // Extract text from an AXWebArea.
 // The web area's own frame is the visible viewport — content scrolled out of view is excluded.
-func extractWebText(_ root: AXUIElement, maxChars: Int = 4000) -> String? {
+// focusX/focusWidth anchor a column band (see columnBounds) so wide single-page apps like Slack
+// don't mix the sidebar and thread/detail panel into the main content.
+func extractWebText(_ root: AXUIElement, maxChars: Int = 4000,
+                    focusX: CGFloat = 0, focusWidth: CGFloat = 0) -> String? {
     let viewport = axFrame(root)
+    let (minX, maxX) = columnBounds(viewport: viewport, focusX: focusX, focusWidth: focusWidth)
+
     // 1. ARIA main landmark — maps to <main> in HTML; Slack, GitHub, Notion all use it.
+    //    Column bounds are still applied because <main> can span the full window width.
     if let main = findSubrole(root, "AXLandmarkMain") {
-        if let t = collectTextNodes(main, maxChars: maxChars, viewport: viewport) { return t }
+        if let t = collectTextNodes(main, maxChars: maxChars, viewport: viewport,
+                                    minX: minX, maxX: maxX) { return t }
     }
-    // 2. Geometric fallback: viewport filter + skip leftmost 20% (navigation sidebars).
-    let sidebarCutoff = viewport.minX + viewport.width * 0.20
-    return collectTextNodes(root, maxChars: maxChars, viewport: viewport, minX: sidebarCutoff)
+    // 2. Geometric fallback over the whole web area with the same column bounds.
+    return collectTextNodes(root, maxChars: maxChars, viewport: viewport, minX: minX, maxX: maxX)
 }
 
 // Walk up the ancestor chain to find the nearest AXWebArea or AXTextArea container.
@@ -345,6 +414,23 @@ let frontWin = axEl(appEl, "AXFocusedWindow" as CFString)
     ?? axEls(appEl, "AXWindows" as CFString).first
 let windowTitle = frontWin.flatMap { axStr($0, "AXTitle" as CFString) } ?? ""
 let windowRoot = frontWin ?? appEl
+
+// --frame-only: skip text extraction entirely; emit app/window metadata plus a cursor-centered
+// crop frame for the OCR pipeline. (Cursor position needs native code, hence this Swift helper.)
+if CommandLine.arguments.contains("--frame-only") {
+    let mousePos = NSEvent.mouseLocation
+    let screenH  = Double(NSScreen.main?.frame.height ?? 900)
+    let axY      = CGFloat(screenH - mousePos.y)  // flip Cocoa bottom-left → AX top-left
+    let win = axFrame(windowRoot)
+    // Prefer the AX pane (column) under the cursor; fall back to a tight cursor-centered box.
+    var crop = paneFrameUnderCursor(cursorX: Float(mousePos.x), cursorAXY: Float(axY), window: win)
+    if crop == .zero {
+        crop = cursorCenteredCrop(window: win, cursorX: CGFloat(mousePos.x), cursorAXY: axY)
+    }
+    emit(Out(app: appName, window_title: windowTitle, content: "",
+             source: "ocr", frame: toFrameRect(crop)))
+    exit(0)
+}
 
 if diagMode {
     let axTrusted = AXIsProcessTrusted()
@@ -577,31 +663,84 @@ func narrowToViewport(_ frame: CGRect, cursorX: CGFloat, cursorAXY: CGFloat) -> 
     return CGRect(x: x, y: y, width: vpW, height: vpH)
 }
 
-// Strategy 1: keyboard focus — walk up from the focused element to the nearest content container
-if let focused = axEl(appEl, "AXFocusedUIElement" as CFString),
-   let container = nearestContentAncestor(focused),
-   let text = extractText(container) {
-    emit(Out(app: appName, window_title: windowTitle, content: text, source: "ax_focused", frame: toFrameRect(axFrame(container))))
-    exit(0)
+// Cursor-centered crop fallback for the --frame-only OCR path: a viewport-sized region centered
+// on the cursor, clamped to the window (or screen if the window frame is unavailable). Used only
+// when AX pane detection yields nothing. Tight width so it tends to isolate one column.
+func cursorCenteredCrop(window: CGRect, cursorX: CGFloat, cursorAXY: CGFloat) -> CGRect {
+    let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let bounds = window == .zero ? screen : window
+    let vpW = min(bounds.width,  screen.width  * 0.36)   // tunable; ~one Slack column
+    let vpH = min(bounds.height, screen.height * 0.65)
+    let x = max(bounds.minX, min(bounds.maxX - vpW, cursorX - vpW / 2))
+    let y = max(bounds.minY, min(bounds.maxY - vpH, cursorAXY - vpH / 2))
+    return CGRect(x: x, y: y, width: vpW, height: vpH)
 }
 
-// Strategy 2: element under the mouse cursor — tells us exactly which pane the user is in
+// Find the on-screen PANE (column) under the cursor using AX geometry only — not text.
+// Walk up from the element under the cursor, keeping the largest ancestor frame that is still
+// narrower than `maxFrac` of the window. That isolates a single column (Slack sidebar / message
+// list / thread panel) rather than the whole window (one big AXWebArea) or a tiny line element.
+// Returns .zero when no usable pane frame is found (caller falls back to cursorCenteredCrop).
+func paneFrameUnderCursor(cursorX: Float, cursorAXY: Float, window: CGRect,
+                          maxFrac: CGFloat = 0.50, minFrac: CGFloat = 0.12) -> CGRect {
+    let sysEl = AXUIElementCreateSystemWide()
+    var hit: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(sysEl, cursorX, cursorAXY, &hit) == .success,
+          let start = hit else { return .zero }
+
+    let winW = window == .zero ? (NSScreen.main?.frame.width ?? 1440) : window.width
+    var best: CGRect = .zero
+    var current: AXUIElement? = start
+    var hops = 0
+    while let c = current, hops < 25 {
+        let f = axFrame(c)
+        if f != .zero {
+            if f.width > winW * maxFrac { break }       // reached a full-width container; stop
+            if f.width >= winW * minFrac { best = f }    // a plausible pane/column
+        }
+        current = axEl(c, "AXParent" as CFString)
+        hops += 1
+    }
+    return best
+}
+
+// Read cursor position once — used by both Strategy 1 (fallback) and Strategy 2.
 let mousePos = NSEvent.mouseLocation  // bottom-left origin (Cocoa)
 let screenHeight = Double(NSScreen.main?.frame.height ?? 900)
 let axY = Float(screenHeight - mousePos.y)  // flip to top-left origin for AX
+let cursorX = CGFloat(mousePos.x)
+
+// Strategy 1: keyboard focus — walk up from the focused element to the nearest content container.
+// If the focused element has no usable frame (common in Electron apps like Slack), fall back to
+// the cursor position so the column band is still anchored correctly.
+if let focused = axEl(appEl, "AXFocusedUIElement" as CFString),
+   let container = nearestContentAncestor(focused) {
+    let focusedFrame = axFrame(focused)
+    let containerFrame = axFrame(container)
+    let frameIsUseful = focusedFrame != .zero && containerFrame != .zero
+                        && focusedFrame.width < containerFrame.width * 0.70
+    let effectiveFocusX    = frameIsUseful ? focusedFrame.midX  : cursorX
+    let effectiveFocusWidth = frameIsUseful ? focusedFrame.width : CGFloat(0)
+    if let text = extractText(container, focusX: effectiveFocusX, focusWidth: effectiveFocusWidth) {
+        emit(Out(app: appName, window_title: windowTitle, content: text, source: "ax_focused", frame: toFrameRect(containerFrame)))
+        exit(0)
+    }
+}
+
+// Strategy 2: element under the mouse cursor — tells us exactly which pane the user is in
 var cursorEl: AXUIElement?
 let sysEl = AXUIElementCreateSystemWide()
 if AXUIElementCopyElementAtPosition(sysEl, Float(mousePos.x), axY, &cursorEl) == .success,
    let el = cursorEl,
    let container = nearestContentAncestor(el),
-   let text = extractText(container) {
+   let text = extractText(container, focusX: cursorX) {
     let role = axStr(container, "AXRole" as CFString) ?? ""
     let src = role == "AXWebArea" ? "ax_web" : "ax_text"
     emit(Out(app: appName, window_title: windowTitle, content: text, source: src, frame: toFrameRect(axFrame(container))))
     exit(0)
 }
 
-// Strategy 3: largest content element in the frontmost window (fallback)
+// Strategy 3: largest content element in the frontmost window (fallback — no focus hint)
 let candidates = findContentEls(windowRoot)
 if let best = candidates.max(by: { axFrameArea($0.el) < axFrameArea($1.el) }),
    let text = extractText(best.el) {

@@ -2,10 +2,13 @@
 # Show raw JSON output from ax_content and ocr binaries.
 # OCR mirrors real usage: runs ax_content first, crops to its frame if source=ocr_needed.
 #
-# Usage: ./tests/manual/raw_outputs.sh [--ax-only] [--ocr-only] [--pretty]
-#   --ax-only   show ax_content output only, skip OCR
-#   --ocr-only  skip ax_content display, but still use it for frame crop
-#   --pretty    pipe JSON output through python3 -m json.tool
+# Run the production OCR pipeline (ax_content --frame-only → cursor-centered crop → OCR →
+# _reconstruct_layout) and print the reconstructed TEXT as it would be stored.
+#
+# Usage: ./tests/manual/raw_outputs.sh [--ax-only] [--raw-obs] [--pretty]
+#   --ax-only   show ax_content --frame-only metadata only, skip OCR
+#   --raw-obs   also dump the raw OCR coordinate observations (debugging)
+#   --pretty    prettify any JSON shown (frame metadata, raw observations)
 
 set -euo pipefail
 
@@ -20,12 +23,12 @@ TMP_IMG="$(mktemp /tmp/patcha_ocr_XXXXXX.png)"
 mkdir -p "$ROOT/data"
 
 AX_ONLY=false
-OCR_ONLY=false
+RAW_OBS=false
 PRETTY=false
 for arg in "$@"; do
-    [[ "$arg" == "--ax-only"  ]] && AX_ONLY=true
-    [[ "$arg" == "--ocr-only" ]] && OCR_ONLY=true
-    [[ "$arg" == "--pretty"   ]] && PRETTY=true
+    [[ "$arg" == "--ax-only" ]] && AX_ONLY=true
+    [[ "$arg" == "--raw-obs" ]] && RAW_OBS=true
+    [[ "$arg" == "--pretty"  ]] && PRETTY=true
 done
 
 pretty() {
@@ -46,14 +49,17 @@ if [[ ! -f "$AX_BIN" || "$AX_SRC" -nt "$AX_BIN" ]]; then
     echo "► Done." >&2
 fi
 
-# --- run ax_content, capture output ---
-AX_JSON=$("$AX_BIN" || true)
+# --- countdown so you can move cursor into the target app/column before capture ---
+echo "► Capturing in 4s — switch to the app and position cursor in the column you want..." >&2
+for i in 4 3 2 1; do printf "\r  %ds " $i >&2; sleep 1; done
+printf "\r  capturing...    \n" >&2
 
-if ! $OCR_ONLY; then
-    echo "" >&2
-    echo "=== ax_content raw output ===" >&2
-    echo "$AX_JSON" | pretty
-fi
+# --- run ax_content in --frame-only mode (production path: metadata + cursor-centered crop) ---
+AX_JSON=$("$AX_BIN" --frame-only || true)
+
+echo "" >&2
+echo "=== ax_content --frame-only output ===" >&2
+echo "$AX_JSON" | pretty
 
 if $AX_ONLY; then exit 0; fi
 
@@ -67,12 +73,9 @@ fi
 echo "" >&2
 echo "=== screencapture + ocr raw output ===" >&2
 
-AX_SOURCE=$(echo "$AX_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('source',''))" 2>/dev/null || true)
-echo "► ax source: ${AX_SOURCE:-unknown}" >&2
-
-# Build screencapture command — crop to AX frame (+50px pad) when source=ocr_needed
+# Build screencapture command — crop to the cursor-centered frame (+50px pad).
 CAP_CMD=(screencapture -x)
-if [[ "$AX_SOURCE" == "ocr_needed" ]] && command -v python3 &>/dev/null; then
+if command -v python3 &>/dev/null; then
     CROP=$(echo "$AX_JSON" | python3 - <<'PYEOF'
 import sys, json
 try:
@@ -90,13 +93,11 @@ except (json.JSONDecodeError, TypeError):
 PYEOF
     )
     if [[ -n "$CROP" ]]; then
-        echo "► cropping to frame: $CROP (+ 50px pad)" >&2
+        echo "► cropping to cursor-centered frame: $CROP (+ 50px pad)" >&2
         CAP_CMD+=(-R "$CROP")
     else
         echo "► no frame in AX output, full-screen capture" >&2
     fi
-else
-    echo "► AX extracted text directly — capturing full screen for comparison" >&2
 fi
 
 "${CAP_CMD[@]}" "$TMP_IMG"
@@ -108,4 +109,21 @@ if [[ "$IMG_BYTES" -lt 10000 ]]; then
     exit 1
 fi
 
-"$OCR_BIN" "$TMP_IMG" | pretty
+OCR_JSON=$("$OCR_BIN" "$TMP_IMG")
+
+# Raw coordinate observations only when explicitly requested (debugging).
+if $RAW_OBS; then
+    echo "" >&2
+    echo "=== raw OCR observations ===" >&2
+    echo "$OCR_JSON" | pretty
+fi
+
+# Headline output: the reconstructed TEXT, exactly as production stores it.
+echo "" >&2
+echo "=== reconstructed layout (_reconstruct_layout) ===" >&2
+echo "$OCR_JSON" | "$ROOT/.venv/bin/python" -c "
+import sys, json
+from patcha.collectors.accessibility import AccessibilityCollector
+obs = json.load(sys.stdin)
+print(AccessibilityCollector._reconstruct_layout(obs))
+"
