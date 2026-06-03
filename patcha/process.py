@@ -113,7 +113,7 @@ class EventPreprocessor:
             log.debug("skipping event with empty text type=%s", event.type)
             return []
         chunks = chunk_text(
-            text, config.max_embedding_tokens, config.embedding_chunk_overlap
+            text, embedding.effective_max_tokens(), config.embedding_chunk_overlap
         )
 
         if len(chunks) == 1:
@@ -162,7 +162,7 @@ class EventPreprocessor:
         for event in batch:
             text = _build_embedding_text(event)
             chunks = chunk_text(
-                text, config.max_embedding_tokens, config.embedding_chunk_overlap
+                text, embedding.effective_max_tokens(), config.embedding_chunk_overlap
             )
             if len(chunks) == 1:
                 pairs.append((event, chunks[0]))

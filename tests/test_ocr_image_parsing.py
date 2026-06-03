@@ -33,7 +33,9 @@ def _make_layout(panes: list[dict], img_w: int, img_h: int) -> Image.Image:
     font = _font()
     for pane in panes:
         for i, line in enumerate(pane["lines"]):
-            draw.text((pane["x"], pane["y"] + i * _LINE_HEIGHT), line, fill="black", font=font)
+            draw.text(
+                (pane["x"], pane["y"] + i * _LINE_HEIGHT), line, fill="black", font=font
+            )
     return img
 
 
@@ -100,7 +102,7 @@ _2H_LEFT_X = 50
 _2H_RIGHT_X = 750
 _2H_PANE_Y = 100
 # normalized centers for select_x
-_2H_LEFT_MID = (_2H_LEFT_X + 450) / 2 / _2H_IMG_W   # ~0.21
+_2H_LEFT_MID = (_2H_LEFT_X + 450) / 2 / _2H_IMG_W  # ~0.21
 _2H_RIGHT_MID = (_2H_RIGHT_X + 1150) / 2 / _2H_IMG_W  # ~0.79
 
 
@@ -149,9 +151,30 @@ def test_two_pane_h_no_cursor_all_columns(ocr_binary):
 # Three-pane horizontal layout
 # ---------------------------------------------------------------------------
 
-_SIDEBAR_LINES = ["NAV HOME", "NAV INBOX", "NAV DRAFTS", "NAV ARCHIVE", "NAV STARRED", "NAV MUTED"]
-_MAIN_LINES = ["MSG ALPHA", "MSG BETA", "MSG GAMMA", "MSG DELTA", "MSG EPSILON", "MSG ZETA"]
-_THREAD_LINES = ["REPLY ALPHA", "REPLY BETA", "REPLY GAMMA", "REPLY DELTA", "REPLY EPSILON", "REPLY ZETA"]
+_SIDEBAR_LINES = [
+    "NAV HOME",
+    "NAV INBOX",
+    "NAV DRAFTS",
+    "NAV ARCHIVE",
+    "NAV STARRED",
+    "NAV MUTED",
+]
+_MAIN_LINES = [
+    "MSG ALPHA",
+    "MSG BETA",
+    "MSG GAMMA",
+    "MSG DELTA",
+    "MSG EPSILON",
+    "MSG ZETA",
+]
+_THREAD_LINES = [
+    "REPLY ALPHA",
+    "REPLY BETA",
+    "REPLY GAMMA",
+    "REPLY DELTA",
+    "REPLY EPSILON",
+    "REPLY ZETA",
+]
 
 _3H_IMG_W = 1800
 _3H_IMG_H = 900
@@ -159,9 +182,9 @@ _3H_SIDEBAR_X = 50
 _3H_MAIN_X = 600
 _3H_THREAD_X = 1300
 _3H_PANE_Y = 100
-_3H_SIDEBAR_MID = (_3H_SIDEBAR_X + 400) / 2 / _3H_IMG_W   # ~0.12
-_3H_MAIN_MID = (_3H_MAIN_X + 1100) / 2 / _3H_IMG_W        # ~0.47
-_3H_THREAD_MID = (_3H_THREAD_X + 1750) / 2 / _3H_IMG_W    # ~0.85
+_3H_SIDEBAR_MID = (_3H_SIDEBAR_X + 400) / 2 / _3H_IMG_W  # ~0.12
+_3H_MAIN_MID = (_3H_MAIN_X + 1100) / 2 / _3H_IMG_W  # ~0.47
+_3H_THREAD_MID = (_3H_THREAD_X + 1750) / 2 / _3H_IMG_W  # ~0.85
 
 
 def _three_pane_h_image():
@@ -189,8 +212,12 @@ def test_three_pane_h_cursor_select_each(ocr_binary, select_x, keep, drop):
     obs = _run_ocr(ocr_binary, _three_pane_h_image())
     assert obs, "OCR returned no observations"
     out = _reconstruct(obs, select_x=select_x)
-    assert any(t in out for t in keep), f"expected pane content missing (select_x={select_x:.2f})"
-    assert not any(t in out for t in drop), f"unexpected pane content present (select_x={select_x:.2f})"
+    assert any(t in out for t in keep), (
+        f"expected pane content missing (select_x={select_x:.2f})"
+    )
+    assert not any(t in out for t in drop), (
+        f"unexpected pane content present (select_x={select_x:.2f})"
+    )
 
 
 def test_three_pane_h_no_interleave(ocr_binary):
@@ -224,7 +251,12 @@ def test_three_pane_h_no_interleave(ocr_binary):
 # ---------------------------------------------------------------------------
 
 _TOP_LINES = ["TOP ROW ONE", "TOP ROW TWO", "TOP ROW THREE", "TOP ROW FOUR"]
-_BOTTOM_LINES = ["BOTTOM ROW ONE", "BOTTOM ROW TWO", "BOTTOM ROW THREE", "BOTTOM ROW FOUR"]
+_BOTTOM_LINES = [
+    "BOTTOM ROW ONE",
+    "BOTTOM ROW TWO",
+    "BOTTOM ROW THREE",
+    "BOTTOM ROW FOUR",
+]
 
 _2V_IMG_W = 1200
 _2V_IMG_H = 900
