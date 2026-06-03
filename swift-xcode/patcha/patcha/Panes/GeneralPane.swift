@@ -5,6 +5,7 @@ struct GeneralPane: View {
     @ObservedObject var daemonManager: DaemonManager
     @State private var restartFeedback = false
     @State private var pauseDuration: Int = 30 * 60
+    @Environment(\.colorScheme) private var colorScheme
 
     private let pauseOptions: [(String, Int)] = [
         ("30 minutes", 30 * 60),
@@ -45,12 +46,9 @@ struct GeneralPane: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         }
     }
 
@@ -95,12 +93,9 @@ struct GeneralPane: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         }
     }
 

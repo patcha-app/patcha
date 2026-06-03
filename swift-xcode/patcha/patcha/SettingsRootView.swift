@@ -29,6 +29,8 @@ struct SettingsRootView: View {
             } else {
                 PlaceholderPane(section: .general)
             }
+        case .timeline:
+            TimelinePane(mcpManager: mcpManager)
         case .memories:
             PlaceholderPane(section: .memories)
         case .modelPreference:
@@ -49,20 +51,23 @@ struct SettingsRootView: View {
                 OnboardingView(store: store)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(spacing: 0) {
-                    AccessibilityBanner()
-                    HStack(spacing: 0) {
-                        SettingsSidebar(selected: $section)
-                            .frame(width: 220)
-                            .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
-                            .ignoresSafeArea(edges: .top)
-                        contentView
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(PatchaTheme.bg(for: colorScheme).ignoresSafeArea())
-                            .ignoresSafeArea(edges: .top)
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        AccessibilityBanner()
+                        SettingsSidebar(selected: $section, authManager: authManager)
                     }
+                    .frame(width: 220)
+                    .ignoresSafeArea(edges: .top)
+
+                    contentView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(PatchaTheme.surface(for: colorScheme))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .padding(8)
+                        .ignoresSafeArea(edges: .top)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(PatchaTheme.bg(for: colorScheme), ignoresSafeAreaEdges: .all)
                 .onAppear { permissionsVM.scan() }
             }
         }

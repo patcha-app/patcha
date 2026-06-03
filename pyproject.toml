@@ -44,6 +44,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "ocr_image: end-to-end tests that compile the OCR binary and generate PNG fixtures (require swiftc + macOS Vision)",
+]
 
 [build-system]
 requires = ["hatchling"]

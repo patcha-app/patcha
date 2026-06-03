@@ -25,20 +25,23 @@ extension Color {
 }
 
 enum PatchaTheme {
-    static let accent = Color(hex: "00CE93")
+    static let accent = Color(hex: "21935B")
     static let softDivider = Color.primary.opacity(0.08)
 
     static func bg(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? .black : .white
+        colorScheme == .dark ? Color(hex: "0F1115") : Color(hex: "F7F8F5")
+    }
+
+    static func surface(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.black : Color.white
     }
 }
 
 struct SectionHeader: View {
     let title: String
     var body: some View {
-        Text(title.uppercased())
+        Text(title)
             .font(.pSectionLabel)
-            .tracking(1.2)
             .foregroundStyle(.primary)
     }
 }
@@ -63,18 +66,18 @@ struct AccentButtonStyle: ButtonStyle {
 }
 
 extension Font {
-    static let pCaption       = Font.system(size: 11, weight: .regular)
-    static let pCaptionStrong = Font.system(size: 11, weight: .semibold)
-    static let pBody          = Font.system(size: 13, weight: .regular)
-    static let pBodyStrong    = Font.system(size: 13, weight: .semibold)
-    static let pCallout       = Font.system(size: 14, weight: .regular)
-    static let pCalloutStrong = Font.system(size: 14, weight: .semibold)
-    static let pSubheadline   = Font.system(size: 15, weight: .regular)
-    static let pHeadline      = Font.system(size: 16, weight: .semibold)
-    static let pTitle         = Font.system(size: 22, weight: .bold)
+    static let pCaption       = Font.system(size: 10, weight: .regular)   // Caption 1
+    static let pCaptionStrong = Font.system(size: 10, weight: .medium)    // Caption 2
+    static let pBody          = Font.system(size: 13, weight: .regular)   // Body
+    static let pBodyStrong    = Font.system(size: 13, weight: .semibold)  // Body emphasized
+    static let pCallout       = Font.system(size: 12, weight: .regular)   // Callout
+    static let pCalloutStrong = Font.system(size: 12, weight: .semibold)  // Callout emphasized
+    static let pSubheadline   = Font.system(size: 11, weight: .regular)   // Subheadline
+    static let pHeadline      = Font.system(size: 13, weight: .bold)      // Headline
+    static let pTitle         = Font.system(size: 22, weight: .regular)   // Title 1
     static let pHeroMark      = Font.system(size: 56, weight: .heavy)
 
-    static let pSectionLabel  = Font.system(size: 11, weight: .semibold)
+    static let pSectionLabel  = Font.system(size: 11, weight: .semibold)  // Subheadline emphasized
 
     static let pEyebrow       = Font.system(size: 12, weight: .regular)
     static let pBrandmark     = Font.system(size: 16, weight: .regular)

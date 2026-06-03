@@ -5,6 +5,7 @@ struct AccountPane: View {
     @ObservedObject var authManager: AuthManager
     @State private var isSigningOut = false
     @State private var errorMessage: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -52,12 +53,9 @@ struct AccountPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         }
     }
 
@@ -88,12 +86,9 @@ struct AccountPane: View {
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         }
     }
 }

@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import sqlite3
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,9 @@ from mcp.server.stdio import stdio_server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from patcha.db.retrieval.context import (
     get_working_memory,
@@ -276,6 +280,75 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     return [TextContent(type="text", text=result)]
 
 
+async def _timeline(request: Request) -> JSONResponse:
+    try:
+        date_param = request.query_params.get("date")
+        target_date = date.fromisoformat(date_param) if date_param else date.today()
+
+        events = _get_store().get_events_by_date(target_date)
+
+        hours: dict[int, dict[str, Any]] = defaultdict(
+            lambda: {
+                "app_counts": defaultdict(int),
+                "summaries": [],
+                "categories": [],
+                "event_count": 0,
+            }
+        )
+
+        ordered = sorted(
+            (e for e in events if e.get("payload", {}).get("timestamp")),
+            key=lambda e: e["payload"]["timestamp"],
+        )
+
+        for event in ordered:
+            payload = event.get("payload", {})
+            timestamp = payload.get("timestamp")
+            try:
+                hour = int(str(timestamp)[11:13])
+            except (ValueError, TypeError):
+                continue
+
+            bucket = hours[hour]
+            bucket["event_count"] += 1
+
+            metadata = payload.get("metadata") or {}
+            app_name = metadata.get("app_name")
+            if app_name:
+                bucket["app_counts"][app_name] += 1
+
+            summary = payload.get("summary") or metadata.get("gist")
+            if summary and summary not in bucket["summaries"]:
+                bucket["summaries"].append(summary)
+
+            category = payload.get("category")
+            if category and category not in bucket["categories"]:
+                bucket["categories"].append(category)
+
+        result = []
+        for hour in sorted(hours):
+            bucket = hours[hour]
+            apps = [
+                name
+                for name, _ in sorted(
+                    bucket["app_counts"].items(), key=lambda kv: kv[1], reverse=True
+                )
+            ]
+            result.append(
+                {
+                    "hour": hour,
+                    "apps": apps,
+                    "summaries": bucket["summaries"],
+                    "categories": bucket["categories"],
+                    "event_count": bucket["event_count"],
+                }
+            )
+
+        return JSONResponse({"date": str(target_date), "hours": result})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 def _build_http_app() -> Starlette:
     session_manager = StreamableHTTPSessionManager(app=server, stateless=True)
 
@@ -285,7 +358,10 @@ def _build_http_app() -> Starlette:
             yield
 
     return Starlette(
-        routes=[Mount("/mcp", app=session_manager.handle_request)],
+        routes=[
+            Route("/api/timeline", _timeline),
+            Mount("/mcp", app=session_manager.handle_request),
+        ],
         lifespan=lifespan,
     )
 

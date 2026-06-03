@@ -70,6 +70,35 @@ final class AppPermissionsViewModel: ObservableObject {
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    func addWebsite(_ rawInput: String) async {
+        let domain = Self.parseDomain(rawInput)
+        guard !domain.isEmpty, !store.websiteExclusions.contains(where: { $0.domain == domain }) else { return }
+        let entry = WebsiteEntry(domain: domain, faviconData: nil, isExcluded: true)
+        store.upsertWebsite(entry)
+        guard let url = URL(string: "https://www.google.com/s2/favicons?domain=\(domain)&sz=64"),
+              let (data, _) = try? await URLSession.shared.data(from: url) else { return }
+        var updated = entry
+        updated.faviconData = data
+        store.upsertWebsite(updated)
+    }
+
+    func toggleWebsite(_ entry: WebsiteEntry) {
+        var updated = entry
+        updated.isExcluded = !entry.isExcluded
+        store.upsertWebsite(updated)
+    }
+
+    func removeWebsite(_ domain: String) {
+        store.removeWebsite(domain: domain)
+    }
+
+    private static func parseDomain(_ input: String) -> String {
+        var s = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !s.hasPrefix("http") { s = "https://" + s }
+        guard let host = URL(string: s)?.host else { return "" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
     func toggle(_ app: AppEntry) {
         if store.excludedBundleIDs.contains(app.id) {
             store.excludedBundleIDs.remove(app.id)
