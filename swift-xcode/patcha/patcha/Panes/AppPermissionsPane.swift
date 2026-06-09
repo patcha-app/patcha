@@ -27,13 +27,14 @@ struct AppPermissionsPane: View {
         } else {
             VStack(spacing: 0) {
                 tabHeader
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
 
                 ScrollView {
                     tabContent
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 22)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 16)
                 }
                 .scrollIndicators(.hidden)
                 .background(ScrollerHider())
@@ -46,8 +47,8 @@ struct AppPermissionsPane: View {
             tabHeader
             tabContent
         }
-        .padding(.horizontal, embedded ? 0 : 24)
-        .padding(.top, embedded ? 0 : 22)
+        .padding(.horizontal, embedded ? 0 : 16)
+        .padding(.top, embedded ? 0 : 16)
     }
 
     @ViewBuilder
@@ -72,12 +73,12 @@ struct AppPermissionsPane: View {
                     Text(tab.title)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selectedTab == tab ? .white : Color.secondary)
-                        .frame(minWidth: 80)
-                        .padding(.horizontal, 20)
+                        .frame(minWidth: 60)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(selectedTab == tab ? Color.accentColor : Color.clear)
+                                .fill(selectedTab == tab ? PatchaTheme.accent : Color.clear)
                         )
                         .contentShape(Capsule(style: .continuous))
                 }
@@ -91,8 +92,6 @@ struct AppPermissionsPane: View {
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionLabel("Data Sources")
-
             VStack(spacing: 0) {
                 SourceTile(
                     iconName: "terminal.fill",
@@ -116,7 +115,7 @@ struct AppPermissionsPane: View {
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
@@ -128,7 +127,7 @@ struct AppPermissionsPane: View {
                 Button("Rescan") { viewModel.scan() }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color.secondary)
             }
 
             HStack(spacing: 8) {
@@ -140,9 +139,9 @@ struct AppPermissionsPane: View {
                     .font(.system(size: 12))
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
 
@@ -187,7 +186,7 @@ struct AppPermissionsPane: View {
                         .fill(PatchaTheme.bg(for: colorScheme))
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
             }
         }
     }
@@ -231,7 +230,7 @@ struct AppPermissionsPane: View {
                             .fill(PatchaTheme.bg(for: colorScheme))
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
                 }
             }
         }
@@ -254,7 +253,7 @@ struct AppPermissionsPane: View {
                 Button { submitWebsite() } label: {
                     Image(systemName: "return")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(PatchaTheme.accent)
                 }
                 .buttonStyle(.plain)
             }
@@ -296,9 +295,8 @@ struct AppPermissionsPane: View {
 
     @ViewBuilder
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 9, weight: .bold))
-            .tracking(2.5)
+        Text(text)
+            .font(.pSectionLabel)
             .foregroundStyle(Color.secondary)
     }
 }
@@ -326,19 +324,19 @@ private struct SourceTile: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 15, height: 15)
+                            .frame(width: 16, height: 16)
                     } else {
                         Image(systemName: iconName)
                             .font(.system(size: 13))
                     }
                 }
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isOn ? PatchaTheme.accent : Color.secondary)
                 .frame(width: 20)
                 .animation(.easeOut(duration: 0.2), value: isOn)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13))
                         .foregroundStyle(Color.primary)
 
                     Text(description)
@@ -358,7 +356,7 @@ private struct SourceTile: View {
                 Group {
                     if isOn {
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.06), Color.clear],
+                            colors: [PatchaTheme.accent.opacity(0.06), Color.clear],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -392,7 +390,7 @@ private struct BrowserHistoryTile: View {
                             .font(.system(size: 13))
                     }
                 }
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isOn ? PatchaTheme.accent : Color.secondary)
                 .frame(width: 20)
                 .animation(.easeOut(duration: 0.2), value: isOn)
 
@@ -418,7 +416,7 @@ private struct BrowserHistoryTile: View {
                 Group {
                     if isOn {
                         LinearGradient(
-                            colors: [Color.accentColor.opacity(0.06), Color.clear],
+                            colors: [PatchaTheme.accent.opacity(0.06), Color.clear],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -434,7 +432,7 @@ private struct BrowserHistoryTile: View {
                 .fill(PatchaTheme.bg(for: colorScheme))
         )
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
     }
 }
 
@@ -494,6 +492,7 @@ private struct WebsiteRow: View {
 struct AppPermissionRow: View {
     let app: AppEntry
     let onToggle: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
@@ -502,7 +501,7 @@ struct AppPermissionRow: View {
                     .resizable()
                     .frame(width: 24, height: 24)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
             } else {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color.primary.opacity(0.06))
@@ -529,7 +528,7 @@ struct AppPermissionRow: View {
             .toggleStyle(.switch)
             .accessibilityLabel(Text(app.name))
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 9)
     }
 }

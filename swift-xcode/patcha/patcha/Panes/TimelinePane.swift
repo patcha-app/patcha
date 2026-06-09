@@ -22,9 +22,7 @@ struct TimelinePane: View {
                 dateHeader
                 content
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 20)
+            .padding(16)
         }
         .scrollIndicators(.hidden)
         .background(ScrollerHider())
@@ -178,7 +176,7 @@ private struct TimelineHourBlock: View {
                         .resizable()
                         .frame(width: 26, height: 26)
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
                         .overlay(
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .stroke(PatchaTheme.softDivider, lineWidth: 1)

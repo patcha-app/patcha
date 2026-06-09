@@ -11,17 +11,15 @@ PLIST="$HOME/Library/LaunchAgents/com.patcha.agent.plist"
 
 echo "Installing patcha..."
 
-# Copy binaries
+# Copy binary
 if [ ! -w "$INSTALL_DIR" ]; then
     echo "Installing to $INSTALL_DIR (requires sudo)..."
     sudo cp "$SCRIPT_DIR/patcha" "$INSTALL_DIR/"
-    sudo cp "$SCRIPT_DIR/patcha-mcp" "$INSTALL_DIR/"
 else
     cp "$SCRIPT_DIR/patcha" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/patcha-mcp" "$INSTALL_DIR/"
 fi
 
-chmod +x "$INSTALL_DIR/patcha" "$INSTALL_DIR/patcha-mcp"
+chmod +x "$INSTALL_DIR/patcha"
 
 # Create log directory
 mkdir -p "$LOG_DIR"
@@ -74,8 +72,7 @@ launchctl load "$PLIST"
 
 echo ""
 echo "patcha installed successfully."
-echo "  CLI:    $INSTALL_DIR/patcha"
-echo "  MCP:    $INSTALL_DIR/patcha-mcp"
+echo "  Binary: $INSTALL_DIR/patcha"
 echo "  Daemon: running via launchd (com.patcha.agent)"
 echo ""
 echo "Run 'patcha --help' to get started."

@@ -18,7 +18,7 @@ struct AccountPane: View {
                 }
                 signOutSection
             }
-            .padding(20)
+            .padding(16)
         }
         .scrollIndicators(.hidden)
         .background(ScrollerHider())
@@ -55,7 +55,7 @@ struct AccountPane: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
@@ -79,7 +79,7 @@ struct AccountPane: View {
                         }
                     }
                 }
-                .buttonStyle(AccentButtonStyle())
+                .buttonStyle(GhostButtonStyle())
                 .disabled(isSigningOut)
             }
             .padding(.horizontal, 16)
@@ -88,7 +88,7 @@ struct AccountPane: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 }

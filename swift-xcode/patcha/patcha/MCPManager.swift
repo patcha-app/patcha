@@ -88,7 +88,7 @@ import SQLite3
         errPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if !data.isEmpty, let line = String(data: data, encoding: .utf8) {
-                NSLog("[patcha-mcp] %@", line)
+                NSLog("[patcha mcp] %@", line)
             }
         }
 
@@ -122,34 +122,36 @@ import SQLite3
     }
 
     private func resolveExecutable() -> (URL, [String], String?) {
+        // 1. Bundled single binary (production DMG)
         if let bundleResource = Bundle.main.resourceURL {
-            let bundledBinary = bundleResource.appendingPathComponent("patcha-mcp")
+            let bundledBinary = bundleResource.appendingPathComponent("patcha")
             if FileManager.default.isExecutableFile(atPath: bundledBinary.path) {
                 NSLog("[MCPManager] using bundled binary: %@", bundledBinary.path)
-                return (bundledBinary, ["--http"], nil)
+                return (bundledBinary, ["mcp", "--port", "6969"], nil)
             }
         }
 
+        // 2. PATCHA_MCP_PATH env override (points to the patcha binary)
         if let envPath = ProcessInfo.processInfo.environment["PATCHA_MCP_PATH"] {
             let url = URL(fileURLWithPath: envPath)
             if FileManager.default.isExecutableFile(atPath: url.path) {
                 NSLog("[MCPManager] using PATCHA_MCP_PATH: %@", envPath)
-                return (url, ["--http"], nil)
+                return (url, ["mcp", "--port", "6969"], nil)
             }
         }
 
+        // 3. Dev mode: look for Rust build output relative to project dir
         let projectDir = detectProjectDir()
-        guard let uv = findExecutable("uv") else {
-            NSLog("[MCPManager] uv not found — MCP server cannot start")
-            return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
+        for relPath in ["rust/target/release/patcha", "rust/target/debug/patcha"] {
+            let bin = "\(projectDir)/\(relPath)"
+            if FileManager.default.isExecutableFile(atPath: bin) {
+                NSLog("[MCPManager] dev mode: %@", bin)
+                return (URL(fileURLWithPath: bin), ["mcp", "--port", "6969"], nil)
+            }
         }
 
-        NSLog("[MCPManager] dev mode: uv=%@ project=%@", uv, projectDir)
-        return (
-            URL(fileURLWithPath: uv),
-            ["run", "patcha-mcp", "--http"],
-            projectDir
-        )
+        NSLog("[MCPManager] patcha binary not found — MCP server cannot start")
+        return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
     }
 
     private func findExecutable(_ name: String) -> String? {

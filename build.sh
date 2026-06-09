@@ -8,11 +8,7 @@ if ! command -v create-dmg &>/dev/null; then
     brew install create-dmg
 fi
 
-VERSION=$(uv run python3 -c "
-import tomllib
-with open('pyproject.toml', 'rb') as f:
-    print(tomllib.load(f)['project']['version'])
-")
+VERSION=$(grep '^version' rust/patcha/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 
 SKIP_APP=false
 for arg in "$@"; do
@@ -56,22 +52,67 @@ swiftc patcha/macos/ocr.swift \
     -framework Foundation \
     -o data/ocr
 
+swiftc patcha/macos/mobileclip.swift \
+    -framework CoreML \
+    -framework Foundation \
+    -O \
+    -o data/mobileclip
+
+swiftc patcha/macos/observer.swift \
+    -framework AppKit \
+    -framework ApplicationServices \
+    -framework Foundation \
+    -O \
+    -o data/observer
+
 echo "  Swift helper binaries compiled."
 
-# Step 4: PyInstaller builds
+# Step 3: fetch the MobileCLIP image-encoder Core ML model (visual pre-filter)
 echo ""
-echo "[4/5] Building Python executables..."
-rm -rf dist/bin build
+echo "[3/5] Fetching MobileCLIP model..."
+MLPKG="data/mobileclip_s2_image.mlpackage"
+if [[ -f "$MLPKG/Data/com.apple.CoreML/weights/weight.bin" ]]; then
+    echo "  Model already present, skipping download."
+else
+    BASE="https://huggingface.co/apple/coreml-mobileclip/resolve/main/mobileclip_s2_image.mlpackage"
+    mkdir -p "$MLPKG/Data/com.apple.CoreML/weights"
+    curl -fsSL "$BASE/Manifest.json" -o "$MLPKG/Manifest.json"
+    curl -fsSL "$BASE/Data/com.apple.CoreML/model.mlmodel" -o "$MLPKG/Data/com.apple.CoreML/model.mlmodel"
+    curl -fsSL "$BASE/Data/com.apple.CoreML/weights/weight.bin" -o "$MLPKG/Data/com.apple.CoreML/weights/weight.bin"
+    echo "  Model downloaded to $MLPKG"
+fi
 
-uv run pyinstaller patcha.spec \
-    --noconfirm \
-    --distpath dist/bin
+# Step 3b: fetch the FastVLM ONNX captioner model (gist captioning).
+# CPU execution provider needs fp32-activation graphs: q4f16 vision/embed run on
+# CPU, but the decoder must be the q4 (fp32) graph, not q4f16.
+echo "  Fetching FastVLM captioner model..."
+FVDIR="data/models/fastvlm"
+if [[ -f "$FVDIR/onnx/decoder_model_merged_q4.onnx" ]]; then
+    echo "  FastVLM model already present, skipping download."
+else
+    FVBASE="https://huggingface.co/onnx-community/FastVLM-0.5B-ONNX/resolve/main"
+    mkdir -p "$FVDIR/onnx"
+    for f in config.json tokenizer.json tokenizer_config.json special_tokens_map.json \
+             generation_config.json preprocessor_config.json processor_config.json; do
+        curl -fsSL "$FVBASE/$f" -o "$FVDIR/$f"
+    done
+    curl -fsSL "$FVBASE/onnx/vision_encoder_q4f16.onnx" -o "$FVDIR/onnx/vision_encoder_q4f16.onnx"
+    curl -fsSL "$FVBASE/onnx/embed_tokens_q4f16.onnx" -o "$FVDIR/onnx/embed_tokens_q4f16.onnx"
+    curl -fsSL "$FVBASE/onnx/decoder_model_merged_q4.onnx" -o "$FVDIR/onnx/decoder_model_merged_q4.onnx"
+    echo "  FastVLM model downloaded to $FVDIR"
+fi
 
-uv run pyinstaller patcha_mcp.spec \
-    --noconfirm \
-    --distpath dist/bin
+# Step 4: Rust build (replaces PyInstaller)
+echo ""
+echo "[4/5] Building Rust binary..."
+rm -rf dist/bin
+mkdir -p dist/bin
 
-echo "  Python executables built."
+(cd rust && cargo build --release)
+cp rust/target/release/patcha dist/bin/patcha
+chmod +x dist/bin/patcha
+
+echo "  Rust binary built: dist/bin/patcha"
 
 # Step 5: Assemble .dmg staging area
 echo ""
@@ -81,10 +122,19 @@ rm -rf "$DMG_STAGE"
 mkdir -p "$DMG_STAGE"
 
 cp -r dist/Patcha.app "$DMG_STAGE/"
-cp dist/bin/patcha "$DMG_STAGE/Patcha.app/Contents/Resources/"
-cp dist/bin/patcha-mcp "$DMG_STAGE/Patcha.app/Contents/Resources/"
-chmod +x "$DMG_STAGE/Patcha.app/Contents/Resources/patcha" \
-         "$DMG_STAGE/Patcha.app/Contents/Resources/patcha-mcp"
+APP_RES="$DMG_STAGE/Patcha.app/Contents/Resources"
+cp dist/bin/patcha "$APP_RES/"
+chmod +x "$APP_RES/patcha"
+
+# Swift helper binaries + MobileCLIP model (resolved next to the patcha binary at runtime)
+cp data/ax_content data/ocr data/mobileclip data/observer "$APP_RES/"
+chmod +x "$APP_RES/ax_content" "$APP_RES/ocr" "$APP_RES/mobileclip" "$APP_RES/observer"
+cp -r data/mobileclip_s2_image.mlpackage "$APP_RES/"
+
+# FastVLM captioner model (resolved at resources_dir/models/fastvlm at runtime).
+# NOTE: ~0.8 GB — consider download-on-first-run instead of bundling to keep the DMG small.
+mkdir -p "$APP_RES/models"
+cp -r data/models/fastvlm "$APP_RES/models/"
 
 echo "  Contents staged at $DMG_STAGE"
 

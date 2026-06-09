@@ -1,152 +1,159 @@
-# Phase 1 Implementation Plan — Visual pre-filter + per-app cache
+# Phase 1 — Visual pre-filter + per-app cache
 
-Companion to `perception.md` (see its "Phase 1" section). This is the concrete,
-codebase-grounded plan for the first perception phase.
+Implementation plan for the first perception phase. Companion to `perception.md`
+("Phase 1"). Targets the Rust codebase at `rust/patcha/` (branch `feat/perception-rust`).
 
-**Goal:** Replace the 80% text-diff heuristic in `AccessibilityCollector` with
-cosine-similarity change detection against a per-app MobileCLIP2 embedding cache.
-Keep the existing 5s poll. Target: 40–70% fewer screen events (kills scroll
-false-positives + app-return dupes).
-
----
-
-## Decisions locked in
-
-1. **Embedder: MobileCLIP2** (not CLIP ViT-B-32). Chosen for the stronger encoder
-   and because Phase 3 will stand up the helper anyway; accept a one-time
-   visual-vector reset if the model is swapped later (embeddings aren't comparable
-   across models — bump `_meta.visual_embedder`).
-
-2. **Runtime: persistent Swift Core ML process, NOT the doc's Python+MLX helper.**
-   - The app ships via **PyInstaller** (`_FROZEN`/`_MEIPASS` in `accessibility.py`).
-     torch/open_clip would balloon the bundle (~2 GB); MLX-in-PyInstaller is unproven.
-   - The current ML stack is ONNX-only (`fastembed`); no torch/mlx/coremltools installed.
-   - There is an established Swift-helper pattern already (`ax_content.swift`,
-     `ocr.swift` compiled via `swiftc`). MobileCLIP2 ships as Core ML → runs on the
-     ANE natively.
-   - So the doc's `perception/helper.py` + `helper_server.py` collapse into:
-     - `patcha/macos/mobileclip.swift` — persistent Core ML process (replaces `helper_server.py`)
-     - `patcha/perception/embedder.py` — Python subprocess manager/client (replaces `helper.py`)
-
-3. **Storage: DEFER the Qdrant named-vector migration.** Phase 1 computes the visual
-   embedding, drives the per-app cache diff, and stashes the vector in
-   `screen_log.jsonl` + event payload — NOT yet as a searchable named Qdrant vector.
-   This captures the full event-reduction win (which lives entirely in
-   `accessibility.py`) without the breaking `mem`-collection migration. Visual
-   search + visual dedup become a clean follow-up.
+**Goal.** Give `AccessibilityCollector` its first dedup: a per-app MobileCLIP2 embedding
+cache that drops redundant frames before they become events. Keep the 5s poll.
+**Target: 40–70% fewer screen events** vs today's capture-every-tick behavior.
 
 ---
 
-## Spike progress (step 0, in flight)
+## Status (build in progress)
 
-Verified on this machine:
-- Toolchain: `swiftc` 6.3.2, `xcrun`, `coremlc` present; macOS 26.5, arm64; HF reachable.
-- **Ready-made Core ML image encoders exist** at `apple/coreml-mobileclip` (HF) — these
-  are **MobileCLIP v1**: `mobileclip_s0/s1/s2/blt_image.mlpackage` (+ text encoders).
-  Drop-in `.mlpackage`, no torch/coremltools conversion needed.
-- `apple/MobileCLIP2-S2` / `MobileCLIP2-S0` host **PyTorch** checkpoints (open_clip-like
-  API). Whether they ship a Core ML export was being checked when the spike paused.
+- **Step 0 — spike: PASS.** MobileCLIP-v1 S2 Core ML (256×256 → `final_emb_1` [1,512]),
+  ANE ~2.4 ms/frame after warmup. Same frame cosine 0.999; different content 0.50–0.74. The
+  0.97 drop threshold sits cleanly between. (MobileCLIP2-S2 is PyTorch-only on HF — no Core ML
+  export — so v1 S2 is what ships until a v2 conversion is justified.)
+- **Step 1 — Swift helper: DONE.** `patcha/macos/mobileclip.swift` — persistent stdin/stdout
+  process, `{"ready":true}` handshake, survives bad frames. Verified standalone.
+- **Step 2 — Rust module: DONE.** `src/perception/{mod,embedder,app_cache}.rs`. Unit tests
+  (cosine, TTL) pass; Rust↔Swift roundtrip integration test passes (gated on `MOBILECLIP_TEST_*`).
+- **Step 3 — cascade: DONE.** `record_current_screen` embeds the frame, drops on
+  `transition=="same" && cosine>=0.97`, persists `visual_embedding` + `transition` +
+  `_meta.visual_embedder`. Degrades to capture-every-tick if the helper is absent/fails.
+- **Step 4 — storage: DEFERRED (as planned).** Vector lives in `screen_log.jsonl` only.
+- **Step 5 — config: DONE.** `enable_visual_prefilter`, `visual_drop_threshold`,
+  `visual_cache_ttl_seconds`, `visual_vector_size` in `Config` (Default + env).
+- **Step 6 — packaging: DONE.** `build.sh` compiles `mobileclip`, fetches the `.mlpackage`,
+  stages helpers + model into `Patcha.app/Contents/Resources/`. `data/` is gitignored.
+- **Remaining: real-session validation** — run a multi-hour session, measure the before/after
+  event-count reduction against the 40–70% target; tune the 0.97 threshold if needed.
 
-**Implication / open call:** If MobileCLIP2 has no published Core ML export, options are:
-  - (a) one-time offline conversion PyTorch→Core ML (needs torch + coremltools +
-    `mobileclip` pkg in a throwaway env; conversion tooling does NOT ship in the app), or
-  - (b) prove the whole Swift+CoreML+512-dim+ANE pipeline first with the already-exported
-    **MobileCLIP-v1 S2** `.mlpackage` (identical Swift code; only the model file swaps),
-    then decide if the v1→v2 quality delta justifies the conversion work.
-  Recommendation: do (b) for the spike to de-risk the pipeline, revisit v2 conversion after.
-
-Spike exit criteria: a throwaway Swift CLI loads the `.mlpackage`, takes a screenshot
-`CGImage`, emits a deterministic 512-dim float vector; two similar frames → high cosine,
-two different → low; runs on ANE at ~10 ms.
-
-**Model delivery:** download-on-first-run into `config.embedding_cache_dir`
-(mirrors how fastembed fetches text weights) — preferred over bundling in Resources.
+`cargo build` green; `cargo test perception::` green.
 
 ---
 
-## Work breakdown (sequenced to de-risk the biggest unknown first)
+## Decisions
 
-### 0. Spike — MobileCLIP2 Core ML model  *(in progress — see above)*
-Prove the model loads in a throwaway Swift CLI and emits a usable 512-dim image
-embedding on the ANE. Gate the rest of the phase on this.
+| # | Decision | Choice |
+|---|----------|--------|
+| 1 | Visual embedder | **MobileCLIP2** (512-dim image encoder) |
+| 2 | Runtime | **Persistent Swift Core ML process**, driven from Rust over stdin/stdout |
+| 3 | Storage | **Defer** the visual-vector store — embedding lives in the event JSON only this phase |
 
-### 1. Swift embedder helper — `patcha/macos/mobileclip.swift`
-- Persistent process (model load too heavy to spawn-per-call like ax/ocr). Reads image
-  paths line-by-line on **stdin**, writes `{"embedding":[...512]}` JSON lines on **stdout**.
-- Image preprocessing (resize/normalize) handled inside the Core ML model / via Vision —
-  Python never replicates CLIP preprocessing.
-- Compiled through the existing `_compile()` swiftc path; `_FROZEN`/`_MEIPASS` lookup for
-  the bundled binary, same as ax/ocr.
+**Why MobileCLIP2 via a Swift Core ML helper.** `build.sh` already `swiftc`-compiles
+`ax_content.swift` / `ocr.swift` into `Patcha.app/Contents/Resources/`; a `mobileclip.swift`
+helper slots into that pattern. Core ML runs MobileCLIP2 on the ANE (~10 ms/frame). Rust has
+no mature Core ML binding, so in-process native inference is awkward.
 
-### 2. Perception module — `patcha/perception/`
-- `__init__.py`
-- `embedder.py` — `MobileClipEmbedder`: spawns/owns the long-lived Swift process,
-  `embed(image_path) -> list[float]`, thread-safe (collector calls from its capture
-  thread), lazy-spawn on first use, health-check + relaunch on pipe failure.
-- `app_cache.py` — `AppEmbeddingCache`: per-app
-  `{visual_embedding, window_title, timestamp, source_doc_id}`; `compare(app, vec) ->
-  cosine`, `update(...)`, TTL eviction (`config.cache_ttl`, default 2h), invalidate entry
-  on `window_title` change, bounded size, cleared on restart.
+**Alternative on record.** fastembed-rs v4 (already a dependency, used in `src/embedding.rs`
+for text) supports `ImageEmbedding` (CLIP ViT-B-32, ONNX, in-process) — zero Swift helper,
+mirrors the text path exactly. We chose MobileCLIP2 for encoder quality. If change-detection
+quality proves indifferent to the encoder (likely — it's a relative same-vs-different
+comparison, not semantic retrieval), fastembed-rs is the lower-surface fallback.
 
-### 3. Rewire the diff cascade in `accessibility.py`  *(core change)*
-- **Plumb the PNG to the embedder.** Today `_take_ocr_screenshot` deletes the tmp PNG in
-  its `finally` (lines ~467–471). Compute the visual embedding there while the file
-  exists, return it in the `data` dict alongside `text`.
-- **Replace the text-diff block** (lines ~545–577: `_content_diff` / `_last_text` /
-  `_FULL_REPLACE_RATIO`) with:
-  1. **Title check** (`_last_active_key`): app or window_title changed → `transition =
-     switch/new` → store, no drop, update cache.
-  2. **Cache check** (same title): `cosine = app_cache.compare(app, vec)`
-     - `>= 0.97` → **drop** (no event, cache NOT updated — so gradual drift is still caught).
-     - `< 0.97` → store event (Phase 1 keeps the existing AX/OCR text path; the 0.85 VLM
-       tier lands in Phase 3), update cache.
-- Keep the existing md5 screenshot short-circuit (lines ~422–427) as a free pre-check
-  before embedding (identical bytes → skip).
-- **Persist `visual_embedding`** into the `screen_log.jsonl` entry + `_meta.visual_embedder`
-  version tag.
-- **Resilience:** behind an `enable_visual_prefilter` flag; if the embedder fails to
-  load/crashes, log a warning and **fall back to the legacy text-diff branch** (keep
-  `_content_diff`/`_last_text` intact for one release, per the doc's risk note).
+**Why defer storage.** The vector store is SQLite + sqlite-vec (`vec_events` vec0 table,
+single `embedding` column). The entire event-reduction win lives in the collector and needs
+no store change. Visual *search* / visual *dedup* (a second `vec_events_visual` table) is a
+clean, separable follow-up.
 
-### 4. Carry the embedding to storage — `collect_screen_text()` + `process.py`
-- Add `visual_embedding` into the event dict/metadata in `collect_screen_text`
-  (lines ~693–716). (Storage stays in payload/metadata only — migration deferred.)
+---
 
-### 5. Config — `config/config.py` + `config/settings.py`
-- `visual_vector_size = 512`, `cache_ttl = 7200`, `visual_drop_threshold = 0.97`,
-  `enable_visual_prefilter` (default on, with legacy fallback), visual model name/path.
+## Model: MobileCLIP2 Core ML
+
+- **Confirmed available:** `apple/coreml-mobileclip` (HF) ships ready-to-use Core ML image
+  encoders for **MobileCLIP v1** — `mobileclip_s0/s1/s2/blt_image.mlpackage` (each a
+  `model.mlmodel` + `weights/weight.bin`). No conversion tooling needed.
+- **MobileCLIP2** (`apple/MobileCLIP2-S2`) ships PyTorch checkpoints; a published Core ML
+  export is **unconfirmed**. If none exists: one-time offline PyTorch→Core ML conversion in a
+  throwaway env (torch + coremltools + `mobileclip`); conversion tooling never ships in the app.
+- **De-risk path:** prove the full pipeline (Swift load → `CGImage` → 512-dim vector on ANE)
+  with **MobileCLIP-v1 S2** first — identical Swift code, only the `.mlpackage` swaps — then
+  decide whether the v1→v2 quality delta justifies the conversion work.
+- **Delivery:** ship the `.mlpackage` in `Patcha.app/Contents/Resources/` via `build.sh`
+  (parallels the ax/ocr binaries; offline-first). Resolved at runtime via `resources_dir()`.
+
+---
+
+## Steps
+
+### 0. Spike — prove the model *(gate)*
+Throwaway Swift CLI: load the `.mlpackage`, take a screenshot `CGImage`, emit a deterministic
+512-dim float vector. **Exit criteria:** similar frames → high cosine, different frames → low;
+runs on ANE at ~10 ms. Everything below is gated on this.
+
+*Status: toolchain verified (swiftc 6.3.2, coremlc, macOS 26.5, arm64). v1 `.mlpackage`s
+located on HF. v2 Core ML export status outstanding.*
+
+### 1. Swift helper — `patcha/macos/mobileclip.swift`
+Persistent process (model load is too heavy to spawn per call). Reads image paths line-by-line
+on **stdin**, writes `{"embedding":[...512]}` JSON lines on **stdout**. Image preprocessing
+(resize/normalize) handled inside the Core ML model / via Vision. Add a
+`swiftc patcha/macos/mobileclip.swift -o data/mobileclip` step to `build.sh` step 2.
+
+### 2. Embedder + cache — new Rust module `src/perception/`
+`mod.rs`, `embedder.rs`, `app_cache.rs`:
+- **`MobileClipEmbedder`** — owns the long-lived Swift child (`std::process::Child`, piped
+  stdin/stdout). `embed(image_path) -> Result<Vec<f32>>`. Lazy-spawn; relaunch on broken pipe;
+  `Mutex`-guarded (runs on the daemon loop).
+- **`AppEmbeddingCache`** — `HashMap<String, CacheEntry>` where
+  `CacheEntry { visual_embedding: Vec<f32>, window_title, timestamp, source_doc_id }`.
+  `compare(app, &vec) -> f32` (cosine), `update(...)`, TTL eviction (`cfg.cache_ttl`, 2h),
+  invalidate on `window_title` change, bounded, cleared on restart.
+- Construct in `src/daemon/loop.rs` (resolve the `mobileclip` binary via `resources_dir()`,
+  like ax/ocr) and hand to `AccessibilityCollector::new`.
+
+### 3. Cascade — `src/collectors/accessibility.rs` *(core change)*
+The screenshot PNG already exists at OCR time (`screencapture` → `path.keep()` → `run_ocr`).
+Embed it in that flow, then in `record_current_screen`, before `append_log_entry`:
+
+1. **Title check** — app or window_title changed vs last → `transition = switch/new` →
+   store, no drop, update cache.
+2. **Cache check** (same title) — `cosine = cache.compare(app, &vec)`:
+   - `>= 0.97` → **drop** (return early; do *not* append, do *not* update cache — preserves
+     gradual-drift detection).
+   - `< 0.97` → append event (OCR text path stays; the 0.85 VLM tier is Phase 3), update cache.
+
+Persist `visual_embedding` + `_meta.visual_embedder` + restore the `transition` field in the
+jsonl entry. Behind `cfg.enable_visual_prefilter`; if the embedder is unavailable, degrade to
+capture-every-tick (optionally a cheap md5 frame-hash skip) with a logged warning.
+
+### 4. Carry through to storage — `read_log` / `process.rs`
+Surface `visual_embedding` from the jsonl entry into the in-memory event metadata in
+`read_log`. Stays in the event JSON only — no `vec_events_visual` table this phase.
+
+### 5. Config — `src/config.rs`
+Add to `Config` (`Default` impl **and** the `from_env` block):
+`visual_vector_size: usize = 512`, `cache_ttl: u64 = 7200`, `visual_drop_threshold: f32 = 0.97`,
+`enable_visual_prefilter: bool = true`, visual model name/path.
 
 ### 6. Packaging + validation
-- PyInstaller spec: include the compiled `mobileclip` binary + the `.mlpackage` in the
-  bundle (alongside the ax/ocr binaries and applescript).
-- **Validation:** event count over a 4-hour session, before/after → expect 40–70%
-  reduction. Unit tests for `app_cache` (TTL, cosine, title-invalidation) and the embedder
-  protocol (mocked subprocess).
+`build.sh`: compile `mobileclip.swift`, copy the binary + `.mlpackage` into Resources.
+**Validation:** event count over a 4-hour session, before/after → expect 40–70% reduction.
+Unit tests: `AppEmbeddingCache` (cosine, TTL, title-invalidation) + the embedder protocol
+(mock child process).
 
-**Realistic effort:** doc estimates 2–3 days; the Core ML spike + persistent Swift helper
-push it to ~3–4 days, with step 0 carrying most of the risk.
+**Effort:** ~3–4 days; step 0 carries most of the risk.
 
 ---
 
-## Key code references (as of this branch)
+## Code references (`rust/patcha/`)
 
-- `patcha/collectors/accessibility.py`
-  - text-diff to replace: `_content_diff` (~522), diff block (~545–577), `_FULL_REPLACE_RATIO` (48)
-  - screenshot capture (PNG lifecycle): `_take_ocr_screenshot` (~378–471)
-  - jsonl entry written: `record_current_screen` (~586–606)
-  - readback for storage: `collect_screen_text` (~651–718)
-  - poll loop: `_run_loop` (~628), `_POLL_INTERVAL = settings.get("ax_poll_interval")` (36)
-  - swiftc compile pattern: `_compile` (~116–136)
-- `patcha/process.py` — `_build_embedding_text` (55), embed flow (~109–137). Text embeds
-  in-process via `patcha/embedding.py` (fastembed, bge-base, 768-dim, lru_cache).
-- `patcha/db/store.py` — `mem` collection uses a **single unnamed vector**
-  (`_ensure_collection_exists` ~60, `store_event` ~134). Named-vector migration deferred.
-- `patcha/config/config.py` — `collection_name="mem"`, `vector_size=768`,
-  `embedding_model_name="BAAI/bge-base-en-v1.5"`, `embedding_cache_dir=.../models`.
-- `patcha/config/settings.py` — sqlite-backed settings, `get`/`put`; defaults dataclass.
+- `src/collectors/accessibility.rs` — `AccessibilityCollector` (~23), `new` (~31),
+  `record_current_screen` (~46, no dedup today), screencapture→`path.keep()` (~201–222),
+  `run_ocr` (~224), `run_ax_content` (~173), `append_log_entry` (~243, `gist` currently a
+  placeholder from `ax_info.focused_text`), `read_log` (~277).
+- `src/embedding.rs` — text via fastembed-rs `TextEmbedding` (bge-base, 768, `OnceLock`);
+  v4 also exposes `ImageEmbedding`.
+- `src/db/store.rs` — `VectorStore`; sqlite-vec `vec_events(event_id, embedding)` (~68, KNN ~183).
+  `vec_to_bytes` in `src/db/mod.rs`.
+- `src/config.rs` — `Config` (~14), `Default` (~49), `from_env` (~128).
+- `src/daemon/loop.rs` — `resources_dir()` (~108), `start()` (~127).
+- `build.sh` — step 1 Swift menu-bar app, step 2 `swiftc` ax/ocr → `data/`, step 3
+  `cargo build --release`, stage into `Resources/` + DMG.
 
-## What's already done (not Phase 1, for context)
-- Local text embeddings via fastembed/ONNX (`embedding.py`).
-- Activity graph Phase A (`db/activity_graph.py`, SQLite not FalkorDB).
-- Knowledge graph + entity extraction + hybrid retrieval (`db/entities.py`,
-  `db/retrieval/graphrag.py`).
+## Already done (context, not Phase 1)
+Local text embeddings (`src/embedding.rs`), Activity graph Phase A
+(`src/db/activity_graph.rs`), knowledge graph + entity extraction + hybrid retrieval
+(`src/db/entities.rs`, `src/db/retrieval/graphrag.rs`).

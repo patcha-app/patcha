@@ -16,14 +16,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.setContentSize(NSSize(width: 900, height: 620))
-        window.minSize = NSSize(width: 800, height: 560)
+        window.setContentSize(NSSize(width: 820, height: 560))
+        window.minSize = NSSize(width: 720, height: 500)
         window.center()
         window.isOpaque = true
         window.backgroundColor = NSColor(name: nil) { appearance in
             switch appearance.bestMatch(from: [.aqua, .darkAqua]) {
-            case .darkAqua: return NSColor(red: 0x0F/255, green: 0x11/255, blue: 0x15/255, alpha: 1)
-            default:        return NSColor(red: 0xF7/255, green: 0xF8/255, blue: 0xF5/255, alpha: 1)
+            case .darkAqua: return NSColor(red: 0x0F/255, green: 0x0F/255, blue: 0x11/255, alpha: 1) // PatchaTheme.bg dark
+            default:        return NSColor(red: 0xF7/255, green: 0xF8/255, blue: 0xF5/255, alpha: 1) // PatchaTheme.bg light
             }
         }
 

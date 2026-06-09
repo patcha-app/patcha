@@ -19,7 +19,7 @@ enum Installer {
 
         guard let resourceURL = Bundle.main.resourceURL else { return }
 
-        for binary in ["patcha", "patcha-mcp"] {
+        for binary in ["patcha"] {
             let src = resourceURL.appendingPathComponent(binary).path
             let dst = "\(binDir)/\(binary)"
 

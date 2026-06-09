@@ -1,0 +1,90 @@
+[package]
+name = "patcha"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "patcha"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# HTTP server (MCP HTTP transport)
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite + vector search
+rusqlite = { version = "0.31", features = ["bundled", "load_extension"] }
+sqlite-vec = "0.1"
+
+# Embeddings (fastembed-rs — the original Rust library)
+fastembed = "4"
+
+# ONNX Runtime (FastVLM captioner) — pinned to fastembed's transitive version so
+# the lock reuses the already-working ort-sys rc.9 (rc.12's download build is broken).
+ort = { version = "=2.0.0-rc.9", features = ["ndarray"] }
+tokenizers = "0.21"
+image = "0.25"
+half = "2"
+
+# Git
+git2 = { version = "0.19", default-features = false }
+
+# MCP protocol
+rmcp = { version = "0.2", features = ["server", "transport-io", "transport-streamable-http-server", "transport-worker"] }
+
+# Clustering
+linfa = "0.7"
+linfa-clustering = "0.7"
+ndarray = { version = "0.16", features = ["serde"] }
+
+# Templates (Jinja2-compatible)
+minijinja = { version = "2", features = ["loader"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4", "v5"] }
+
+# Tokenization (tiktoken cl100k_base)
+tiktoken-rs = "0.5"
+
+# Env / config
+dotenvy = "0.15"
+
+# Platform dirs
+dirs = "5"
+
+# JSON schema (required by rmcp tool macros)
+schemars = { version = "0.8", features = ["chrono"] }
+
+# Misc utilities
+regex = "1"
+md5 = "0.7"
+tempfile = "3"
+walkdir = "2"
+colored = "2"
+indicatif = "0.17"
+dialoguer = "0.11"

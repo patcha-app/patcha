@@ -55,6 +55,7 @@ struct SidebarAccountFooter: View {
     @ObservedObject var authManager: AuthManager
     @State private var expanded = false
     @State private var isSigningOut = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 4) {
@@ -75,7 +76,7 @@ struct SidebarAccountFooter: View {
                 .padding(.vertical, 8)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
+                        .fill(PatchaTheme.tile(for: colorScheme))
                 )
                 .disabled(isSigningOut)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -117,7 +118,7 @@ struct SidebarAccountFooter: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
+                        .fill(PatchaTheme.tile(for: colorScheme))
                 )
             }
             .buttonStyle(.plain)
@@ -129,9 +130,9 @@ struct SidebarNavItem: View {
     let section: SettingsSection
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let accent = PatchaTheme.accent
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: section.systemImage)
@@ -145,12 +146,12 @@ struct SidebarNavItem: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? PatchaTheme.accent.opacity(0.12) : Color.clear)
+                    .fill(isSelected ? PatchaTheme.selectedOverlay(for: colorScheme) : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? PatchaTheme.accent : Color.primary)
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
     }

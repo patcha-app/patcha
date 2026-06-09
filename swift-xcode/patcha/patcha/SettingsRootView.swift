@@ -63,7 +63,11 @@ struct SettingsRootView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(PatchaTheme.surface(for: colorScheme))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .padding(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 1)
+                        )
+                        .padding([.top, .trailing, .bottom], 10)
                         .ignoresSafeArea(edges: .top)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

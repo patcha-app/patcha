@@ -29,11 +29,27 @@ enum PatchaTheme {
     static let softDivider = Color.primary.opacity(0.08)
 
     static func bg(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(hex: "0F1115") : Color(hex: "F7F8F5")
+        colorScheme == .dark ? Color(hex: "0F0F11") : Color(hex: "F7F8F5")
     }
 
     static func surface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color.black : Color.white
+        colorScheme == .dark ? Color(hex: "161618") : Color.white
+    }
+
+    static func sidebar(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(hex: "161618") : Color(hex: "F0F0F2")
+    }
+
+    static func hairline(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
+    }
+
+    static func tile(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.05)
+    }
+
+    static func selectedOverlay(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.08)
     }
 }
 
@@ -53,13 +69,28 @@ struct AccentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.pBodyStrong)
-            .foregroundColor(.black)
+            .foregroundColor(.white)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.vertical, 9)
             .padding(.horizontal, fullWidth ? 0 : 16)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(PatchaTheme.accent.opacity(isDisabled ? 0.4 : configuration.isPressed ? 0.8 : 1.0))
+            )
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct GhostButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.pBodyStrong)
+            .foregroundColor(.primary)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.10 : 0.06))
             )
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }

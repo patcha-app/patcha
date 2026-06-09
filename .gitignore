@@ -17,3 +17,9 @@ DerivedData/
 .env.development
 .plans/*
 swift-xcode/patcha/.build/
+
+# perception spike scratch (models, throwaway binaries)
+.scratch/
+
+# Rust build artifacts
+rust/target/

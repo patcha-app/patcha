@@ -23,7 +23,7 @@ struct IntegrationsPane: View {
                 connectClientsSection
                 instructionsSection
             }
-            .padding(20)
+            .padding(16)
         }
         .scrollIndicators(.hidden)
         .background(ScrollerHider())
@@ -67,7 +67,7 @@ struct IntegrationsPane: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
@@ -132,7 +132,7 @@ struct IntegrationsPane: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
