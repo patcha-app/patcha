@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore, vec_to_bytes},
+    db::{Db, store::VectorStore},
     models::{Category, Event, EventType},
 };
 use anyhow::Result;

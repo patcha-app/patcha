@@ -4,7 +4,6 @@ use crate::{
 };
 use anyhow::Result;
 use clap::Args;
-use std::sync::Arc;
 
 #[derive(Args)]
 pub struct AnalyzeGraphArgs {

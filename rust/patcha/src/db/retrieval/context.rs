@@ -4,9 +4,8 @@ use crate::{
     models::{Event, EventType},
 };
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 const RRF_K: f64 = 60.0;
 
@@ -287,7 +286,7 @@ fn strip_timestamp_prefix(s: &str) -> &str {
 // TF-IDF ranking
 // ---------------------------------------------------------------------------
 
-fn tfidf_rank(query: &str, mut candidates: Vec<Event>) -> Vec<Event> {
+fn tfidf_rank(query: &str, candidates: Vec<Event>) -> Vec<Event> {
     if candidates.is_empty() {
         return Vec::new();
     }
@@ -380,6 +379,7 @@ fn tfidf_rank(query: &str, mut candidates: Vec<Event>) -> Vec<Event> {
 // ---------------------------------------------------------------------------
 
 struct MergedResult {
+    #[allow(dead_code)]
     id: String,
     score: f64,
     event: Event,

@@ -4,7 +4,6 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Public API (mirrors Python patcha/db/retrieval/graph_context.py)

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 const TOKEN_FILE: &str = ".patcha/access_token";
+#[allow(dead_code)]
 const ENV_FILE: &str = ".patcha/.env";
 
 // ---------------------------------------------------------------------------
@@ -12,6 +14,7 @@ const ENV_FILE: &str = ".patcha/.env";
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 struct ChatRequest<'a> {
     model: &'a str,
     messages: Vec<serde_json::Value>,
@@ -33,6 +36,7 @@ struct ChatMessage {
 }
 
 #[derive(Serialize)]
+#[allow(dead_code)]
 struct EmbedRequest<'a> {
     model: &'a str,
     input: Vec<String>,

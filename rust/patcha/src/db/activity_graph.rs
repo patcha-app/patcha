@@ -1,6 +1,6 @@
 use crate::{
     db::Db,
-    models::{Event, EventType, GraphEdge, GraphNode},
+    models::{Event, EventType, GraphNode},
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -30,9 +30,11 @@ const L_GIT_COMMIT: &str = "GitCommit";
 // Edge types (matching Python)
 const E_ON_APP: &str = "ON_APP";
 const E_IN_WINDOW: &str = "IN_WINDOW";
+#[allow(dead_code)]
 const E_BELONGS_TO: &str = "BELONGS_TO";
 const E_DURING: &str = "DURING";
 const E_FOLLOWED_BY: &str = "FOLLOWED_BY";
+#[allow(dead_code)]
 const E_SWITCHED_FROM: &str = "SWITCHED_FROM";
 const E_IN_PROJECT: &str = "IN_PROJECT";
 const E_MODIFIED: &str = "MODIFIED";

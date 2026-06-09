@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-uv run ruff check .
-uv run ruff format .
-uv run python -m pytest
+# Run the Rust test suite (workspace lives in rust/).
+cd "$(git rev-parse --show-toplevel)/rust"
+cargo test

@@ -88,3 +88,8 @@ walkdir = "2"
 colored = "2"
 indicatif = "0.17"
 dialoguer = "0.11"
+
+[dev-dependencies]
+# Rendering text into mock app-window screenshots for the OCR + pipeline tests.
+imageproc = "0.25"
+ab_glyph = "0.2"

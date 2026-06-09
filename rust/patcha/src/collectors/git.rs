@@ -20,6 +20,7 @@ const SKIP_DIRS: &[&str] = &[
 
 pub struct GitCollector {
     commits_guard: CollectorGuard,
+    #[allow(dead_code)]
     stashes_guard: CollectorGuard,
     data_dir: PathBuf,
     stage_write_count: usize,

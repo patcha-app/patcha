@@ -1,6 +1,6 @@
 use crate::{
     db::store::VectorStore,
-    embedding::{cosine_similarity, Embedder},
+    embedding::Embedder,
     llm::client::PatchaApiClient,
     models::Event,
 };
@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 pub struct RagSystem {
     vector_store: Arc<VectorStore>,
+    #[allow(dead_code)]
     embedder: Arc<Embedder>,
+    #[allow(dead_code)]
     llm_client: Arc<PatchaApiClient>,
 }
 

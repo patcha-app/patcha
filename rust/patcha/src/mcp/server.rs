@@ -234,7 +234,7 @@ async fn run_stdio(server: PatchaServer) -> Result<()> {
     Ok(())
 }
 
-async fn run_http(server: PatchaServer, cfg: &Config, port: u16) -> Result<()> {
+async fn run_http(server: PatchaServer, _cfg: &Config, port: u16) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService,
         session::local::LocalSessionManager,

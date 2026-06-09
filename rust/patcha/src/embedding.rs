@@ -1,7 +1,6 @@
 use crate::config::Config;
 use anyhow::{Context, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use std::sync::OnceLock;
 use tiktoken_rs::cl100k_base;
 
 // Token safety factor: bge WordPiece tokens run higher than cl100k for the same

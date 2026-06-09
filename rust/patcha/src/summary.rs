@@ -274,7 +274,7 @@ impl TaskSummarizer {
                 *project_counts.entry(p.clone()).or_insert(0) += 1;
             }
         }
-        let mut top_projects: Vec<String> = project_counts
+        let top_projects: Vec<String> = project_counts
             .iter()
             .collect::<Vec<_>>()
             .into_iter()
@@ -420,7 +420,7 @@ impl TaskSummarizer {
     /// Productivity trends over N days.
     pub fn get_productivity_trends(&self, days: u32) -> Result<serde_json::Value> {
         let end = Utc::now().date_naive();
-        let start = end - chrono::Duration::days(days as i64);
+        let _start = end - chrono::Duration::days(days as i64);
         self.task_store.get_task_statistics(days)
     }
 

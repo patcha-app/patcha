@@ -1,6 +1,6 @@
 use crate::{
     db::Db,
-    models::{Entity, EntityType, GraphPath, Relationship, RelationshipType},
+    models::{Entity, EntityType, Relationship},
 };
 use anyhow::Result;
 use chrono::Utc;

@@ -1,7 +1,6 @@
 use crate::{
     config::Config,
     db::{Db, store::VectorStore, tasks::TaskStore},
-    embedding::Embedder,
     llm::client::PatchaApiClient,
     summary::{DailySummarizer, TaskSummarizer},
 };

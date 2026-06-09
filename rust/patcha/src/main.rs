@@ -1,21 +1,6 @@
-mod cli;
-mod collectors;
-mod compaction;
-mod categorize;
-mod config;
-mod daemon;
-mod db;
-mod embedding;
-mod llm;
-mod mcp;
-mod models;
-mod perception;
-mod process;
-mod triggers;
-mod summary;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use patcha::{cli, config, daemon, mcp};
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Parser)]

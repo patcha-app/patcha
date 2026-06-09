@@ -3,7 +3,6 @@ use crate::{
     models::{Event, EventType},
 };
 use chrono::{DateTime, Utc};
-use std::path::PathBuf;
 
 pub struct TerminalCollector {
     bash_guard: CollectorGuard,

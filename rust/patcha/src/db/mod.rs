@@ -49,7 +49,7 @@ impl Db {
     }
 
     /// Acquire the SQLite connection lock.
-    pub fn conn(&self) -> MutexGuard<Connection> {
+    pub fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("db mutex poisoned")
     }
 }

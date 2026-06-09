@@ -28,7 +28,7 @@ impl TaskAwareSearchService {
         query: &str,
         mode: &str,
         limit: usize,
-        date_filter: Option<NaiveDate>,
+        _date_filter: Option<NaiveDate>,
     ) -> Result<serde_json::Value> {
         let embedding = self.embedder.embed_one(query)?;
 

@@ -33,7 +33,7 @@ pub fn render_system() -> Result<String> {
 /// variable and a keyword argument to the macro call.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// let result = render_user("task_analysis", serde_json::json!({
 ///     "activities": "...",
 ///     "duration_minutes": 45,

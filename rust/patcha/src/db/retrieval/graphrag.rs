@@ -8,6 +8,7 @@ use anyhow::Result;
 use std::sync::Arc;
 
 const VECTOR_WEIGHT: f64 = 0.6;
+#[allow(dead_code)]
 const GRAPH_WEIGHT: f64 = 0.4;
 
 pub struct GraphRagSystem {
@@ -15,6 +16,7 @@ pub struct GraphRagSystem {
     knowledge_graph: Arc<KnowledgeGraph>,
     entity_extractor: Arc<EntityExtractor>,
     embedder: Arc<Embedder>,
+    #[allow(dead_code)]
     llm_client: Arc<PatchaApiClient>,
 }
 

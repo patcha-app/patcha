@@ -1,11 +1,8 @@
 use crate::{
-    config::Config,
     db::store::VectorStore,
-    embedding::cosine_similarity,
     llm::client::PatchaApiClient,
     models::{Category, Event},
 };
-use anyhow::Result;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;

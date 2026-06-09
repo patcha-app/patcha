@@ -5,7 +5,7 @@ use crate::{
 use anyhow::Result;
 use chrono::Local;
 use clap::Args;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 #[derive(Args)]
 pub struct ClusterArgs {

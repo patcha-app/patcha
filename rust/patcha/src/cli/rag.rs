@@ -65,7 +65,7 @@ pub async fn run_project(args: ProjectAnalysisArgs, cfg: Config) -> Result<()> {
     let db = Db::open(&cfg.db_path)?;
     let store = Arc::new(VectorStore::new(db.clone()));
     let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
-    let embedder = Arc::new(tokio::task::block_in_place(|| Embedder::new(&cfg))?);
+    let _embedder = Arc::new(tokio::task::block_in_place(|| Embedder::new(&cfg))?);
 
     let since = chrono::Utc::now() - chrono::Duration::days(args.days as i64);
     let events = store.get_events_since(since, 10_000)?;

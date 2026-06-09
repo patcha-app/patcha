@@ -40,6 +40,7 @@ const CONCEPT_PATTERNS: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 pub struct EntityExtractor {
+    #[allow(dead_code)]
     cfg: Config,
     llm_client: Arc<PatchaApiClient>,
 }

@@ -1,8 +1,7 @@
 use crate::{
-    categorize::rule_based_category,
     config::Config,
     db::{store::VectorStore, tasks::TaskStore},
-    embedding::{cosine_similarity, Embedder},
+    embedding::cosine_similarity,
     llm::{client::PatchaApiClient, prompts},
     models::{Category, Event, EventType, Task, TaskPriority, TaskStatus},
 };
@@ -41,7 +40,7 @@ impl LLMTaskAnalyzer {
         }
     }
 
-    pub async fn analyze_task_chunk(&self, activities: &[Event]) -> Result<TaskAnalysis> {
+    async fn analyze_task_chunk(&self, activities: &[Event]) -> Result<TaskAnalysis> {
         if activities.is_empty() {
             return Ok(Self::empty_analysis());
         }
@@ -301,6 +300,7 @@ pub enum ClusteringMethod {
 pub struct TaskIdentifier {
     llm_client: Arc<PatchaApiClient>,
     min_activities_per_task: usize,
+    #[allow(dead_code)]
     dedup_threshold: f32,
 }
 
@@ -626,6 +626,7 @@ pub struct DailyCompactor {
     task_identifier: TaskIdentifier,
     data_dir: PathBuf,
     dedup_threshold: f32,
+    #[allow(dead_code)]
     min_activities_per_task: usize,
 }
 
