@@ -41,24 +41,24 @@ if ! command -v swiftc &>/dev/null; then
     exit 1
 fi
 
-swiftc patcha/macos/ax_content.swift \
+swiftc helpers/ax_content.swift \
     -framework ApplicationServices \
     -framework AppKit \
     -framework Foundation \
     -o data/ax_content
 
-swiftc patcha/macos/ocr.swift \
+swiftc helpers/ocr.swift \
     -framework Vision \
     -framework Foundation \
     -o data/ocr
 
-swiftc patcha/macos/mobileclip.swift \
+swiftc helpers/mobileclip.swift \
     -framework CoreML \
     -framework Foundation \
     -O \
     -o data/mobileclip
 
-swiftc patcha/macos/observer.swift \
+swiftc helpers/observer.swift \
     -framework AppKit \
     -framework ApplicationServices \
     -framework Foundation \
