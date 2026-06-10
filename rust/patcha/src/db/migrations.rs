@@ -44,6 +44,58 @@ CREATE VIRTUAL TABLE IF NOT EXISTS vec_events USING vec0(
 );
 
 -- -------------------------------------------------------------------------
+-- Full-text search index over events (BM25 keyword arm of hybrid retrieval).
+-- Standalone FTS5 table; `text` concatenates the human-readable signal from
+-- raw_content, summary, and the searchable metadata fields. Kept in sync with
+-- the events table via triggers below.
+-- -------------------------------------------------------------------------
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_events USING fts5(
+    event_id UNINDEXED,
+    text,
+    tokenize = 'porter unicode61'
+);
+
+-- Trigger text expression must stay identical across insert/update/backfill.
+CREATE TRIGGER IF NOT EXISTS events_fts_ai AFTER INSERT ON events BEGIN
+    INSERT INTO fts_events(event_id, text) VALUES (
+        new.id,
+        new.raw_content || ' ' || coalesce(new.summary, '') || ' '
+            || coalesce(json_extract(new.metadata, '$.app_name'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.window_title'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.gist'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.domain'), '')
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS events_fts_ad AFTER DELETE ON events BEGIN
+    DELETE FROM fts_events WHERE event_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS events_fts_au AFTER UPDATE ON events BEGIN
+    DELETE FROM fts_events WHERE event_id = old.id;
+    INSERT INTO fts_events(event_id, text) VALUES (
+        new.id,
+        new.raw_content || ' ' || coalesce(new.summary, '') || ' '
+            || coalesce(json_extract(new.metadata, '$.app_name'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.window_title'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.gist'), '') || ' '
+            || coalesce(json_extract(new.metadata, '$.domain'), '')
+    );
+END;
+
+-- One-time backfill for events that predate the FTS index (idempotent: the
+-- NOT IN guard skips rows already indexed, so re-running on each boot is a no-op).
+INSERT INTO fts_events(event_id, text)
+SELECT id,
+       raw_content || ' ' || coalesce(summary, '') || ' '
+           || coalesce(json_extract(metadata, '$.app_name'), '') || ' '
+           || coalesce(json_extract(metadata, '$.window_title'), '') || ' '
+           || coalesce(json_extract(metadata, '$.gist'), '') || ' '
+           || coalesce(json_extract(metadata, '$.domain'), '')
+FROM events
+WHERE id NOT IN (SELECT event_id FROM fts_events);
+
+-- -------------------------------------------------------------------------
 -- Tasks
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS tasks (

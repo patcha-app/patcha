@@ -17,5 +17,6 @@ pub mod mcp;
 pub mod models;
 pub mod perception;
 pub mod process;
+pub mod rerank;
 pub mod summary;
 pub mod triggers;

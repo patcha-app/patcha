@@ -14,14 +14,33 @@ pub struct VectorStore {
 }
 
 /// Optional filters for event queries.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct EventFilter {
     pub date: Option<String>,
+    /// Inclusive lower bound on the event date (YYYY-MM-DD).
+    pub date_from: Option<String>,
+    /// Inclusive upper bound on the event date (YYYY-MM-DD).
+    pub date_to: Option<String>,
     pub event_type: Option<EventType>,
     pub category: Option<Category>,
     pub project: Option<String>,
     pub app: Option<String>,
+    pub source: Option<String>,
     pub compacted: Option<bool>,
+}
+
+impl EventFilter {
+    /// True when no filter field is set (lets callers skip the per-row check).
+    pub fn is_empty(&self) -> bool {
+        self.date.is_none()
+            && self.date_from.is_none()
+            && self.date_to.is_none()
+            && self.event_type.is_none()
+            && self.category.is_none()
+            && self.project.is_none()
+            && self.app.is_none()
+            && self.source.is_none()
+    }
 }
 
 /// Event returned from a vector search, with similarity score.
@@ -153,6 +172,9 @@ impl VectorStore {
         Ok(())
     }
 
+    /// Hard-delete a day's events. No longer used by compaction (which now keeps
+    /// raw events retrievable); retained for an optional future retention/prune job.
+    #[allow(dead_code)]
     pub fn delete_events_by_date(&self, date: &str) -> Result<usize> {
         let conn = self.db.conn();
         // Remove from vec table first (no FK cascade on virtual tables)
@@ -214,26 +236,40 @@ impl VectorStore {
         Ok(results)
     }
 
-    /// Full-text keyword candidates for RRF (used by search_activity).
+    /// BM25 full-text keyword candidates for RRF (used by search_activity).
+    /// Returns events ordered best-first by bm25 relevance. Includes compacted
+    /// raw events so historical activity stays keyword-searchable. Applies the
+    /// same metadata/time filter as the vector arm.
     pub fn fetch_fulltext_candidates(
         &self,
         query: &str,
         limit: usize,
+        filter: Option<&EventFilter>,
     ) -> Result<Vec<Event>> {
+        let Some(match_query) = build_fts_match_query(query) else {
+            return Ok(Vec::new());
+        };
+
         let conn = self.db.conn();
-        let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = conn.prepare_cached(
-            "SELECT id, timestamp, date, event_type, source, raw_content, summary, category, project, task_id, metadata
-             FROM events
-             WHERE compacted = 0
-               AND (lower(raw_content) LIKE ?1 OR lower(summary) LIKE ?1)
-             ORDER BY timestamp DESC
+            "SELECT e.id, e.timestamp, e.date, e.event_type, e.source, e.raw_content,
+                    e.summary, e.category, e.project, e.task_id, e.metadata
+             FROM fts_events f
+             JOIN events e ON e.id = f.event_id
+             WHERE f.text MATCH ?1
+             ORDER BY bm25(fts_events) ASC
              LIMIT ?2",
         )?;
-        let events = stmt
-            .query_map(params![pattern, limit as i64], row_to_event)?
+        let events: Vec<Event> = stmt
+            .query_map(params![match_query, limit as i64], row_to_event)?
             .collect::<std::result::Result<_, _>>()?;
-        Ok(events)
+
+        Ok(match filter {
+            Some(f) if !f.is_empty() => {
+                events.into_iter().filter(|e| event_matches_filter(e, f)).collect()
+            }
+            _ => events,
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -408,31 +444,87 @@ impl VectorStore {
             .query_row(params![event_id], row_to_event)
             .optional()?;
 
-        if let Some(filter) = filter {
-            if let Some(ref event) = event {
-                if let Some(ref date) = filter.date {
-                    if &event.date_str() != date {
-                        return Ok(None);
-                    }
-                }
-                if let Some(ref cat) = filter.category {
-                    if event.category.as_ref() != Some(cat) {
-                        return Ok(None);
-                    }
-                }
-                if let Some(ref proj) = filter.project {
-                    if event.project.as_deref() != Some(proj.as_str()) {
-                        return Ok(None);
-                    }
-                }
-                if let Some(compacted) = filter.compacted {
-                    // compacted flag not in the in-memory event; would need separate query
-                    let _ = compacted;
-                }
+        if let (Some(filter), Some(ev)) = (filter, event.as_ref()) {
+            if !filter.is_empty() && !event_matches_filter(ev, filter) {
+                return Ok(None);
             }
         }
 
         Ok(event)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Event filtering
+// ---------------------------------------------------------------------------
+
+/// Check an event against the optional metadata/time filters. The `compacted`
+/// flag is intentionally not enforced here: it isn't carried on the in-memory
+/// event and semantic search must include compacted raw events.
+fn event_matches_filter(ev: &Event, filter: &EventFilter) -> bool {
+    let date = ev.date_str();
+    if let Some(ref d) = filter.date {
+        if &date != d {
+            return false;
+        }
+    }
+    if let Some(ref from) = filter.date_from {
+        if date.as_str() < from.as_str() {
+            return false;
+        }
+    }
+    if let Some(ref to) = filter.date_to {
+        if date.as_str() > to.as_str() {
+            return false;
+        }
+    }
+    if let Some(ref et) = filter.event_type {
+        if &ev.event_type != et {
+            return false;
+        }
+    }
+    if let Some(ref cat) = filter.category {
+        if ev.category.as_ref() != Some(cat) {
+            return false;
+        }
+    }
+    if let Some(ref proj) = filter.project {
+        if ev.project.as_deref() != Some(proj.as_str()) {
+            return false;
+        }
+    }
+    if let Some(ref src) = filter.source {
+        if ev.source.as_deref() != Some(src.as_str()) {
+            return false;
+        }
+    }
+    if let Some(ref app) = filter.app {
+        let ev_app = ev.metadata.get("app_name").and_then(|v| v.as_str());
+        if ev_app != Some(app.as_str()) {
+            return false;
+        }
+    }
+    true
+}
+
+// ---------------------------------------------------------------------------
+// FTS5 query builder
+// ---------------------------------------------------------------------------
+
+/// Turn a free-text query into a safe FTS5 MATCH expression: extract alphanumeric
+/// terms, quote each (so punctuation/operators can't break MATCH syntax), and OR
+/// them together. Returns None when the query has no usable terms.
+fn build_fts_match_query(query: &str) -> Option<String> {
+    let terms: Vec<String> = query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 2)
+        .map(|t| format!("\"{}\"", t.to_lowercase()))
+        .collect();
+
+    if terms.is_empty() {
+        None
+    } else {
+        Some(terms.join(" OR "))
     }
 }
 
@@ -510,5 +602,57 @@ impl<T> OptionalExt<T> for rusqlite::Result<T> {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Db;
+    use crate::models::{Event, EventType};
+
+    fn temp_store() -> VectorStore {
+        let path = std::env::temp_dir().join(format!("patcha_test_{}.db", uuid::Uuid::new_v4()));
+        let db = Db::open(&path).expect("open db");
+        VectorStore::new(db)
+    }
+
+    #[test]
+    fn fts_match_query_extracts_terms() {
+        assert_eq!(
+            build_fts_match_query("slack message about deploy rollback!"),
+            Some("\"slack\" OR \"message\" OR \"about\" OR \"deploy\" OR \"rollback\"".to_string())
+        );
+        assert_eq!(build_fts_match_query("  ?? "), None);
+    }
+
+    #[test]
+    fn fulltext_finds_multiword_query() {
+        let store = temp_store();
+        let mut hit = Event::new(EventType::Terminal, "{\"command\":\"git revert the deploy rollback\"}");
+        hit.source = Some("terminal".into());
+        let miss = Event::new(EventType::Terminal, "{\"command\":\"ls -la\"}");
+        store.store_event(&hit).unwrap();
+        store.store_event(&miss).unwrap();
+
+        // A natural-language query the old LIKE '%whole query%' arm would miss.
+        let results = store.fetch_fulltext_candidates("deploy rollback message", 10, None).unwrap();
+        assert!(results.iter().any(|e| e.id == hit.id), "expected the matching event");
+        assert!(!results.iter().any(|e| e.id == miss.id), "unrelated event should not match");
+    }
+
+    #[test]
+    fn compacted_events_stay_searchable() {
+        let store = temp_store();
+        let mut e = Event::new(EventType::Browser, "{\"title\":\"Postgres replication tuning\",\"domain\":\"docs.example.com\"}");
+        e.source = Some("browser".into());
+        store.store_event(&e).unwrap();
+        store.mark_events_compacted(&[e.id.clone()]).unwrap();
+
+        let results = store.fetch_fulltext_candidates("postgres replication", 10, None).unwrap();
+        assert!(
+            results.iter().any(|r| r.id == e.id),
+            "compacted raw events must remain keyword-searchable"
+        );
     }
 }

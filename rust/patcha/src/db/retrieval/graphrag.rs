@@ -44,7 +44,7 @@ impl GraphRagSystem {
         limit: usize,
     ) -> Result<serde_json::Value> {
         // Vector context
-        let embedding = self.embedder.embed_one(query)?;
+        let embedding = self.embedder.embed_query(query)?;
         let vector_results = self.vector_store.search_events(&embedding, limit, None)?;
 
         // Graph context — extract entities from query, find neighbors

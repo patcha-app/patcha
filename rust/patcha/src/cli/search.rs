@@ -21,7 +21,7 @@ pub async fn run(args: SearchArgs, cfg: Config) -> Result<()> {
     let store = Arc::new(VectorStore::new(db));
     let embedder = tokio::task::block_in_place(|| Embedder::new(&cfg))?;
 
-    let embedding = tokio::task::block_in_place(|| embedder.embed_one(&args.query))?;
+    let embedding = tokio::task::block_in_place(|| embedder.embed_query(&args.query))?;
     let results = store.search_events(&embedding, args.limit, None)?;
 
     if results.is_empty() {

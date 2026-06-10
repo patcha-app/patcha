@@ -262,7 +262,7 @@ private final class NoIconMenuItem: NSMenuItem {
     }
 
     @objc private func quitApp() {
-        (NSApp.delegate as? AppDelegate)?.quit()
+        NSApp.terminate(nil)
     }
 }
 

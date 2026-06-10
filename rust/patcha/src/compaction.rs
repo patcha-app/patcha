@@ -687,6 +687,7 @@ impl DailyCompactor {
             }));
         }
 
+        let all_event_ids: Vec<String> = events.iter().map(|e| e.id.clone()).collect();
         let deduped = self.dedup_events(events);
         tracing::info!(date = %date_str, after_dedup = deduped.len(), "deduped");
 
@@ -706,7 +707,11 @@ impl DailyCompactor {
             for task in &tasks {
                 self.task_store.store_task(task)?;
             }
-            self.vector_store.delete_events_by_date(&date_str)?;
+            // Keep raw events (and their embeddings) retrievable forever — task
+            // summaries are an additional layer, not a replacement. Marking them
+            // compacted only excludes them from working-memory/recent surfaces;
+            // semantic search still finds them.
+            self.vector_store.mark_events_compacted(&all_event_ids)?;
             if !state.compacted_dates.contains(&date_str) {
                 state.compacted_dates.push(date_str.clone());
             }

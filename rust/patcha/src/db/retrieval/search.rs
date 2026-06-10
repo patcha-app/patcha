@@ -30,7 +30,7 @@ impl TaskAwareSearchService {
         limit: usize,
         _date_filter: Option<NaiveDate>,
     ) -> Result<serde_json::Value> {
-        let embedding = self.embedder.embed_one(query)?;
+        let embedding = self.embedder.embed_query(query)?;
 
         let (task_results, activity_results) = match mode {
             "tasks" => {

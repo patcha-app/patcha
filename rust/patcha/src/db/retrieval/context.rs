@@ -1,13 +1,45 @@
 use crate::{
-    db::store::VectorStore,
+    config::Config,
+    db::store::{EventFilter, VectorStore},
     embedding::{cosine_similarity, Embedder},
     models::{Event, EventType},
+    rerank::CrossEncoderReranker,
 };
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
 const RRF_K: f64 = 60.0;
+
+/// Tunable parameters for hybrid activity search.
+pub struct RetrievalParams {
+    pub limit: usize,
+    /// How many candidates each arm contributes before fusion/reranking.
+    pub candidate_pool: usize,
+    /// Metadata/time scoping (app, source, date range, ...).
+    pub filter: EventFilter,
+    /// Drop vector hits whose cosine similarity is below this floor.
+    pub similarity_floor: f32,
+    /// Weight of the recency term added to the fused score (0 disables it).
+    pub recency_weight: f64,
+    pub recency_lambda_days: f64,
+}
+
+impl RetrievalParams {
+    pub fn from_config(cfg: &Config, limit: usize, app_filter: Option<&str>) -> Self {
+        Self {
+            limit,
+            candidate_pool: cfg.rerank_candidate_pool.max(limit),
+            filter: EventFilter {
+                app: app_filter.map(|s| s.to_owned()),
+                ..Default::default()
+            },
+            similarity_floor: cfg.similarity_floor,
+            recency_weight: cfg.recency_weight,
+            recency_lambda_days: cfg.recency_lambda_days.max(0.001),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -69,55 +101,57 @@ pub async fn get_recent_activity(
 pub async fn search_activity(
     store: &VectorStore,
     embedder: &Embedder,
+    reranker: Option<&CrossEncoderReranker>,
     query: &str,
-    limit: usize,
-    app_filter: Option<&str>,
+    params: &RetrievalParams,
 ) -> Result<String> {
-    // 1. Vector search
-    let embedding = embedder.embed_one(query)?;
-    let vector_results = store.search_events(&embedding, limit, None)?;
+    let filter = (!params.filter.is_empty()).then(|| params.filter.clone());
+    let pool = params.candidate_pool;
 
-    // 2. Full-text keyword search
-    let ft_candidates = store.fetch_fulltext_candidates(query, (limit * 5).min(100))?;
-    let ft_ranked = tfidf_rank(query, ft_candidates);
-    let ft_trimmed = ft_ranked.into_iter().take(limit).collect::<Vec<_>>();
+    // 1. Vector search (filtered), dropping hits below the similarity floor.
+    let embedding = embedder.embed_query(query)?;
+    let mut vector_results = store.search_events(&embedding, pool, filter.as_ref())?;
+    if params.similarity_floor > 0.0 {
+        vector_results.retain(|r| r.score as f32 >= params.similarity_floor);
+    }
 
-    // 3. Reciprocal Rank Fusion
-    let merged = if !ft_trimmed.is_empty() {
-        rrf_merge(&vector_results, &ft_trimmed, limit)
+    // 2. Full-text keyword search (BM25-ranked by the FTS5 index).
+    let ft_candidates = store.fetch_fulltext_candidates(query, pool, filter.as_ref())?;
+
+    // 3. Fuse the two arms into a candidate pool (RRF + mild recency boost).
+    let mut merged = if !ft_candidates.is_empty() {
+        rrf_merge(&vector_results, &ft_candidates, params)
     } else {
-        vector_results
+        let now = Utc::now();
+        let mut m: Vec<MergedResult> = vector_results
             .iter()
             .map(|r| MergedResult {
                 id: r.event.id.clone(),
-                score: r.score,
+                score: r.score + recency_boost(&r.event.timestamp, now, params),
                 event: r.event.clone(),
             })
-            .collect()
+            .collect();
+        m.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        m.truncate(pool);
+        m
     };
 
+    // 4. Cross-encoder rerank the pool for precision, then keep the top `limit`.
+    rerank_in_place(reranker, query, &mut merged);
+    merged.truncate(params.limit);
+
+    let app_tag = params
+        .filter
+        .app
+        .as_deref()
+        .map(|a| format!(" (app={a})"))
+        .unwrap_or_default();
+
     if merged.is_empty() {
-        let app_tag = app_filter.map(|a| format!(" (app={a})")).unwrap_or_default();
         return Ok(format!("# Search results for \"{query}\"{app_tag}\nNo results found."));
     }
 
-    // Filter by app if requested
-    let filtered: Vec<&MergedResult> = if let Some(app) = app_filter {
-        merged
-            .iter()
-            .filter(|r| {
-                r.event
-                    .metadata
-                    .get("app_name")
-                    .and_then(|v| v.as_str())
-                    == Some(app)
-            })
-            .collect()
-    } else {
-        merged.iter().collect()
-    };
-
-    let lines: Vec<String> = filtered
+    let lines: Vec<String> = merged
         .iter()
         .map(|r| {
             let score = (r.score * 1000.0).round() / 1000.0;
@@ -127,11 +161,19 @@ pub async fn search_activity(
         })
         .collect();
 
-    let app_tag = app_filter.map(|a| format!(" (app={a})")).unwrap_or_default();
     Ok(format!(
         "# Search results for \"{query}\"{app_tag}\n{}",
         lines.join("\n\n")
     ))
+}
+
+/// Exponential recency term: `weight * exp(-age_days / lambda)`, in [0, weight].
+fn recency_boost(ts: &DateTime<Utc>, now: DateTime<Utc>, params: &RetrievalParams) -> f64 {
+    if params.recency_weight <= 0.0 {
+        return 0.0;
+    }
+    let age_days = (now - *ts).num_seconds().max(0) as f64 / 86_400.0;
+    params.recency_weight * (-age_days / params.recency_lambda_days).exp()
 }
 
 // ---------------------------------------------------------------------------
@@ -283,101 +325,10 @@ fn strip_timestamp_prefix(s: &str) -> &str {
 }
 
 // ---------------------------------------------------------------------------
-// TF-IDF ranking
-// ---------------------------------------------------------------------------
-
-fn tfidf_rank(query: &str, candidates: Vec<Event>) -> Vec<Event> {
-    if candidates.is_empty() {
-        return Vec::new();
-    }
-
-    let corpus: Vec<String> = candidates
-        .iter()
-        .map(|e| e.raw_content.to_lowercase())
-        .collect();
-
-    if corpus.iter().all(|s| s.is_empty()) {
-        return candidates;
-    }
-
-    // Build vocabulary from all documents + query
-    let query_lower = query.to_lowercase();
-    let all_docs: Vec<&str> = corpus.iter().map(|s| s.as_str()).chain(std::iter::once(query_lower.as_str())).collect();
-    let n = all_docs.len(); // includes query as last doc
-
-    // Tokenize (unigrams only for simplicity)
-    let tokenize = |text: &str| -> Vec<String> {
-        text.split_whitespace()
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
-            .filter(|w| w.len() >= 2)
-            .collect()
-    };
-
-    let tokenized: Vec<Vec<String>> = all_docs.iter().map(|d| tokenize(d)).collect();
-
-    // Document frequency
-    let mut df: HashMap<String, usize> = HashMap::new();
-    for tokens in &tokenized {
-        let unique: std::collections::HashSet<&String> = tokens.iter().collect();
-        for t in unique {
-            *df.entry(t.clone()).or_insert(0) += 1;
-        }
-    }
-
-    // TF-IDF for each doc and the query (last)
-    let tfidf = |tokens: &[String]| -> HashMap<String, f64> {
-        let mut tf: HashMap<String, usize> = HashMap::new();
-        for t in tokens { *tf.entry(t.clone()).or_insert(0) += 1; }
-        let total = tokens.len().max(1) as f64;
-        tf.into_iter()
-            .map(|(term, count)| {
-                let idf = ((n as f64 + 1.0) / (*df.get(&term).unwrap_or(&1) as f64 + 1.0)).ln() + 1.0;
-                let tf_val = (count as f64 / total).ln_1p(); // sublinear TF
-                (term, tf_val * idf)
-            })
-            .collect()
-    };
-
-    let query_vec = tfidf(&tokenized[n - 1]);
-    let doc_vecs: Vec<HashMap<String, f64>> = tokenized[..n - 1].iter().map(|t| tfidf(t)).collect();
-
-    // Cosine similarity between query and each doc
-    let query_norm: f64 = query_vec.values().map(|v| v * v).sum::<f64>().sqrt();
-
-    let mut scored: Vec<(f64, usize)> = doc_vecs
-        .iter()
-        .enumerate()
-        .map(|(i, dv)| {
-            let dot: f64 = query_vec.iter()
-                .filter_map(|(t, qv)| dv.get(t).map(|dv| qv * dv))
-                .sum();
-            let doc_norm: f64 = dv.values().map(|v| v * v).sum::<f64>().sqrt();
-            let sim = if query_norm > 0.0 && doc_norm > 0.0 {
-                dot / (query_norm * doc_norm)
-            } else {
-                0.0
-            };
-            (sim, i)
-        })
-        .collect();
-
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-
-    // Reorder candidates by score
-    let mut result = Vec::with_capacity(candidates.len());
-    let mut candidates_indexed: Vec<Option<Event>> = candidates.into_iter().map(Some).collect();
-    for (_, idx) in scored {
-        if let Some(e) = candidates_indexed[idx].take() {
-            result.push(e);
-        }
-    }
-    result
-}
-
-// ---------------------------------------------------------------------------
 // Reciprocal Rank Fusion
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 struct MergedResult {
     #[allow(dead_code)]
     id: String,
@@ -388,7 +339,7 @@ struct MergedResult {
 fn rrf_merge(
     vector_results: &[crate::db::store::ScoredEvent],
     text_results: &[Event],
-    limit: usize,
+    params: &RetrievalParams,
 ) -> Vec<MergedResult> {
     let mut scores: HashMap<String, (f64, Event)> = HashMap::new();
 
@@ -404,12 +355,57 @@ fn rrf_merge(
         entry.0 += contribution;
     }
 
+    let now = Utc::now();
     let mut merged: Vec<MergedResult> = scores
         .into_iter()
-        .map(|(id, (score, event))| MergedResult { id, score, event })
+        .map(|(id, (score, event))| {
+            let score = score + recency_boost(&event.timestamp, now, params);
+            MergedResult { id, score, event }
+        })
         .collect();
 
     merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-    merged.truncate(limit);
+    merged.truncate(params.candidate_pool);
     merged
+}
+
+// ---------------------------------------------------------------------------
+// Cross-encoder reranking
+// ---------------------------------------------------------------------------
+
+/// Reorder the candidate pool by cross-encoder relevance. No-op when no reranker
+/// is configured, the model files are absent, or inference fails (the fused order
+/// is kept so a missing/broken model never breaks search).
+fn rerank_in_place(
+    reranker: Option<&CrossEncoderReranker>,
+    query: &str,
+    merged: &mut [MergedResult],
+) {
+    let Some(reranker) = reranker else { return };
+    if merged.len() < 2 || !reranker.available() {
+        return;
+    }
+
+    let docs: Vec<String> = merged.iter().map(|r| rerank_text(&r.event)).collect();
+    let scores = match reranker.scores(query, &docs) {
+        Ok(s) if s.len() == merged.len() => s,
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "reranker failed; keeping fused order");
+            return;
+        }
+    };
+
+    let mut scored: Vec<(f32, MergedResult)> =
+        scores.into_iter().zip(merged.iter().cloned()).collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    for (slot, (s, r)) in merged.iter_mut().zip(scored) {
+        *slot = MergedResult { score: s as f64, ..r };
+    }
+}
+
+/// Concise text representation of an event for the cross-encoder to judge.
+fn rerank_text(event: &Event) -> String {
+    let detail = format_detail(event);
+    strip_timestamp_prefix(&detail).chars().take(2000).collect()
 }

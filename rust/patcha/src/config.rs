@@ -18,9 +18,22 @@ pub struct Config {
     pub vector_size: usize,
     pub embedding_model_name: String,
     pub embedding_cache_dir: PathBuf,
+    /// Instruction prefixed to user queries before embedding (BGE is trained
+    /// asymmetrically: queries get this prefix, documents do not).
+    pub query_instruction_prefix: String,
     pub max_events_per_day: u32,
     pub max_embedding_tokens: usize,
     pub embedding_chunk_overlap: usize,
+
+    // Retrieval ranking
+    pub similarity_floor: f32,
+    pub recency_weight: f64,
+    pub recency_lambda_days: f64,
+
+    // Reranking (Phase D)
+    pub enable_reranker: bool,
+    pub reranker_model_name: String,
+    pub rerank_candidate_pool: usize,
     pub max_pending_per_cycle: usize,
     pub working_memory_dedup_threshold: f32,
     pub daily_compaction_min_activities: usize,
@@ -69,9 +82,16 @@ impl Default for Config {
             vector_size: 768,
             embedding_model_name: "BAAI/bge-base-en-v1.5".into(),
             embedding_cache_dir: base.join("models"),
+            query_instruction_prefix: "Represent this sentence for searching relevant passages: ".into(),
             max_events_per_day: 10_000,
             max_embedding_tokens: 8191,
             embedding_chunk_overlap: 100,
+            similarity_floor: 0.0,
+            recency_weight: 0.02,
+            recency_lambda_days: 30.0,
+            enable_reranker: true,
+            reranker_model_name: "BAAI/bge-reranker-base".into(),
+            rerank_candidate_pool: 40,
             max_pending_per_cycle: 500,
             working_memory_dedup_threshold: 0.95,
             daily_compaction_min_activities: 2,
@@ -150,6 +170,13 @@ impl Config {
                 .unwrap_or(default)
         }
 
+        fn env_f64(key: &str, default: f64) -> f64 {
+            std::env::var(key)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(default)
+        }
+
         let base = patcha_dir();
         let data_dir = env_path("DATA_DIR", base.join("data"));
 
@@ -179,9 +206,19 @@ impl Config {
             vector_size: env_usize("VECTOR_SIZE", 768),
             embedding_model_name: env_str("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5"),
             embedding_cache_dir: env_path("EMBEDDING_CACHE_DIR", base.join("models")),
+            query_instruction_prefix: env_str(
+                "QUERY_INSTRUCTION_PREFIX",
+                "Represent this sentence for searching relevant passages: ",
+            ),
             max_events_per_day: env_u64("MAX_EVENTS_PER_DAY", 10_000) as u32,
             max_embedding_tokens: env_usize("MAX_EMBEDDING_TOKENS", 8191),
             embedding_chunk_overlap: env_usize("EMBEDDING_CHUNK_OVERLAP", 100),
+            similarity_floor: env_f32("SIMILARITY_FLOOR", 0.0),
+            recency_weight: env_f64("RECENCY_WEIGHT", 0.02),
+            recency_lambda_days: env_f64("RECENCY_LAMBDA_DAYS", 30.0),
+            enable_reranker: env_bool("ENABLE_RERANKER", true),
+            reranker_model_name: env_str("RERANKER_MODEL", "BAAI/bge-reranker-base"),
+            rerank_candidate_pool: env_usize("RERANK_CANDIDATE_POOL", 40),
             max_pending_per_cycle: env_usize("MAX_PENDING_PER_CYCLE", 500),
             working_memory_dedup_threshold: env_f32("WORKING_MEMORY_DEDUP_THRESHOLD", 0.95),
             daily_compaction_min_activities: env_usize("DAILY_COMPACTION_MIN_ACTIVITIES", 2),

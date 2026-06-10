@@ -10,7 +10,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var settingsWindowController: SettingsWindowController!
     var authManager: AuthManager!
 
-    private var isQuitting = false
     private var cancellables: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -117,15 +116,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showLogin() {
         settingsWindowController.show()
-    }
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        isQuitting ? .terminateNow : .terminateCancel
-    }
-
-    func quit() {
-        isQuitting = true
-        NSApp.terminate(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

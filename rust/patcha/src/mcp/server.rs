@@ -23,6 +23,7 @@ use crate::{
     },
     embedding::Embedder,
     mcp::McpArgs,
+    rerank::CrossEncoderReranker,
 };
 
 // ---------------------------------------------------------------------------
@@ -100,16 +101,26 @@ pub struct PatchaServer {
     store: Arc<VectorStore>,
     graph: Arc<ActivityGraph>,
     embedder: Arc<Embedder>,
+    reranker: Option<Arc<CrossEncoderReranker>>,
+    cfg: Arc<Config>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl PatchaServer {
-    fn new(store: Arc<VectorStore>, graph: Arc<ActivityGraph>, embedder: Arc<Embedder>) -> Self {
+    fn new(
+        store: Arc<VectorStore>,
+        graph: Arc<ActivityGraph>,
+        embedder: Arc<Embedder>,
+        reranker: Option<Arc<CrossEncoderReranker>>,
+        cfg: Arc<Config>,
+    ) -> Self {
         Self {
             store,
             graph,
             embedder,
+            reranker,
+            cfg,
             tool_router: Self::tool_router(),
         }
     }
@@ -131,12 +142,17 @@ impl PatchaServer {
         Parameters(p): Parameters<SearchActivityParams>,
     ) -> String {
         let limit = p.limit.unwrap_or(10) as usize;
+        let params = retrieval::context::RetrievalParams::from_config(
+            &self.cfg,
+            limit,
+            p.app.as_deref(),
+        );
         retrieval::context::search_activity(
             &self.store,
             &self.embedder,
+            self.reranker.as_deref(),
             &p.query,
-            limit,
-            p.app.as_deref(),
+            &params,
         )
         .await
         .unwrap_or_else(|e| format!("Error: {e}"))
@@ -218,7 +234,24 @@ pub async fn run(args: McpArgs, cfg: Config) -> Result<()> {
     let store = Arc::new(VectorStore::new(db.clone()));
     let graph = Arc::new(ActivityGraph::new(db.clone(), 600));
     let embedder = Arc::new(Embedder::new(&cfg)?);
-    let server = PatchaServer::new(store, graph, embedder);
+
+    let reranker = if cfg.enable_reranker {
+        let dir = cfg
+            .embedding_cache_dir
+            .join(cfg.reranker_model_name.replace('/', "_"));
+        let r = CrossEncoderReranker::new(dir.clone());
+        if r.available() {
+            tracing::info!(model = %cfg.reranker_model_name, "cross-encoder reranker enabled");
+            Some(Arc::new(r))
+        } else {
+            tracing::info!(dir = %dir.display(), "reranker model not found; skipping rerank stage");
+            None
+        }
+    } else {
+        None
+    };
+
+    let server = PatchaServer::new(store, graph, embedder, reranker, Arc::new(cfg.clone()));
 
     if !args.stdio {
         run_http(server, &cfg, args.port).await

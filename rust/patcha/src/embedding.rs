@@ -21,6 +21,8 @@ pub struct Embedder {
     /// Effective token budget for chunking (accounts for safety margin).
     pub effective_max_tokens: usize,
     pub chunk_overlap: usize,
+    /// Instruction prepended to user queries (BGE asymmetric retrieval).
+    query_prefix: String,
 }
 
 impl Embedder {
@@ -49,13 +51,25 @@ impl Embedder {
             model,
             effective_max_tokens: effective,
             chunk_overlap: cfg.embedding_chunk_overlap,
+            query_prefix: cfg.query_instruction_prefix.clone(),
         })
     }
 
-    /// Embed a single text; returns a 768-dim float vector.
+    /// Embed a single document text; returns a 768-dim float vector.
+    /// Use this for stored content and document-to-document similarity — it does
+    /// NOT apply the query instruction prefix.
     pub fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
         let mut results = self.model.embed(vec![text.to_owned()], None)
             .context("fastembed embed_one failed")?;
+        Ok(results.remove(0))
+    }
+
+    /// Embed a user search query. Prepends the BGE instruction prefix so the
+    /// query lands in the same region of vector space as the matching documents.
+    pub fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
+        let prefixed = format!("{}{}", self.query_prefix, query);
+        let mut results = self.model.embed(vec![prefixed], None)
+            .context("fastembed embed_query failed")?;
         Ok(results.remove(0))
     }
 
