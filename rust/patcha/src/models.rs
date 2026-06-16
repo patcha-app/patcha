@@ -293,6 +293,34 @@ pub struct DailySummary {
     pub generated_at: DateTime<Utc>,
 }
 
+// ---------------------------------------------------------------------------
+// Timeline (per-hour) summaries — feed the macOS Timeline pane.
+// ---------------------------------------------------------------------------
+
+/// A node in the "activity breakdown" task tree shown when a timeline card is
+/// expanded. Serializes as `{ "label": ..., "children": [...] }`; `children`
+/// is omitted for leaves so the Swift client decodes it as nil.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineTreeNode {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<TimelineTreeNode>,
+}
+
+/// One hour of LLM-summarized activity, persisted in `timeline_summaries`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineHourSummary {
+    pub date: String,
+    pub hour: u32,
+    pub title: String,
+    pub summary: String,
+    pub tree: Option<TimelineTreeNode>,
+    pub apps: Vec<String>,
+    pub categories: Vec<String>,
+    pub event_count: u32,
+    pub generated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailyTaskSummary {
     pub date: String,

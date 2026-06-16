@@ -12,6 +12,7 @@ pub mod config;
 pub mod daemon;
 pub mod db;
 pub mod embedding;
+pub mod hourly;
 pub mod llm;
 pub mod mcp;
 pub mod models;

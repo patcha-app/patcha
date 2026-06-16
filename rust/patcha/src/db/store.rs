@@ -1,6 +1,6 @@
 use crate::{
     db::{vec_to_bytes, Db},
-    models::{Category, Event, EventType},
+    models::{Category, Event, EventType, TimelineHourSummary, TimelineTreeNode},
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -342,6 +342,67 @@ impl VectorStore {
         Ok(events)
     }
 
+    // -----------------------------------------------------------------------
+    // Timeline summaries (per-hour LLM narratives)
+    // -----------------------------------------------------------------------
+
+    pub fn upsert_timeline_summary(&self, s: &TimelineHourSummary) -> Result<()> {
+        let conn = self.db.conn();
+        let tree = match &s.tree {
+            Some(t) => Some(serde_json::to_string(t)?),
+            None => None,
+        };
+        conn.execute(
+            "INSERT INTO timeline_summaries
+                (date, hour, title, summary, tree, apps, categories, event_count, generated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(date, hour) DO UPDATE SET
+                title = excluded.title,
+                summary = excluded.summary,
+                tree = excluded.tree,
+                apps = excluded.apps,
+                categories = excluded.categories,
+                event_count = excluded.event_count,
+                generated_at = excluded.generated_at",
+            params![
+                s.date,
+                s.hour,
+                s.title,
+                s.summary,
+                tree,
+                serde_json::to_string(&s.apps)?,
+                serde_json::to_string(&s.categories)?,
+                s.event_count,
+                s.generated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_timeline_summaries(&self, date: &str) -> Result<Vec<TimelineHourSummary>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT date, hour, title, summary, tree, apps, categories, event_count, generated_at
+             FROM timeline_summaries WHERE date = ?1 ORDER BY hour ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![date], row_to_timeline_summary)?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// The set of hours already summarized for a date (cheap existence check
+    /// used by the hourly job to skip work).
+    pub fn summarized_hours(&self, date: &str) -> Result<std::collections::HashSet<u32>> {
+        let conn = self.db.conn();
+        let mut stmt =
+            conn.prepare_cached("SELECT hour FROM timeline_summaries WHERE date = ?1")?;
+        let hours = stmt
+            .query_map(params![date], |r| r.get::<_, u32>(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(hours)
+    }
+
     pub fn get_events_by_category(
         &self,
         category: &Category,
@@ -573,6 +634,39 @@ fn row_to_event_cols(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<Eve
         project,
         task_id,
         metadata,
+    })
+}
+
+fn row_to_timeline_summary(row: &rusqlite::Row) -> rusqlite::Result<TimelineHourSummary> {
+    let date: String = row.get(0)?;
+    let hour: u32 = row.get(1)?;
+    let title: String = row.get(2)?;
+    let summary: String = row.get(3)?;
+    let tree_str: Option<String> = row.get(4)?;
+    let apps_str: String = row.get(5)?;
+    let categories_str: String = row.get(6)?;
+    let event_count: u32 = row.get(7)?;
+    let generated_at_str: String = row.get(8)?;
+
+    let tree = tree_str
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<TimelineTreeNode>(s).ok());
+    let apps: Vec<String> = serde_json::from_str(&apps_str).unwrap_or_default();
+    let categories: Vec<String> = serde_json::from_str(&categories_str).unwrap_or_default();
+    let generated_at = DateTime::parse_from_rfc3339(&generated_at_str)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+
+    Ok(TimelineHourSummary {
+        date,
+        hour,
+        title,
+        summary,
+        tree,
+        apps,
+        categories,
+        event_count,
+        generated_at,
     })
 }
 

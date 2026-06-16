@@ -25,6 +25,7 @@ use crate::{
     config::Config,
     db::{Db, activity_graph::ActivityGraph, store::VectorStore, tasks::TaskStore},
     embedding::Embedder,
+    hourly::HourlySummarizer,
     llm::client::PatchaApiClient,
     models::Event,
     process::EventPreprocessor,
@@ -162,6 +163,9 @@ pub async fn start(cfg: Config) -> Result<()> {
         Arc::clone(&llm_client),
         &cfg,
     );
+    let hourly_summarizer = cfg
+        .enable_hourly_summary
+        .then(|| HourlySummarizer::new(Arc::clone(&store), Arc::clone(&llm_client)));
 
     // -----------------------------------------------------------------------
     // Collectors
@@ -396,6 +400,15 @@ pub async fn start(cfg: Config) -> Result<()> {
         // -----------------------------------------------------------------------
         if let Err(e) = compactor.maybe_compact_previous_days().await {
             tracing::error!(error=%e, "compaction error");
+        }
+
+        // -----------------------------------------------------------------------
+        // Hourly timeline summaries (LLM narratives for elapsed hours)
+        // -----------------------------------------------------------------------
+        if let Some(summarizer) = &hourly_summarizer {
+            if let Err(e) = summarizer.run_pending().await {
+                tracing::error!(error=%e, "hourly summary error");
+            }
         }
 
         update_pid(&cfg, &last_collection);

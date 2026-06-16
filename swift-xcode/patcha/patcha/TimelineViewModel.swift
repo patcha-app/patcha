@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
@@ -24,6 +25,16 @@ final class TimelineViewModel: ObservableObject {
     }
 
     var canGoForward: Bool { !isToday }
+
+    var sessionCount: Int { day?.hours.count ?? 0 }
+
+    var eventTotal: Int { (day?.hours ?? []).reduce(0) { $0 + $1.eventCount } }
+
+    var appCount: Int {
+        var names = Set<String>()
+        for hour in day?.hours ?? [] { names.formUnion(hour.apps) }
+        return names.count
+    }
 
     func load() {
         isLoading = true
@@ -56,8 +67,34 @@ final class TimelineViewModel: ObservableObject {
         selectedDate = Calendar.current.startOfDay(for: next)
     }
 
+    func goToday() {
+        selectedDate = Calendar.current.startOfDay(for: Date())
+    }
+
     func icon(for name: String) -> NSImage {
         iconCache[name] ?? fallbackIcon
+    }
+
+    // Brand hues for common apps, with a stable hashed fallback palette so the
+    // rail dot/line color is consistent across reloads.
+    private static let brandColors: [String: String] = [
+        "mail": "2AA4FF", "notion": "C9C9CD", "codex": "5B8CFF", "arc": "FF5A4D",
+        "figma": "A259FF", "terminal": "25C065", "iterm": "25C065", "slack": "E01E5A",
+        "zoom": "2D8CFF", "spotify": "1DB954", "discord": "5865F2", "safari": "2AA4FF",
+        "xcode": "2D8CFF", "chrome": "EA4335", "messages": "25C065",
+    ]
+
+    private static let palette = [
+        "2AA4FF", "5B8CFF", "A259FF", "FF5A4D", "25C065", "E01E5A", "2D8CFF", "1DB954",
+    ]
+
+    func color(forApp name: String) -> Color {
+        let key = name.lowercased()
+        if let hex = Self.brandColors.first(where: { key.contains($0.key) })?.value {
+            return Color(hex: hex)
+        }
+        let index = abs(name.hashValue) % Self.palette.count
+        return Color(hex: Self.palette[index])
     }
 
     private func buildIconLookup() {

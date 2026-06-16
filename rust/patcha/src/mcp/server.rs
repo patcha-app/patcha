@@ -333,6 +333,14 @@ async fn timeline_handler(
         }
     };
 
+    // LLM-generated per-hour narratives produced by the daemon, keyed by hour.
+    let stored: HashMap<u32, _> = store
+        .get_timeline_summaries(&date_str)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| (s.hour, s))
+        .collect();
+
     let mut hours: HashMap<u32, HourBucket> = HashMap::new();
 
     let mut ordered = events;
@@ -362,10 +370,30 @@ async fn timeline_handler(
     }
 
     let mut result: Vec<serde_json::Value> = Vec::new();
+    // Union of hours that have events and hours that have a stored summary.
     let mut sorted_hours: Vec<u32> = hours.keys().copied().collect();
+    for hour in stored.keys() {
+        if !hours.contains_key(hour) {
+            sorted_hours.push(*hour);
+        }
+    }
     sorted_hours.sort_unstable();
 
     for hour in sorted_hours {
+        // Prefer the stored LLM summary; fall back to per-event aggregation.
+        if let Some(s) = stored.get(&hour) {
+            result.push(serde_json::json!({
+                "hour": hour,
+                "apps": s.apps,
+                "summaries": [s.summary],
+                "categories": s.categories,
+                "event_count": s.event_count,
+                "title": s.title,
+                "tree": s.tree,
+            }));
+            continue;
+        }
+
         let bucket = &hours[&hour];
         let mut apps: Vec<(&String, &u32)> = bucket.app_counts.iter().collect();
         apps.sort_by_key(|(_, count)| std::cmp::Reverse(**count));

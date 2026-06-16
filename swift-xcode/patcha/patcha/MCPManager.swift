@@ -219,24 +219,27 @@ import SQLite3
             return envDir
         }
 
+        // Embedded at build time via Info.plist PatchaSourceRoot = $(SRCROOT)/../..
         if let plistRoot = Bundle.main.infoDictionary?["PatchaSourceRoot"] as? String {
             let resolved = (plistRoot as NSString).standardizingPath
-            if FileManager.default.fileExists(atPath: "\(resolved)/main.py") {
+            if FileManager.default.fileExists(atPath: "\(resolved)/rust") {
                 return resolved
             }
         }
 
+        // In .app bundle: bundle lives at <project>/dist/Patcha.app — two levels up is project root.
         let bundlePath = Bundle.main.bundlePath
         let distDir = (bundlePath as NSString).deletingLastPathComponent
         let candidate = (distDir as NSString).deletingLastPathComponent
-        if FileManager.default.fileExists(atPath: "\(candidate)/main.py") {
+        if FileManager.default.fileExists(atPath: "\(candidate)/rust") {
             return candidate
         }
 
+        // Walk up from the executable to find the rust/ directory.
         if let execPath = Bundle.main.executablePath {
             var dir = (execPath as NSString).deletingLastPathComponent
             for _ in 0..<10 {
-                if FileManager.default.fileExists(atPath: "\(dir)/main.py") {
+                if FileManager.default.fileExists(atPath: "\(dir)/rust") {
                     return dir
                 }
                 let parent = (dir as NSString).deletingLastPathComponent

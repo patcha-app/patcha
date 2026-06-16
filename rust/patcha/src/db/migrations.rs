@@ -204,4 +204,23 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE INDEX IF NOT EXISTS idx_rels_src  ON relationships(source_entity_id, relationship_type);
 CREATE INDEX IF NOT EXISTS idx_rels_dst  ON relationships(target_entity_id, relationship_type);
 CREATE INDEX IF NOT EXISTS idx_rels_type ON relationships(relationship_type);
+
+-- -------------------------------------------------------------------------
+-- Timeline summaries: one LLM-written narrative per (date, hour), generated
+-- by the daemon's hourly job and read back by the /api/timeline endpoint.
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS timeline_summaries (
+    date         TEXT NOT NULL,
+    hour         INTEGER NOT NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    summary      TEXT NOT NULL DEFAULT '',
+    tree         TEXT,                          -- JSON TimelineTreeNode, nullable
+    apps         TEXT NOT NULL DEFAULT '[]',    -- JSON array of app names
+    categories   TEXT NOT NULL DEFAULT '[]',    -- JSON array of category labels
+    event_count  INTEGER NOT NULL DEFAULT 0,
+    generated_at TEXT NOT NULL,
+    PRIMARY KEY (date, hour)
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_summaries_date ON timeline_summaries(date);
 ";

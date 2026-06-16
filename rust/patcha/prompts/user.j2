@@ -78,6 +78,39 @@ Projects: {{ projects_str }}
 {%- endmacro %}
 
 
+{% macro hourly_summary(hour_label, app_list, event_count, summaries) -%}
+You are summarizing one hour of someone's computer activity for a timeline view.
+
+Hour: {{ hour_label }}
+Apps used: {{ app_list }}
+Activity count: {{ event_count }}
+
+Raw activity log:
+{% for s in summaries -%}
+- {{ s }}
+{% endfor -%}
+
+Write a concise summary of what the person worked on this hour. Then break the
+work into a small task tree (root task -> sub-tasks -> concrete actions), using
+the exact tools, files, commands, and topics from the log. Keep tree labels
+short (max ~6 words). 2-4 children at the root; nest one level deeper only when
+the log clearly supports it.
+
+Respond with ONLY a JSON object, no markdown fences, in exactly this shape:
+{
+  "title": "short title, max 50 chars",
+  "narrative": "1-2 sentence summary of the hour",
+  "tree": {
+    "label": "root task",
+    "children": [
+      { "label": "sub-task", "children": [ { "label": "action" } ] },
+      { "label": "sub-task" }
+    ]
+  }
+}
+{%- endmacro %}
+
+
 {% macro task_category_summary(category, task_details, themes_str, task_count) -%}
 Summarize the {{ category }} work done today in 2-3 sentences covering what was accomplished, main themes, and notable patterns.
 
