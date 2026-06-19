@@ -63,6 +63,12 @@ pub struct PatchaApiClient {
     http: reqwest::Client,
     /// In-memory tokens (shared across clones via Arc<Mutex>)
     tokens: Arc<Mutex<Tokens>>,
+    /// "patcha" (cloud, default), "ollama" (local), or "claude" (Claude Code headless).
+    provider: String,
+    ollama_url: String,
+    ollama_model: String,
+    claude_bin: String,
+    claude_model: String,
 }
 
 #[derive(Default, Clone)]
@@ -86,6 +92,11 @@ impl PatchaApiClient {
                 .build()
                 .expect("reqwest client"),
             tokens: Arc::new(Mutex::new(Tokens { access, refresh })),
+            provider: cfg.llm_provider.to_lowercase(),
+            ollama_url: cfg.ollama_url.trim_end_matches('/').to_owned(),
+            ollama_model: cfg.ollama_llm_model.clone(),
+            claude_bin: cfg.claude_bin.clone(),
+            claude_model: cfg.claude_model.clone(),
         }
     }
 
@@ -100,6 +111,13 @@ impl PatchaApiClient {
         user: &str,
         model: &str,
     ) -> Result<String> {
+        if self.provider == "claude" {
+            return self.claude_headless(system, user).await;
+        }
+        if self.provider == "ollama" {
+            return self.ollama_chat(system, user).await;
+        }
+
         let messages = vec![
             serde_json::json!({"role": "system", "content": system}),
             serde_json::json!({"role": "user", "content": user}),
@@ -118,6 +136,74 @@ impl PatchaApiClient {
             .next()
             .map(|c| c.message.content)
             .context("empty choices in chat response")
+    }
+
+    /// Chat completion against a local Ollama server via its OpenAI-compatible
+    /// `/v1/chat/completions` endpoint. No auth; the configured model is used
+    /// regardless of the `model` the caller passed (which targets the cloud).
+    async fn ollama_chat(&self, system: &str, user: &str) -> Result<String> {
+        let body = serde_json::json!({
+            "model": self.ollama_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": false,
+        });
+        let url = format!("{}/v1/chat/completions", self.ollama_url);
+        let resp = self
+            .http
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .context("ollama chat request failed — is `ollama serve` running?")?;
+        if !resp.status().is_success() {
+            bail!("ollama chat HTTP {} ({url})", resp.status());
+        }
+        let parsed: ChatResponse = resp
+            .json()
+            .await
+            .context("failed to parse ollama chat response")?;
+        parsed
+            .choices
+            .into_iter()
+            .next()
+            .map(|c| c.message.content)
+            .context("empty choices in ollama chat response")
+    }
+
+    /// Chat completion via Claude Code in headless mode (`claude -p`), using the
+    /// local Claude login — no API key. `--system-prompt` overrides Claude Code's
+    /// default agent prompt with the caller's; the `model` arg (which targets the
+    /// patcha cloud) is ignored in favour of the configured Claude model.
+    async fn claude_headless(&self, system: &str, user: &str) -> Result<String> {
+        let output = tokio::process::Command::new(&self.claude_bin)
+            .arg("-p")
+            .arg(user)
+            .arg("--system-prompt")
+            .arg(system)
+            .arg("--model")
+            .arg(&self.claude_model)
+            .arg("--output-format")
+            .arg("text")
+            .output()
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to run `{}` — is Claude Code installed and logged in? (`claude` on PATH)",
+                    self.claude_bin
+                )
+            })?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            bail!("claude headless failed ({}): {}", output.status, err.trim());
+        }
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if text.is_empty() {
+            bail!("claude headless returned empty output");
+        }
+        Ok(text)
     }
 
     /// Embed a batch of texts via the API (fallback; local fastembed is preferred).

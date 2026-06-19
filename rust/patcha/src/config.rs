@@ -21,6 +21,20 @@ pub struct Config {
     pub max_events_per_day: u32,
     pub max_embedding_tokens: usize,
     pub embedding_chunk_overlap: usize,
+
+    // Pluggable backends. Defaults preserve existing behaviour.
+    //   embedding_provider: "fastembed" (default, on-device) | "ollama" (local)
+    //   llm_provider:       "patcha" (cloud, default) | "ollama" (local) | "claude" (Claude Code headless)
+    pub embedding_provider: String,
+    pub llm_provider: String,
+    pub ollama_url: String,
+    pub ollama_embedding_model: String,
+    pub ollama_llm_model: String,
+    // Claude Code headless backend for llm_provider="claude": shells out to the
+    // `claude -p` CLI, using the local Claude login (no API key).
+    pub claude_bin: String,
+    pub claude_model: String,
+
     pub max_pending_per_cycle: usize,
     pub working_memory_dedup_threshold: f32,
     pub daily_compaction_min_activities: usize,
@@ -72,6 +86,13 @@ impl Default for Config {
             max_events_per_day: 10_000,
             max_embedding_tokens: 8191,
             embedding_chunk_overlap: 100,
+            embedding_provider: "fastembed".into(),
+            llm_provider: "patcha".into(),
+            ollama_url: "http://localhost:11434".into(),
+            ollama_embedding_model: "nomic-embed-text".into(),
+            ollama_llm_model: "llama3.2".into(),
+            claude_bin: "claude".into(),
+            claude_model: "opus".into(),
             max_pending_per_cycle: 500,
             working_memory_dedup_threshold: 0.95,
             daily_compaction_min_activities: 2,
@@ -182,6 +203,13 @@ impl Config {
             max_events_per_day: env_u64("MAX_EVENTS_PER_DAY", 10_000) as u32,
             max_embedding_tokens: env_usize("MAX_EMBEDDING_TOKENS", 8191),
             embedding_chunk_overlap: env_usize("EMBEDDING_CHUNK_OVERLAP", 100),
+            embedding_provider: env_str("EMBEDDING_PROVIDER", "fastembed"),
+            llm_provider: env_str("LLM_PROVIDER", "patcha"),
+            ollama_url: env_str("OLLAMA_URL", "http://localhost:11434"),
+            ollama_embedding_model: env_str("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
+            ollama_llm_model: env_str("OLLAMA_LLM_MODEL", "llama3.2"),
+            claude_bin: env_str("CLAUDE_BIN", "claude"),
+            claude_model: env_str("CLAUDE_MODEL", "opus"),
             max_pending_per_cycle: env_usize("MAX_PENDING_PER_CYCLE", 500),
             working_memory_dedup_threshold: env_f32("WORKING_MEMORY_DEDUP_THRESHOLD", 0.95),
             daily_compaction_min_activities: env_usize("DAILY_COMPACTION_MIN_ACTIVITIES", 2),
