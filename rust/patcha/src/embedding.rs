@@ -1,11 +1,15 @@
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use tiktoken_rs::cl100k_base;
 
 // Token safety factor: bge WordPiece tokens run higher than cl100k for the same
 // text, so we apply a 0.8 budget to avoid overflowing the model's native limit.
 const TOKEN_SAFETY: f64 = 0.8;
+
+// The sqlite-vec schema fixes the embedding column at 768 dims (db/migrations.rs).
+// Any backend must produce 768-dim vectors or upserts will fail.
+const STORE_VECTOR_DIM: usize = 768;
 
 const MODEL_MAX_TOKENS: &[(&str, usize)] = &[
     ("BAAI/bge-base-en-v1.5", 512),
@@ -16,15 +20,38 @@ const MODEL_MAX_TOKENS: &[(&str, usize)] = &[
 // Embedder
 // ---------------------------------------------------------------------------
 
+/// Pluggable embedding backend. `effective_max_tokens` / `chunk_overlap` stay
+/// public fields so existing call sites keep compiling unchanged.
 pub struct Embedder {
-    model: TextEmbedding,
+    backend: Backend,
     /// Effective token budget for chunking (accounts for safety margin).
     pub effective_max_tokens: usize,
     pub chunk_overlap: usize,
 }
 
+enum Backend {
+    /// On-device ONNX embeddings via fastembed-rs (default — no server needed).
+    Fastembed(Box<TextEmbedding>),
+    /// Local embeddings served by an Ollama instance.
+    Ollama(OllamaBackend),
+}
+
+struct OllamaBackend {
+    http: ureq::Agent,
+    /// Full endpoint, e.g. http://localhost:11434/api/embed
+    url: String,
+    model: String,
+}
+
 impl Embedder {
     pub fn new(cfg: &Config) -> Result<Self> {
+        match cfg.embedding_provider.to_lowercase().as_str() {
+            "ollama" => Self::new_ollama(cfg),
+            _ => Self::new_fastembed(cfg),
+        }
+    }
+
+    fn new_fastembed(cfg: &Config) -> Result<Self> {
         let model_enum = resolve_model(&cfg.embedding_model_name);
 
         let init_opts = InitOptions::new(model_enum)
@@ -40,29 +67,119 @@ impl Embedder {
             .map(|(_, lim)| *lim)
             .unwrap_or(512);
 
-        let budget = ((native_limit as f64) * TOKEN_SAFETY) as usize;
-        let effective = budget
-            .min(cfg.max_embedding_tokens)
-            .max(cfg.embedding_chunk_overlap + 1);
-
         Ok(Self {
-            model,
-            effective_max_tokens: effective,
+            backend: Backend::Fastembed(Box::new(model)),
+            effective_max_tokens: effective_tokens(native_limit, cfg),
             chunk_overlap: cfg.embedding_chunk_overlap,
         })
     }
 
+    fn new_ollama(cfg: &Config) -> Result<Self> {
+        let http = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(120))
+            .build();
+        let backend = OllamaBackend {
+            http,
+            url: format!("{}/api/embed", cfg.ollama_url.trim_end_matches('/')),
+            model: cfg.ollama_embedding_model.clone(),
+        };
+        // nomic-embed-text handles ~2048 tokens; cap by the configured budget.
+        let embedder = Self {
+            backend: Backend::Ollama(backend),
+            effective_max_tokens: effective_tokens(2048, cfg),
+            chunk_overlap: cfg.embedding_chunk_overlap,
+        };
+
+        // Fail fast with an actionable message if Ollama is unreachable or the
+        // model's dimension doesn't match the store's fixed 768-dim schema.
+        let probe = embedder.embed_one("dimension probe").context(
+            "could not embed via Ollama — is `ollama serve` running and the model pulled? \
+             try: ollama pull <model>",
+        )?;
+        if probe.len() != STORE_VECTOR_DIM {
+            bail!(
+                "Ollama embedding model '{}' returns {}-dim vectors, but patcha's store is \
+                 fixed at {}-dim. Use a 768-dim model such as nomic-embed-text.",
+                cfg.ollama_embedding_model,
+                probe.len(),
+                STORE_VECTOR_DIM
+            );
+        }
+        Ok(embedder)
+    }
+
     /// Embed a single text; returns a 768-dim float vector.
     pub fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
-        let mut results = self.model.embed(vec![text.to_owned()], None)
-            .context("fastembed embed_one failed")?;
-        Ok(results.remove(0))
+        match &self.backend {
+            Backend::Fastembed(model) => {
+                let mut results = model
+                    .embed(vec![text.to_owned()], None)
+                    .context("fastembed embed_one failed")?;
+                Ok(results.remove(0))
+            }
+            Backend::Ollama(b) => Ok(b.embed(vec![text.to_owned()])?.remove(0)),
+        }
     }
 
     /// Embed a batch of texts. The returned Vec has the same length as `texts`.
     pub fn embed_many(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
-        self.model.embed(texts, None).context("fastembed embed_many failed")
+        match &self.backend {
+            Backend::Fastembed(model) => {
+                model.embed(texts, None).context("fastembed embed_many failed")
+            }
+            Backend::Ollama(b) => b.embed(texts),
+        }
     }
+}
+
+impl OllamaBackend {
+    fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
+        // Ollama's /api/embed accepts a string or an array in `input` and returns
+        // one vector per input under `embeddings`.
+        #[derive(serde::Serialize)]
+        struct Req<'a> {
+            model: &'a str,
+            input: Vec<String>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Resp {
+            embeddings: Vec<Vec<f32>>,
+        }
+
+        let body = serde_json::to_string(&Req {
+            model: &self.model,
+            input: texts,
+        })
+        .context("serialize ollama embed request")?;
+
+        let resp = match self
+            .http
+            .post(&self.url)
+            .set("content-type", "application/json")
+            .send_string(&body)
+        {
+            Ok(r) => r,
+            Err(ureq::Error::Status(code, r)) => {
+                let msg = r.into_string().unwrap_or_default();
+                bail!("ollama embed HTTP {code}: {msg}");
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e))
+                    .with_context(|| format!("ollama embed request to {} failed", self.url))
+            }
+        };
+
+        let parsed: Resp = serde_json::from_reader(resp.into_reader())
+            .context("failed to parse ollama embed response")?;
+        Ok(parsed.embeddings)
+    }
+}
+
+fn effective_tokens(native_limit: usize, cfg: &Config) -> usize {
+    let budget = ((native_limit as f64) * TOKEN_SAFETY) as usize;
+    budget
+        .min(cfg.max_embedding_tokens)
+        .max(cfg.embedding_chunk_overlap + 1)
 }
 
 fn resolve_model(name: &str) -> EmbeddingModel {
