@@ -225,36 +225,38 @@ enum DaemonStatus: Equatable {
     }
 
     private func resolveDaemonPath() -> (URL, [String], String?) {
+        // 1. Bundled single binary (production DMG)
         if let bundleResource = Bundle.main.resourceURL {
             let bundledBinary = bundleResource.appendingPathComponent("patcha")
             if FileManager.default.isExecutableFile(atPath: bundledBinary.path) {
                 NSLog("[DaemonManager] using bundled binary: %@", bundledBinary.path)
-                return (bundledBinary, [], nil)
+                return (bundledBinary, ["daemon", "start"], nil)
             }
         }
 
+        // 2. PATCHA_DAEMON_PATH env override
         if let envPath = ProcessInfo.processInfo.environment["PATCHA_DAEMON_PATH"] {
             let url = URL(fileURLWithPath: envPath)
             if FileManager.default.isExecutableFile(atPath: url.path) {
                 NSLog("[DaemonManager] using PATCHA_DAEMON_PATH: %@", envPath)
-                return (url, [], nil)
+                return (url, ["daemon", "start"], nil)
             }
         }
 
+        // 3. Dev mode: look for Rust build output relative to project dir
         let projectDir = detectProjectDir()
-        guard let uv = findExecutable("uv") else {
-            NSLog("[DaemonManager] uv not found in PATH — daemon cannot start")
-            DaemonManager.showUvMissingAlert()
-            status = .failed
-            return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
+        for relPath in ["rust/target/release/patcha", "rust/target/debug/patcha"] {
+            let bin = "\(projectDir)/\(relPath)"
+            if FileManager.default.isExecutableFile(atPath: bin) {
+                NSLog("[DaemonManager] dev mode: %@", bin)
+                return (URL(fileURLWithPath: bin), ["daemon", "start"], nil)
+            }
         }
 
-        NSLog("[DaemonManager] dev mode: uv=%@ project=%@", uv, projectDir)
-        return (
-            URL(fileURLWithPath: uv),
-            ["run", "python", "main.py"],
-            projectDir
-        )
+        NSLog("[DaemonManager] patcha binary not found — daemon cannot start")
+        DaemonManager.showBinaryMissingAlert()
+        status = .failed
+        return (URL(fileURLWithPath: "/usr/bin/false"), [], nil)
     }
 
     private func findExecutable(_ name: String) -> String? {
@@ -271,26 +273,21 @@ enum DaemonStatus: Equatable {
         return nil
     }
 
-    @MainActor private static func showUvMissingAlert() {
+    @MainActor private static func showBinaryMissingAlert() {
         let alert = NSAlert()
-        alert.messageText = "uv not found"
+        alert.messageText = "patcha binary not found"
         alert.informativeText = """
-            Patcha requires uv to run the Python daemon in development mode.
+            The patcha daemon binary could not be found.
 
-            Install uv with:
-              curl -LsSf https://astral.sh/uv/install.sh | sh
+            In development, build it with:
+              cd rust && cargo build --release
 
             Then relaunch Patcha.
             """
         alert.alertStyle = .critical
-        alert.addButton(withTitle: "Open uv Installation Page")
-        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "OK")
         NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(URL(string: "https://docs.astral.sh/uv/getting-started/installation/")!)
-        }
-        NSApp.terminate(nil)
+        alert.runModal()
     }
 
     private func detectProjectDir() -> String {
@@ -301,7 +298,7 @@ enum DaemonStatus: Equatable {
         // Embedded at build time via Info.plist PatchaSourceRoot = $(SRCROOT)/../..
         if let plistRoot = Bundle.main.infoDictionary?["PatchaSourceRoot"] as? String {
             let resolved = (plistRoot as NSString).standardizingPath
-            if FileManager.default.fileExists(atPath: "\(resolved)/main.py") {
+            if FileManager.default.fileExists(atPath: "\(resolved)/rust") {
                 return resolved
             }
         }
@@ -310,15 +307,15 @@ enum DaemonStatus: Equatable {
         let bundlePath = Bundle.main.bundlePath
         let distDir = (bundlePath as NSString).deletingLastPathComponent
         let candidate = (distDir as NSString).deletingLastPathComponent
-        if FileManager.default.fileExists(atPath: "\(candidate)/main.py") {
+        if FileManager.default.fileExists(atPath: "\(candidate)/rust") {
             return candidate
         }
 
-        // In dev mode (swift run): walk up from the executable to find main.py.
+        // Walk up from the executable to find the rust/ directory.
         if let execPath = Bundle.main.executablePath {
             var dir = (execPath as NSString).deletingLastPathComponent
             for _ in 0..<10 {
-                if FileManager.default.fileExists(atPath: "\(dir)/main.py") {
+                if FileManager.default.fileExists(atPath: "\(dir)/rust") {
                     return dir
                 }
                 let parent = (dir as NSString).deletingLastPathComponent

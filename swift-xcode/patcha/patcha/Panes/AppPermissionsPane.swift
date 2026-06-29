@@ -1,107 +1,148 @@
 import AppKit
 import SwiftUI
 
+private enum PermissionsTab: CaseIterable {
+    case apps, websites
+    var title: String {
+        switch self {
+        case .apps:     return "Apps"
+        case .websites: return "Web"
+        }
+    }
+}
+
 struct AppPermissionsPane: View {
     @ObservedObject var store: SettingsStore
     @ObservedObject var viewModel: AppPermissionsViewModel
     var embedded: Bool = false
-    @State private var searchText: String = ""
+    @State private var searchText = ""
+    @State private var selectedTab: PermissionsTab = .apps
+    @State private var websiteInput = ""
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isAddingWebsite = false
 
     var body: some View {
         if embedded {
             content
         } else {
-            ScrollView { content.padding(.bottom, 20) }
+            VStack(spacing: 0) {
+                tabHeader
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+
+                ScrollView {
+                    tabContent
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 16)
+                }
                 .scrollIndicators(.hidden)
                 .background(ScrollerHider())
+            }
         }
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            sourcesSection
-            appsSection
+        VStack(alignment: .leading, spacing: 20) {
+            tabHeader
+            tabContent
         }
-        .padding(.horizontal, embedded ? 0 : 20)
-        .padding(.top, embedded ? 0 : 20)
+        .padding(.horizontal, embedded ? 0 : 16)
+        .padding(.top, embedded ? 0 : 16)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .apps:
+            VStack(alignment: .leading, spacing: 28) {
+                sourcesSection
+                appsSection
+            }
+        case .websites:
+            websitesSection
+        }
+    }
+
+    private var tabHeader: some View {
+        HStack(spacing: 4) {
+            ForEach(PermissionsTab.allCases, id: \.self) { tab in
+                Button {
+                    withAnimation(.spring(duration: 0.2)) { selectedTab = tab }
+                } label: {
+                    Text(tab.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(selectedTab == tab ? .white : Color.secondary)
+                        .frame(minWidth: 60)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(selectedTab == tab ? PatchaTheme.accent : Color.clear)
+                        )
+                        .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.07)))
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var sourcesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Background sources")
-            Text("Turn off any source and Patcha stops indexing it. Your screen is still seen — these are just specific data streams.")
-                .font(.pBody)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            LazyVStack(spacing: 0) {
+            VStack(spacing: 0) {
                 SourceTile(
                     iconName: "terminal.fill",
+                    svgName: "terminal",
                     name: "Terminal",
-                    description: "Shell history, commands, output.",
+                    description: "Shell history, commands, output",
                     isOn: persistingBinding(get: { store.enableTerminal }, set: { store.enableTerminal = $0 })
                 )
-                SoftDivider().padding(.horizontal, 14)
+
+
                 SourceTile(
                     iconName: "arrow.triangle.branch",
+                    svgName: "git",
                     name: "Git",
-                    description: "Commits, branches, staging.",
+                    description: "Commits, branches, staging area",
                     isOn: persistingBinding(get: { store.enableGit }, set: { store.enableGit = $0 })
-                )
-                SoftDivider().padding(.horizontal, 14)
-                SourceTile(
-                    iconName: "globe.fill",
-                    name: "Browser history",
-                    description: "URLs and titles you visit.",
-                    isOn: persistingBinding(get: { store.enableBrowser }, set: { store.enableBrowser = $0 })
                 )
             }
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
-            .padding(.top, 4)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
     private var appsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    SectionHeader(title: "Exclude specific apps")
-                    Text("When any of these is in focus, Patcha looks away completely — no screen, no text, nothing.")
-                        .font(.pBody)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            HStack {
+                sectionLabel("Excluded Apps")
                 Spacer()
                 Button("Rescan") { viewModel.scan() }
                     .buttonStyle(.plain)
-                    .font(.pBodyStrong)
-                    .foregroundStyle(PatchaTheme.accent)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.secondary)
             }
 
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .font(.pIconSmall)
-                TextField("Search apps", text: $searchText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.secondary)
+                TextField("Filter apps…", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.pBody)
+                    .font(.system(size: 12))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
 
             appListContainer
@@ -113,36 +154,127 @@ struct AppPermissionsPane: View {
         if viewModel.isScanning {
             HStack {
                 Spacer()
-                ProgressView("Scanning apps...")
-                    .padding(.vertical, 24)
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Scanning…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(.vertical, 28)
                 Spacer()
             }
         } else {
             let items = filteredApps
             if items.isEmpty {
-                Text(searchText.isEmpty ? "No apps detected." : "No apps match “\(searchText)”.")
-                    .font(.pBody)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 16)
+                Text(searchText.isEmpty ? "No apps detected." : "No matches for \"\(searchText)\".")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.secondary)
+                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(PatchaTheme.bg(for: colorScheme))
                     )
             } else {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     ForEach(items) { app in
                         AppPermissionRow(app: app) { viewModel.toggle(app) }
-                        if app.id != items.last?.id {
-                            SoftDivider().padding(.leading, 56)
-                        }
                     }
                 }
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(PatchaTheme.bg(for: colorScheme))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
+            }
+        }
+    }
+
+    private var websitesSection: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel("Browser Tracking")
+                BrowserHistoryTile(
+                    isOn: persistingBinding(get: { store.enableBrowser }, set: { store.enableBrowser = $0 })
                 )
             }
+
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel("Excluded Websites")
+
+                websiteInputRow
+
+                if store.websiteExclusions.isEmpty {
+                    Text("No exclusions — all sites are tracked.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                        .padding(.vertical, 18)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(PatchaTheme.bg(for: colorScheme))
+                        )
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(store.websiteExclusions) { entry in
+                            WebsiteRow(entry: entry) {
+                                viewModel.toggleWebsite(entry)
+                            } onDelete: {
+                                viewModel.removeWebsite(entry.domain)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(PatchaTheme.bg(for: colorScheme))
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
+                }
+            }
+        }
+    }
+
+    private var websiteInputRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "globe")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.secondary)
+
+            TextField("Add domain (e.g. twitter.com)", text: $websiteInput)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .onSubmit { submitWebsite() }
+
+            if isAddingWebsite {
+                ProgressView().controlSize(.small)
+            } else if !websiteInput.isEmpty {
+                Button { submitWebsite() } label: {
+                    Image(systemName: "return")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(PatchaTheme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(PatchaTheme.bg(for: colorScheme))
+        )
+        .animation(.easeOut(duration: 0.15), value: websiteInput.isEmpty)
+    }
+
+    private func submitWebsite() {
+        let input = websiteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return }
+        websiteInput = ""
+        isAddingWebsite = true
+        Task {
+            await viewModel.addWebsite(input)
+            isAddingWebsite = false
         }
     }
 
@@ -160,79 +292,234 @@ struct AppPermissionsPane: View {
             }
         )
     }
+
+    @ViewBuilder
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.pSectionLabel)
+            .foregroundStyle(Color.secondary)
+    }
 }
 
 private struct SourceTile: View {
     let iconName: String
+    var svgName: String? = nil
     let name: String
     let description: String
     @Binding var isOn: Bool
     @Environment(\.colorScheme) private var colorScheme
 
+    private var svgImage: NSImage? {
+        guard let n = svgName,
+              let path = Bundle.main.path(forResource: n, ofType: "svg") else { return nil }
+        return NSImage(contentsOfFile: path)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(PatchaTheme.accent.opacity(isOn ? 0.9 : 0.25))
-                            .frame(width: 32, height: 32)
+        HStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Group {
+                    if let img = svgImage {
+                        Image(nsImage: img)
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 16, height: 16)
+                    } else {
                         Image(systemName: iconName)
-                            .font(.pIconMedium)
-                            .foregroundColor(isOn ? PatchaTheme.bg(for: colorScheme) : .primary.opacity(0.6))
+                            .font(.system(size: 13))
                     }
-                    Text(name)
-                        .font(.pBodyStrong)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(description)
-                    .font(.pBody)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(isOn ? PatchaTheme.accent : Color.secondary)
+                .frame(width: 20)
+                .animation(.easeOut(duration: 0.2), value: isOn)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.primary)
+
+                    Text(description)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle("", isOn: $isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
-            Spacer(minLength: 8)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(PatchaTheme.accent)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+            .background(
+                Group {
+                    if isOn {
+                        LinearGradient(
+                            colors: [PatchaTheme.accent.opacity(0.06), Color.clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    } else {
+                        Color.clear
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: isOn)
+            )
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
-struct SoftDivider: View {
+private struct BrowserHistoryTile: View {
+    @Binding var isOn: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        Rectangle()
-            .fill(PatchaTheme.softDivider)
-            .frame(height: 1)
+        HStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Group {
+                    if let path = Bundle.main.path(forResource: "web", ofType: "svg"),
+                       let img = NSImage(contentsOfFile: path) {
+                        Image(nsImage: img)
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 15, height: 15)
+                    } else {
+                        Image(systemName: "globe")
+                            .font(.system(size: 13))
+                    }
+                }
+                .foregroundStyle(isOn ? PatchaTheme.accent : Color.secondary)
+                .frame(width: 20)
+                .animation(.easeOut(duration: 0.2), value: isOn)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Browser History")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+
+                    Text("URLs and page titles you visit")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle("", isOn: $isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+            .background(
+                Group {
+                    if isOn {
+                        LinearGradient(
+                            colors: [PatchaTheme.accent.opacity(0.06), Color.clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    } else {
+                        Color.clear
+                    }
+                }
+                .animation(.easeOut(duration: 0.25), value: isOn)
+            )
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(PatchaTheme.bg(for: colorScheme))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
+    }
+}
+
+private struct WebsiteRow: View {
+    let entry: WebsiteEntry
+    let onToggle: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let data = entry.faviconData, let image = NSImage(data: data) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "globe")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .frame(width: 26, height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
+
+            Text(entry.domain)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.primary)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button(action: onDelete) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color.primary.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
+
+            Toggle("", isOn: Binding(
+                get: { entry.isExcluded },
+                set: { _ in onToggle() }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 
 struct AppPermissionRow: View {
     let app: AppEntry
     let onToggle: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 12) {
             if let icon = app.icon {
                 Image(nsImage: icon)
                     .resizable()
-                    .frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .frame(width: 24, height: 24)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
             } else {
-                Image(systemName: "app.fill")
-                    .font(.pIconSmall)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.secondary.opacity(0.15))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .frame(width: 24, height: 24)
+                    .overlay(
+                        Image(systemName: "app")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.secondary)
                     )
             }
+
             Text(app.name)
-                .font(.pBody)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.primary)
                 .lineLimit(1)
+
             Spacer()
+
             Toggle("", isOn: Binding(
                 get: { !app.isExcluded },
                 set: { _ in onToggle() }
@@ -242,7 +529,15 @@ struct AppPermissionRow: View {
             .accessibilityLabel(Text(app.name))
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
+    }
+}
+
+struct SoftDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(.separatorColor))
+            .frame(height: 1)
     }
 }
 
@@ -263,4 +558,18 @@ struct ScrollerHider: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSView, context: Context) {}
+}
+
+#Preview {
+    let store = SettingsStore()
+    let viewModel = AppPermissionsViewModel(store: store)
+    viewModel.apps = [
+        AppEntry(id: "com.example.xcode", name: "Xcode", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.slack", name: "Slack", icon: nil, isExcluded: true),
+        AppEntry(id: "com.example.notes", name: "Notes", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.safari", name: "Safari", icon: nil, isExcluded: false),
+        AppEntry(id: "com.example.terminal", name: "Terminal", icon: nil, isExcluded: false),
+    ]
+    return AppPermissionsPane(store: store, viewModel: viewModel)
+        .frame(width: 560, height: 700)
 }

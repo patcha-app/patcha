@@ -40,7 +40,7 @@ struct OnboardingView: View {
                 PrivacyOnboardingStep(store: store, appsVM: appsVM, onContinue: completePrivacy)
             }
         }
-        .background(OnboardingWindowSizer(size: NSSize(width: 900, height: 620)))
+        .background(OnboardingWindowSizer(size: NSSize(width: 820, height: 560)))
     }
 
     private func completeProfile() {
@@ -695,7 +695,7 @@ private struct OnboardingWindowSizer: NSViewRepresentable {
         frame.size = size
         frame.origin.x -= dx / 2
         frame.origin.y -= dy
-        window.minSize = NSSize(width: 800, height: 560)
+        window.minSize = NSSize(width: 720, height: 500)
         window.setFrame(frame, display: true, animate: true)
     }
 }

@@ -5,6 +5,7 @@ struct AccountPane: View {
     @ObservedObject var authManager: AuthManager
     @State private var isSigningOut = false
     @State private var errorMessage: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView {
@@ -17,7 +18,7 @@ struct AccountPane: View {
                 }
                 signOutSection
             }
-            .padding(20)
+            .padding(16)
         }
         .scrollIndicators(.hidden)
         .background(ScrollerHider())
@@ -52,12 +53,9 @@ struct AccountPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
@@ -81,19 +79,16 @@ struct AccountPane: View {
                         }
                     }
                 }
-                .buttonStyle(AccentButtonStyle())
+                .buttonStyle(GhostButtonStyle())
                 .disabled(isSigningOut)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 }

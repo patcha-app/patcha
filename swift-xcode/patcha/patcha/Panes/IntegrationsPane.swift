@@ -6,6 +6,7 @@ struct IntegrationsPane: View {
     @State private var claudeCodeStatus: ConnectStatus = .idle
     @State private var claudeDesktopStatus: ConnectStatus = .idle
     @State private var urlCopied = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private enum ConnectStatus: Equatable {
         case idle, connected, failed(String)
@@ -22,7 +23,7 @@ struct IntegrationsPane: View {
                 connectClientsSection
                 instructionsSection
             }
-            .padding(20)
+            .padding(16)
         }
         .scrollIndicators(.hidden)
         .background(ScrollerHider())
@@ -64,12 +65,9 @@ struct IntegrationsPane: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 
@@ -132,12 +130,9 @@ struct IntegrationsPane: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(PatchaTheme.bg(for: colorScheme))
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(PatchaTheme.softDivider, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 0.5))
         }
     }
 

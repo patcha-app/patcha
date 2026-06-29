@@ -25,20 +25,39 @@ extension Color {
 }
 
 enum PatchaTheme {
-    static let accent = Color(hex: "00CE93")
+    static let accent = Color(hex: "21935B")
     static let softDivider = Color.primary.opacity(0.08)
 
     static func bg(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? .black : .white
+        colorScheme == .dark ? Color(hex: "0F0F11") : Color(hex: "F7F8F5")
+    }
+
+    static func surface(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(hex: "161618") : Color.white
+    }
+
+    static func sidebar(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color(hex: "161618") : Color(hex: "F0F0F2")
+    }
+
+    static func hairline(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
+    }
+
+    static func tile(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.05)
+    }
+
+    static func selectedOverlay(for colorScheme: ColorScheme) -> Color {
+        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.08)
     }
 }
 
 struct SectionHeader: View {
     let title: String
     var body: some View {
-        Text(title.uppercased())
+        Text(title)
             .font(.pSectionLabel)
-            .tracking(1.2)
             .foregroundStyle(.primary)
     }
 }
@@ -50,7 +69,7 @@ struct AccentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.pBodyStrong)
-            .foregroundColor(.black)
+            .foregroundColor(.white)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.vertical, 9)
             .padding(.horizontal, fullWidth ? 0 : 16)
@@ -62,31 +81,46 @@ struct AccentButtonStyle: ButtonStyle {
     }
 }
 
+struct GhostButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.pBodyStrong)
+            .foregroundColor(.primary)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.10 : 0.06))
+            )
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 extension Font {
-    static let pCaption       = Font.custom("Britanica-Bold", size: 11)
-    static let pCaptionStrong = Font.custom("Britanica-Bold", size: 11)
-    static let pBody          = Font.custom("Britanica-Bold", size: 13)
-    static let pBodyStrong    = Font.custom("Britanica-Bold", size: 13)
-    static let pCallout       = Font.custom("Britanica-Bold", size: 14)
-    static let pCalloutStrong = Font.custom("Britanica-Bold", size: 14)
-    static let pSubheadline   = Font.custom("Britanica-Bold", size: 15)
-    static let pHeadline      = Font.custom("Britanica-Bold", size: 16)
-    static let pTitle         = Font.custom("Britanica-ExtraBoldSemiExpanded", size: 22)
-    static let pHeroMark      = Font.custom("Britanica-ExtraBoldSemiExpanded", size: 56)
+    static let pCaption       = Font.system(size: 10, weight: .regular)   // Caption 1
+    static let pCaptionStrong = Font.system(size: 10, weight: .medium)    // Caption 2
+    static let pBody          = Font.system(size: 13, weight: .regular)   // Body
+    static let pBodyStrong    = Font.system(size: 13, weight: .semibold)  // Body emphasized
+    static let pCallout       = Font.system(size: 12, weight: .regular)   // Callout
+    static let pCalloutStrong = Font.system(size: 12, weight: .semibold)  // Callout emphasized
+    static let pSubheadline   = Font.system(size: 11, weight: .regular)   // Subheadline
+    static let pHeadline      = Font.system(size: 13, weight: .bold)      // Headline
+    static let pTitle         = Font.system(size: 22, weight: .regular)   // Title 1
+    static let pHeroMark      = Font.system(size: 56, weight: .heavy)
 
-    static let pSectionLabel  = Font.custom("Britanica-BoldSemiExpanded", size: 11)
+    static let pSectionLabel  = Font.system(size: 11, weight: .semibold)  // Subheadline emphasized
 
-    static let pEyebrow       = Font.custom("InstrumentSerif-Regular", size: 12)
-    static let pBrandmark     = Font.custom("InstrumentSerif-Regular", size: 16)
-    static let pNumeral       = Font.custom("InstrumentSerif-Italic",  size: 16)
-    static let pNoteItalic    = Font.custom("InstrumentSerif-Italic",  size: 13)
-    static let pDisplay       = Font.custom("InstrumentSerif-Regular", size: 44)
-    static let pDisplayItalic = Font.custom("InstrumentSerif-Italic",  size: 44)
+    static let pEyebrow       = Font.system(size: 12, weight: .regular)
+    static let pBrandmark     = Font.system(size: 16, weight: .regular)
+    static let pNumeral       = Font.system(size: 16, weight: .regular).italic()
+    static let pNoteItalic    = Font.system(size: 13, weight: .regular).italic()
+    static let pDisplay       = Font.system(size: 44, weight: .regular)
+    static let pDisplayItalic = Font.system(size: 44, weight: .regular).italic()
 
-    static let pIconSmall     = Font.custom("Britanica-Bold", size: 13)
-    static let pIconMedium    = Font.custom("Britanica-Bold", size: 14)
-    static let pIconLarge     = Font.custom("Britanica-Bold", size: 16)
-    static let pIconXLarge    = Font.custom("Britanica-Bold", size: 18)
-    static let pIconAvatar    = Font.custom("Britanica-Bold", size: 36)
-    static let pIconEmpty     = Font.custom("Britanica-Bold", size: 40)
+    static let pIconSmall     = Font.system(size: 13, weight: .regular)
+    static let pIconMedium    = Font.system(size: 14, weight: .regular)
+    static let pIconLarge     = Font.system(size: 16, weight: .regular)
+    static let pIconXLarge    = Font.system(size: 18, weight: .regular)
+    static let pIconAvatar    = Font.system(size: 36, weight: .regular)
+    static let pIconEmpty     = Font.system(size: 40, weight: .regular)
 }

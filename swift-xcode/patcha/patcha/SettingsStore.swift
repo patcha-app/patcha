@@ -11,6 +11,7 @@ final class SettingsStore: ObservableObject {
     @Published var enableWindow: Bool = true
     @Published var enableAccessibility: Bool = true
     @Published var excludedBundleIDs: Set<String> = []
+    @Published var websiteExclusions: [WebsiteEntry] = []
     @Published var excludedAppNames: String = ""
     @Published var pauseForInternal: Bool = false
     @Published var autoCheckUpdates: Bool = true
@@ -52,6 +53,24 @@ final class SettingsStore: ObservableObject {
         defer { sqlite3_close(db) }
 
         sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS website_exclusions (domain TEXT PRIMARY KEY, favicon BLOB, is_excluded INTEGER DEFAULT 0)", nil, nil, nil)
+
+        var wStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT domain, favicon, is_excluded FROM website_exclusions", -1, &wStmt, nil) == SQLITE_OK {
+            while sqlite3_step(wStmt) == SQLITE_ROW {
+                let domain = String(cString: sqlite3_column_text(wStmt, 0))
+                var faviconData: Data?
+                if sqlite3_column_type(wStmt, 1) != SQLITE_NULL {
+                    let count = Int(sqlite3_column_bytes(wStmt, 1))
+                    if let ptr = sqlite3_column_blob(wStmt, 1), count > 0 {
+                        faviconData = Data(bytes: ptr, count: count)
+                    }
+                }
+                let isExcluded = sqlite3_column_int(wStmt, 2) != 0
+                websiteExclusions.append(WebsiteEntry(domain: domain, faviconData: faviconData, isExcluded: isExcluded))
+            }
+            sqlite3_finalize(wStmt)
+        }
 
         let rows = query(db: db, sql: "SELECT key, value FROM settings")
         var foundLaunchAtLogin = false
@@ -119,6 +138,45 @@ final class SettingsStore: ObservableObject {
         }
 
         onComplete()
+    }
+
+    func upsertWebsite(_ entry: WebsiteEntry) {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS website_exclusions (domain TEXT PRIMARY KEY, favicon BLOB, is_excluded INTEGER DEFAULT 0)", nil, nil, nil)
+        var stmt: OpaquePointer?
+        let sql = "INSERT OR REPLACE INTO website_exclusions (domain, favicon, is_excluded) VALUES (?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, (entry.domain as NSString).utf8String, -1, nil)
+        if let data = entry.faviconData {
+            data.withUnsafeBytes { ptr in
+                _ = sqlite3_bind_blob(stmt, 2, ptr.baseAddress, Int32(data.count), nil)
+            }
+        } else {
+            sqlite3_bind_null(stmt, 2)
+        }
+        sqlite3_bind_int(stmt, 3, entry.isExcluded ? 1 : 0)
+        sqlite3_step(stmt)
+        if let idx = websiteExclusions.firstIndex(where: { $0.domain == entry.domain }) {
+            websiteExclusions[idx] = entry
+        } else {
+            websiteExclusions.append(entry)
+        }
+    }
+
+    func removeWebsite(domain: String) {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM website_exclusions WHERE domain = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, (domain as NSString).utf8String, -1, nil)
+        sqlite3_step(stmt)
+        websiteExclusions.removeAll { $0.domain == domain }
     }
 
     func read(key: String) -> String? {
