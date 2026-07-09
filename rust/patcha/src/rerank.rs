@@ -132,3 +132,37 @@ impl CrossEncoderReranker {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn unavailable_when_model_files_missing() {
+        let dir = std::env::temp_dir().join(format!("patcha-rerank-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let r = CrossEncoderReranker::new(dir.clone());
+        assert!(!r.available(), "empty dir has no model");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn onnx_path_prefers_nested_layout() {
+        let dir = std::env::temp_dir().join(format!("patcha-rerank-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(dir.join("onnx")).unwrap();
+        fs::write(dir.join("onnx").join("model.onnx"), b"x").unwrap();
+        let r = CrossEncoderReranker::new(dir.clone());
+        assert_eq!(r.onnx_path(), dir.join("onnx").join("model.onnx"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn onnx_path_falls_back_to_top_level() {
+        let dir = std::env::temp_dir().join(format!("patcha-rerank-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let r = CrossEncoderReranker::new(dir.clone());
+        assert_eq!(r.onnx_path(), dir.join("model.onnx"));
+        fs::remove_dir_all(&dir).ok();
+    }
+}

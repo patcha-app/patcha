@@ -13,6 +13,7 @@ clap = { version = "4", features = ["derive", "env"] }
 
 # Async
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 
 # HTTP server (MCP HTTP transport)
 axum = { version = "0.7", features = ["macros"] }

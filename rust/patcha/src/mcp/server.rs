@@ -1,7 +1,7 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use anyhow::Result;
-use axum::{Json, Router, extract::Query, routing::get};
+use axum::{Json, Router, extract::Query, routing::{get, post}};
 use chrono::NaiveDate;
 use rmcp::{
     ServerHandler,
@@ -22,7 +22,8 @@ use crate::{
         store::VectorStore,
     },
     embedding::Embedder,
-    mcp::McpArgs,
+    llm::client::PatchaApiClient,
+    mcp::{McpArgs, chat},
     rerank::CrossEncoderReranker,
 };
 
@@ -286,6 +287,15 @@ async fn run_http(server: PatchaServer, _cfg: &Config, port: u16) -> Result<()> 
     };
 
     let store = server.store.clone();
+    let chat_state = chat::ChatState {
+        store: server.store.clone(),
+        graph: server.graph.clone(),
+        embedder: server.embedder.clone(),
+        reranker: server.reranker.clone(),
+        cfg: server.cfg.clone(),
+        api: Arc::new(PatchaApiClient::new(_cfg)),
+        port,
+    };
     let app = Router::new()
         .route(
             "/api/timeline",
@@ -294,6 +304,9 @@ async fn run_http(server: PatchaServer, _cfg: &Config, port: u16) -> Result<()> 
                 async move { timeline_handler(store, q).await }
             }),
         )
+        .route("/api/chat", post(chat::handle_chat))
+        .route("/api/chat/backends", get(chat::backends_handler))
+        .with_state(chat_state)
         .nest_service("/mcp", mcp_service);
 
     let addr = format!("127.0.0.1:{port}");
@@ -462,4 +475,143 @@ fn clear_port() -> Result<()> {
         [],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Category, Event, EventType, TimelineHourSummary};
+    use chrono::{TimeZone, Utc};
+
+    const DATE: &str = "2026-06-15";
+
+    fn store() -> Arc<VectorStore> {
+        let tmp = tempfile::tempdir().unwrap();
+        // Leak the tempdir so the on-disk DB outlives the test body.
+        let path = tmp.keep().join("test.db");
+        let db = Db::open(&path).expect("open db");
+        Arc::new(VectorStore::new(db))
+    }
+
+    fn event_at(hour: u32, app: &str, summary: Option<&str>, cat: Option<Category>) -> Event {
+        let mut e = Event::new(EventType::Screen, "raw");
+        e.timestamp = Utc.with_ymd_and_hms(2026, 6, 15, hour, 0, 0).unwrap();
+        e.metadata.insert("app_name".into(), serde_json::json!(app));
+        e.summary = summary.map(|s| s.to_owned());
+        e.category = cat;
+        e
+    }
+
+    async fn timeline(store: Arc<VectorStore>, date: Option<&str>) -> serde_json::Value {
+        let q = Query(TimelineQuery { date: date.map(|s| s.to_owned()) });
+        timeline_handler(store, q).await.0
+    }
+
+    fn hour_obj(v: &serde_json::Value, hour: u32) -> serde_json::Value {
+        v["hours"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["hour"] == hour)
+            .cloned()
+            .unwrap_or_else(|| panic!("no bucket for hour {hour}"))
+    }
+
+    #[tokio::test]
+    async fn aggregates_events_into_hour_buckets() {
+        let store = store();
+        store
+            .store_events(&[
+                event_at(9, "Xcode", Some("wrote tests"), Some(Category::Coding)),
+                event_at(9, "Xcode", Some("wrote tests"), Some(Category::Coding)),
+                event_at(9, "Safari", Some("read docs"), Some(Category::Research)),
+                event_at(14, "Slack", Some("standup"), Some(Category::Communication)),
+            ])
+            .unwrap();
+
+        let out = timeline(store, Some(DATE)).await;
+        assert_eq!(out["date"], DATE);
+        assert_eq!(out["hours"].as_array().unwrap().len(), 2);
+
+        let nine = hour_obj(&out, 9);
+        assert_eq!(nine["event_count"], 3);
+        // Apps sorted by frequency: Xcode (2) before Safari (1).
+        assert_eq!(nine["apps"][0], "Xcode");
+        assert_eq!(nine["apps"][1], "Safari");
+        // Duplicate "wrote tests" summary collapsed.
+        assert_eq!(nine["summaries"].as_array().unwrap().len(), 2);
+        assert_eq!(nine["categories"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn stored_summary_takes_precedence_over_raw_aggregation() {
+        let store = store();
+        store
+            .store_events(&[event_at(10, "Xcode", Some("raw summary"), None)])
+            .unwrap();
+        store
+            .upsert_timeline_summary(&TimelineHourSummary {
+                date: DATE.into(),
+                hour: 10,
+                title: "Deep work".into(),
+                summary: "LLM narrative".into(),
+                tree: None,
+                apps: vec!["Xcode".into()],
+                categories: vec!["coding".into()],
+                event_count: 1,
+                generated_at: Utc::now(),
+            })
+            .unwrap();
+
+        let out = timeline(store, Some(DATE)).await;
+        let ten = hour_obj(&out, 10);
+        assert_eq!(ten["title"], "Deep work");
+        assert_eq!(ten["summaries"][0], "LLM narrative");
+    }
+
+    #[tokio::test]
+    async fn hours_union_includes_summary_only_hours() {
+        let store = store();
+        store
+            .store_events(&[event_at(8, "Xcode", None, None)])
+            .unwrap();
+        // A stored summary for hour 20 with no events on that date.
+        store
+            .upsert_timeline_summary(&TimelineHourSummary {
+                date: DATE.into(),
+                hour: 20,
+                title: "Evening".into(),
+                summary: "wind down".into(),
+                tree: None,
+                apps: vec![],
+                categories: vec![],
+                event_count: 0,
+                generated_at: Utc::now(),
+            })
+            .unwrap();
+
+        let out = timeline(store, Some(DATE)).await;
+        let hours: Vec<u64> = out["hours"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["hour"].as_u64().unwrap())
+            .collect();
+        // Sorted union of event-hour 8 and summary-only hour 20.
+        assert_eq!(hours, vec![8, 20]);
+    }
+
+    #[tokio::test]
+    async fn empty_date_returns_no_hours() {
+        let out = timeline(store(), Some("2020-01-01")).await;
+        assert_eq!(out["hours"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn invalid_date_falls_back_to_today_without_error() {
+        let out = timeline(store(), Some("not-a-date")).await;
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        assert_eq!(out["date"], today);
+        assert!(out.get("error").is_none());
+    }
 }

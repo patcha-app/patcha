@@ -15,6 +15,7 @@ final class SettingsStore: ObservableObject {
     @Published var excludedAppNames: String = ""
     @Published var pauseForInternal: Bool = false
     @Published var autoCheckUpdates: Bool = true
+    @Published var chatBackend: String = "api"
     @Published var onboardingCompleted: Bool = false
     @Published var onboardingProfileDone: Bool = false
     @Published var onboardingPermissionsDone: Bool = false
@@ -86,6 +87,7 @@ final class SettingsStore: ObservableObject {
             case "excluded_app_names":   excludedAppNames = value
             case "pause_for_internal":   pauseForInternal = value == "true"
             case "auto_check_updates":   autoCheckUpdates = value == "true"
+            case "chat_backend":         chatBackend = value
             case "onboarding_completed":       onboardingCompleted = value == "true"
             case "onboarding_profile_done":    onboardingProfileDone = value == "true"
             case "onboarding_permissions_done": onboardingPermissionsDone = value == "true"
@@ -123,6 +125,7 @@ final class SettingsStore: ObservableObject {
             ("excluded_app_names",   excludedAppNames),
             ("pause_for_internal",   pauseForInternal ? "true" : "false"),
             ("auto_check_updates",   autoCheckUpdates ? "true" : "false"),
+            ("chat_backend",         chatBackend),
             ("onboarding_completed",        onboardingCompleted ? "true" : "false"),
             ("onboarding_profile_done",     onboardingProfileDone ? "true" : "false"),
             ("onboarding_permissions_done", onboardingPermissionsDone ? "true" : "false"),
@@ -177,6 +180,15 @@ final class SettingsStore: ObservableObject {
         sqlite3_bind_text(stmt, 1, (domain as NSString).utf8String, -1, nil)
         sqlite3_step(stmt)
         websiteExclusions.removeAll { $0.domain == domain }
+    }
+
+    func setChatBackend(_ value: String) {
+        chatBackend = value
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+        sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)", nil, nil, nil)
+        upsert(db: db, key: "chat_backend", value: value)
     }
 
     func read(key: String) -> String? {

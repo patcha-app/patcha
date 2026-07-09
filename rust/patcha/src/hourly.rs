@@ -102,39 +102,10 @@ impl HourlySummarizer {
         hour: u32,
         events: &[&Event],
     ) -> Result<TimelineHourSummary> {
-        // Aggregate apps (by frequency), categories, and activity lines.
-        let mut app_counts: HashMap<String, u32> = HashMap::new();
-        let mut categories: Vec<String> = Vec::new();
-        let mut lines: Vec<String> = Vec::new();
-
-        for event in events {
-            if let Some(app) = event.metadata.get("app_name").and_then(|v| v.as_str()) {
-                *app_counts.entry(app.to_owned()).or_insert(0) += 1;
-            }
-            if let Some(cat) = &event.category {
-                let cs = cat.to_string();
-                if !categories.contains(&cs) {
-                    categories.push(cs);
-                }
-            }
-            if lines.len() < MAX_LINES {
-                let line = event
-                    .summary
-                    .clone()
-                    .unwrap_or_else(|| event.raw_content.chars().take(120).collect());
-                if !line.trim().is_empty() {
-                    lines.push(line);
-                }
-            }
-        }
-
-        let mut apps: Vec<(String, u32)> = app_counts.into_iter().collect();
-        apps.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
-        let app_names: Vec<String> = apps.into_iter().map(|(k, _)| k).collect();
-        let event_count = events.len() as u32;
+        let agg = aggregate_hour(events);
 
         let parsed = self
-            .call_llm(hour, &app_names, event_count, &lines)
+            .call_llm(hour, &agg.app_names, agg.event_count, &agg.lines)
             .await?;
 
         Ok(TimelineHourSummary {
@@ -143,9 +114,9 @@ impl HourlySummarizer {
             title: parsed.title,
             summary: parsed.narrative,
             tree: parsed.tree,
-            apps: app_names,
-            categories,
-            event_count,
+            apps: agg.app_names,
+            categories: agg.categories,
+            event_count: agg.event_count,
             generated_at: Utc::now(),
         })
     }
@@ -174,6 +145,54 @@ impl HourlySummarizer {
             .await?;
 
         parse_response(&raw).context("failed to parse hourly summary JSON")
+    }
+}
+
+/// Aggregated, prompt-ready view of one hour's events: apps ordered by frequency,
+/// deduped categories, and up to `MAX_LINES` non-empty activity lines (preferring
+/// each event's summary, falling back to a truncated slice of raw content).
+struct HourAggregate {
+    app_names: Vec<String>,
+    categories: Vec<String>,
+    lines: Vec<String>,
+    event_count: u32,
+}
+
+fn aggregate_hour(events: &[&Event]) -> HourAggregate {
+    let mut app_counts: HashMap<String, u32> = HashMap::new();
+    let mut categories: Vec<String> = Vec::new();
+    let mut lines: Vec<String> = Vec::new();
+
+    for event in events {
+        if let Some(app) = event.metadata.get("app_name").and_then(|v| v.as_str()) {
+            *app_counts.entry(app.to_owned()).or_insert(0) += 1;
+        }
+        if let Some(cat) = &event.category {
+            let cs = cat.to_string();
+            if !categories.contains(&cs) {
+                categories.push(cs);
+            }
+        }
+        if lines.len() < MAX_LINES {
+            let line = event
+                .summary
+                .clone()
+                .unwrap_or_else(|| event.raw_content.chars().take(120).collect());
+            if !line.trim().is_empty() {
+                lines.push(line);
+            }
+        }
+    }
+
+    let mut apps: Vec<(String, u32)> = app_counts.into_iter().collect();
+    apps.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
+    let app_names: Vec<String> = apps.into_iter().map(|(k, _)| k).collect();
+
+    HourAggregate {
+        app_names,
+        categories,
+        lines,
+        event_count: events.len() as u32,
     }
 }
 
@@ -211,6 +230,83 @@ fn parse_response(raw: &str) -> Result<HourlyResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Category, EventType};
+    use chrono::TimeZone;
+
+    fn ev(hour: u32, app: Option<&str>, summary: Option<&str>, cat: Option<Category>) -> Event {
+        let mut e = Event::new(EventType::Screen, "raw fallback content");
+        e.timestamp = Utc.with_ymd_and_hms(2026, 6, 15, hour, 30, 0).unwrap();
+        if let Some(a) = app {
+            e.metadata.insert("app_name".into(), serde_json::json!(a));
+        }
+        e.summary = summary.map(|s| s.to_owned());
+        e.category = cat;
+        e
+    }
+
+    #[test]
+    fn bucket_by_hour_groups_by_utc_hour() {
+        let events = vec![ev(9, None, None, None), ev(9, None, None, None), ev(14, None, None, None)];
+        let buckets = bucket_by_hour(&events);
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[&9].len(), 2);
+        assert_eq!(buckets[&14].len(), 1);
+    }
+
+    #[test]
+    fn aggregate_orders_apps_by_frequency() {
+        let events = [
+            ev(9, Some("Safari"), Some("a"), None),
+            ev(9, Some("Xcode"), Some("b"), None),
+            ev(9, Some("Xcode"), Some("c"), None),
+        ];
+        let refs: Vec<&Event> = events.iter().collect();
+        let agg = aggregate_hour(&refs);
+        assert_eq!(agg.app_names, vec!["Xcode", "Safari"]);
+        assert_eq!(agg.event_count, 3);
+    }
+
+    #[test]
+    fn aggregate_dedups_categories_preserving_first_seen_order() {
+        let events = [
+            ev(9, None, Some("a"), Some(Category::Coding)),
+            ev(9, None, Some("b"), Some(Category::Research)),
+            ev(9, None, Some("c"), Some(Category::Coding)),
+        ];
+        let refs: Vec<&Event> = events.iter().collect();
+        let agg = aggregate_hour(&refs);
+        assert_eq!(agg.categories, vec!["Coding", "Research"]);
+    }
+
+    #[test]
+    fn aggregate_lines_prefer_summary_then_fall_back_to_raw() {
+        let with_summary = ev(9, None, Some("did a thing"), None);
+        let no_summary = ev(9, None, None, None);
+        let refs = vec![&with_summary, &no_summary];
+        let agg = aggregate_hour(&refs);
+        assert_eq!(agg.lines, vec!["did a thing", "raw fallback content"]);
+    }
+
+    #[test]
+    fn aggregate_skips_blank_lines_without_consuming_the_cap() {
+        let blank = ev(9, None, Some("   "), None);
+        let real = ev(9, None, Some("kept"), None);
+        let refs = vec![&blank, &real];
+        let agg = aggregate_hour(&refs);
+        assert_eq!(agg.lines, vec!["kept"]);
+        assert_eq!(agg.event_count, 2, "blank still counts as an event");
+    }
+
+    #[test]
+    fn aggregate_caps_lines_at_max() {
+        let events: Vec<Event> = (0..MAX_LINES + 10)
+            .map(|i| ev(9, None, Some(&format!("line {i}")), None))
+            .collect();
+        let refs: Vec<&Event> = events.iter().collect();
+        let agg = aggregate_hour(&refs);
+        assert_eq!(agg.lines.len(), MAX_LINES);
+        assert_eq!(agg.event_count as usize, MAX_LINES + 10);
+    }
 
     #[test]
     fn parses_fenced_json_with_tree() {

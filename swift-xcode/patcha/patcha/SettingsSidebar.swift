@@ -6,7 +6,7 @@ struct SettingsSidebar: View {
     @Binding var selected: SettingsSection
     @ObservedObject var authManager: AuthManager
 
-    private let topSections: [SettingsSection] = [.permissions]
+    private let topSections: [SettingsSection] = [.chat, .permissions]
     private let activitySections: [SettingsSection] = [.timeline, .memories]
     private let settingsSections: [SettingsSection] = [.general, .modelPreference, .integrations]
 
@@ -130,7 +130,6 @@ struct SidebarNavItem: View {
     let section: SettingsSection
     let isSelected: Bool
     let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
@@ -146,13 +145,18 @@ struct SidebarNavItem: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? PatchaTheme.selectedOverlay(for: colorScheme) : Color.clear)
+                    .fill(isSelected ? PatchaTheme.accent.opacity(0.15) : Color.clear)
             )
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .foregroundStyle(isSelected ? PatchaTheme.accent : sidebarText)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
+    }
+
+    @Environment(\.colorScheme) private var colorScheme
+    private var sidebarText: Color {
+        colorScheme == .dark ? PatchaTheme.bone : Color.primary
     }
 }

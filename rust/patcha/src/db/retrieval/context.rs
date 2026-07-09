@@ -409,3 +409,129 @@ fn rerank_text(event: &Event) -> String {
     let detail = format_detail(event);
     strip_timestamp_prefix(&detail).chars().take(2000).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::store::ScoredEvent;
+    use crate::models::EventType;
+    use chrono::Duration;
+
+    fn event(id: &str, age_minutes: i64, content: &str) -> Event {
+        let mut e = Event::new(EventType::Terminal, content);
+        e.id = id.to_owned();
+        e.timestamp = Utc::now() - Duration::minutes(age_minutes);
+        e
+    }
+
+    fn params() -> RetrievalParams {
+        RetrievalParams {
+            limit: 10,
+            candidate_pool: 40,
+            filter: EventFilter::default(),
+            similarity_floor: 0.0,
+            recency_weight: 0.0,
+            recency_lambda_days: 7.0,
+        }
+    }
+
+    #[test]
+    fn rrf_merge_rewards_agreement_across_arms() {
+        let vector = vec![
+            ScoredEvent { event: event("a", 0, "alpha"), score: 0.9 },
+            ScoredEvent { event: event("b", 0, "beta"), score: 0.8 },
+        ];
+        // `b` appears top of the text arm too, so fusion should lift it above `a`.
+        let text = vec![event("b", 0, "beta"), event("c", 0, "gamma")];
+
+        let merged = rrf_merge(&vector, &text, &params());
+
+        assert_eq!(merged[0].id, "b", "event in both arms should rank first");
+        let ids: Vec<&str> = merged.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"a") && ids.contains(&"c"));
+        assert_eq!(merged.len(), 3, "union of both arms, deduped by id");
+    }
+
+    #[test]
+    fn rrf_merge_respects_candidate_pool_cap() {
+        let vector: Vec<ScoredEvent> = (0..50)
+            .map(|i| ScoredEvent { event: event(&format!("v{i}"), i, "x"), score: 1.0 })
+            .collect();
+        let mut p = params();
+        p.candidate_pool = 5;
+
+        let merged = rrf_merge(&vector, &[], &p);
+
+        assert_eq!(merged.len(), 5);
+    }
+
+    #[test]
+    fn recency_boost_is_zero_when_weight_disabled() {
+        let p = params();
+        let boost = recency_boost(&(Utc::now() - Duration::days(1)), Utc::now(), &p);
+        assert_eq!(boost, 0.0);
+    }
+
+    #[test]
+    fn recency_boost_decays_with_age() {
+        let mut p = params();
+        p.recency_weight = 1.0;
+        let now = Utc::now();
+        let fresh = recency_boost(&now, now, &p);
+        let old = recency_boost(&(now - Duration::days(7)), now, &p);
+
+        assert!((fresh - 1.0).abs() < 1e-9, "zero-age boost equals weight");
+        assert!(old < fresh, "older events get a smaller boost");
+        assert!((old - (1.0 / std::f64::consts::E)).abs() < 1e-6, "one lambda of age decays by 1/e");
+    }
+
+    #[test]
+    fn recency_boost_clamps_future_timestamps() {
+        let mut p = params();
+        p.recency_weight = 1.0;
+        let now = Utc::now();
+        let future = recency_boost(&(now + Duration::days(3)), now, &p);
+        assert!((future - 1.0).abs() < 1e-9, "negative age is clamped to 0");
+    }
+
+    #[test]
+    fn dedup_collapses_near_identical_consecutive_events() {
+        let mut a = event("a", 2, "first");
+        a.embedding = Some(vec![1.0, 0.0, 0.0]);
+        let mut b = event("b", 1, "near-dup");
+        b.embedding = Some(vec![1.0, 0.0, 0.0]);
+        let mut c = event("c", 0, "different");
+        c.embedding = Some(vec![0.0, 1.0, 0.0]);
+
+        let kept = dedup_by_similarity(vec![a, b, c], 0.95);
+        let ids: Vec<&str> = kept.iter().map(|e| e.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["b", "c"], "duplicate replaced by most recent, distinct kept");
+    }
+
+    #[test]
+    fn dedup_keeps_events_without_embeddings() {
+        let kept = dedup_by_similarity(vec![event("a", 1, "x"), event("b", 0, "y")], 0.9);
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn strip_timestamp_prefix_removes_bracketed_stamp() {
+        assert_eq!(
+            strip_timestamp_prefix("[2026-06-20 09:30] did a thing"),
+            "did a thing"
+        );
+        assert_eq!(strip_timestamp_prefix("no prefix here"), "no prefix here");
+    }
+
+    #[test]
+    fn rerank_in_place_is_noop_without_a_reranker() {
+        let mut merged = vec![
+            MergedResult { id: "a".into(), score: 0.9, event: event("a", 0, "x") },
+            MergedResult { id: "b".into(), score: 0.8, event: event("b", 0, "y") },
+        ];
+        rerank_in_place(None, "query", &mut merged);
+        let ids: Vec<&str> = merged.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b"], "order preserved when no reranker present");
+    }
+}

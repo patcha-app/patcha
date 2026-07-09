@@ -25,31 +25,57 @@ extension Color {
 }
 
 enum PatchaTheme {
-    static let accent = Color(hex: "21935B")
+    // Phosphor terminal palette
+    static let phosphorMint = Color(hex: "ddffdc")
+    static let reactorGreen = Color(hex: "7fee64")
+    static let softGlow     = Color(hex: "c8f9b6")
+    static let paleMist     = Color(hex: "def0dd")
+    static let sageTint     = Color(hex: "aed2a4")
+    static let void         = Color(hex: "000000")
+    static let carbon       = Color(hex: "212525")
+    static let moss         = Color(hex: "3e4a3c")
+    static let fern         = Color(hex: "485346")
+    static let lichen       = Color(hex: "677d64")
+    static let slate        = Color(hex: "697368")
+    static let stone        = Color(hex: "859085")
+    static let bone         = Color(hex: "ffffff")
+
+    static let accent = reactorGreen
     static let softDivider = Color.primary.opacity(0.08)
 
     static func bg(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(hex: "0F0F11") : Color(hex: "F7F8F5")
+        colorScheme == .dark ? void : Color(hex: "F7F8F5")
     }
 
     static func surface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(hex: "161618") : Color.white
+        colorScheme == .dark ? carbon : Color.white
     }
 
     static func sidebar(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color(hex: "161618") : Color(hex: "F0F0F2")
+        colorScheme == .dark ? void : Color(hex: "F0F0F2")
     }
 
     static func hairline(for colorScheme: ColorScheme) -> Color {
         Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
     }
 
+    /// Elevated tile / chip fill — Moss on dark, faint ink on light.
     static func tile(for colorScheme: ColorScheme) -> Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.05)
+        colorScheme == .dark ? moss.opacity(0.55) : Color.primary.opacity(0.05)
     }
 
     static func selectedOverlay(for colorScheme: ColorScheme) -> Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.08)
+        reactorGreen.opacity(colorScheme == .dark ? 0.18 : 0.15)
+    }
+
+    /// Primary body text — luminescent Phosphor Mint on dark, near-black on light.
+    static func primaryText(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? phosphorMint : Color(hex: "0F0F11")
+    }
+
+    /// Muted/secondary text — Lichen on dark.
+    static func secondaryText(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? lichen : Color.secondary
     }
 }
 
@@ -69,7 +95,7 @@ struct AccentButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.pBodyStrong)
-            .foregroundColor(.white)
+            .foregroundColor(PatchaTheme.void)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.vertical, 9)
             .padding(.horizontal, fullWidth ? 0 : 16)

@@ -1,10 +1,11 @@
 import Foundation
 
 enum SettingsSection: CaseIterable, Hashable {
-    case permissions, general, timeline, memories, modelPreference, integrations, account
+    case chat, permissions, general, timeline, memories, modelPreference, integrations, account
 
     var title: String {
         switch self {
+        case .chat:            return "Chat"
         case .permissions:     return "Permissions"
         case .general:         return "General"
         case .timeline:        return "Timeline"
@@ -17,6 +18,7 @@ enum SettingsSection: CaseIterable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .chat:            return "bubble.left.and.bubble.right"
         case .permissions:     return "shield"
         case .general:         return "gearshape"
         case .timeline:        return "calendar.day.timeline.left"

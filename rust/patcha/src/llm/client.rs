@@ -120,6 +120,19 @@ impl PatchaApiClient {
             .context("empty choices in chat response")
     }
 
+    /// Send a raw OpenAI-compatible chat request and return the parsed JSON
+    /// response. The caller owns the body shape (`model`, `messages`, `tools`,
+    /// `tool_choice`, ...) and reads `choices[0].message` directly — used by the
+    /// agentic chat loop which needs access to `tool_calls`.
+    pub async fn chat_raw(&self, body: serde_json::Value) -> Result<serde_json::Value> {
+        let resp = self
+            .post_with_auth("/api/v1/llm/chat/completions", &body)
+            .await?;
+        resp.json()
+            .await
+            .context("failed to parse chat completion response")
+    }
+
     /// Embed a batch of texts via the API (fallback; local fastembed is preferred).
     pub async fn embed_remote(&self, texts: Vec<String>, model: &str) -> Result<Vec<Vec<f32>>> {
         let body = serde_json::json!({ "model": model, "input": texts });

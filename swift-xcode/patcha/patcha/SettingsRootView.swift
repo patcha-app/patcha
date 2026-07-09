@@ -6,7 +6,7 @@ struct SettingsRootView: View {
     @ObservedObject var authManager: AuthManager
     @ObservedObject var mcpManager: MCPManager
     var daemonManager: DaemonManager?
-    @State private var section: SettingsSection = .permissions
+    @State private var section: SettingsSection = .chat
     @StateObject private var permissionsVM: AppPermissionsViewModel
     @Environment(\.colorScheme) private var colorScheme
 
@@ -21,6 +21,8 @@ struct SettingsRootView: View {
     @ViewBuilder
     private var contentView: some View {
         switch section {
+        case .chat:
+            ChatPane(mcpManager: mcpManager, store: store)
         case .permissions:
             AppPermissionsPane(store: store, viewModel: permissionsVM)
         case .general:
@@ -34,7 +36,7 @@ struct SettingsRootView: View {
         case .memories:
             PlaceholderPane(section: .memories)
         case .modelPreference:
-            PlaceholderPane(section: .modelPreference)
+            ModelPreferencePane(mcpManager: mcpManager, store: store)
         case .integrations:
             IntegrationsPane(mcpManager: mcpManager)
         case .account:
@@ -63,10 +65,6 @@ struct SettingsRootView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(PatchaTheme.surface(for: colorScheme))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .stroke(PatchaTheme.hairline(for: colorScheme), lineWidth: 1)
-                        )
                         .padding([.top, .trailing, .bottom], 10)
                         .ignoresSafeArea(edges: .top)
                 }
