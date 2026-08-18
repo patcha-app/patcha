@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    llm::client::PatchaApiClient,
+    llm::backend::LlmBackend,
     models::{Entity, EntityType, Relationship, RelationshipType},
 };
 use anyhow::Result;
@@ -14,25 +14,83 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 const TECH_PATTERNS: &[&str] = &[
-    "python", "rust", "javascript", "typescript", "go", "java", "kotlin",
-    "swift", "c++", "c#", "ruby", "php", "scala", "haskell",
-    "react", "vue", "angular", "svelte", "nextjs", "nuxt",
-    "django", "flask", "fastapi", "express", "rails",
-    "postgres", "mysql", "sqlite", "mongodb", "redis", "elasticsearch",
-    "docker", "kubernetes", "terraform", "ansible",
-    "aws", "gcp", "azure",
-    "git", "github", "gitlab", "jira", "linear",
-    "openai", "anthropic", "claude", "gpt", "llm",
-    "numpy", "pandas", "pytorch", "tensorflow", "sklearn",
+    "python",
+    "rust",
+    "javascript",
+    "typescript",
+    "go",
+    "java",
+    "kotlin",
+    "swift",
+    "c++",
+    "c#",
+    "ruby",
+    "php",
+    "scala",
+    "haskell",
+    "react",
+    "vue",
+    "angular",
+    "svelte",
+    "nextjs",
+    "nuxt",
+    "django",
+    "flask",
+    "fastapi",
+    "express",
+    "rails",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "mongodb",
+    "redis",
+    "elasticsearch",
+    "docker",
+    "kubernetes",
+    "terraform",
+    "ansible",
+    "aws",
+    "gcp",
+    "azure",
+    "git",
+    "github",
+    "gitlab",
+    "jira",
+    "linear",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "llm",
+    "numpy",
+    "pandas",
+    "pytorch",
+    "tensorflow",
+    "sklearn",
 ];
 
 const CONCEPT_PATTERNS: &[&str] = &[
-    "api", "rest", "graphql", "grpc", "websocket",
-    "authentication", "authorization", "oauth", "jwt",
-    "microservices", "monolith", "serverless",
-    "ci/cd", "devops", "mlops",
-    "testing", "debugging", "refactoring",
-    "performance", "security", "scalability",
+    "api",
+    "rest",
+    "graphql",
+    "grpc",
+    "websocket",
+    "authentication",
+    "authorization",
+    "oauth",
+    "jwt",
+    "microservices",
+    "monolith",
+    "serverless",
+    "ci/cd",
+    "devops",
+    "mlops",
+    "testing",
+    "debugging",
+    "refactoring",
+    "performance",
+    "security",
+    "scalability",
 ];
 
 // ---------------------------------------------------------------------------
@@ -42,11 +100,11 @@ const CONCEPT_PATTERNS: &[&str] = &[
 pub struct EntityExtractor {
     #[allow(dead_code)]
     cfg: Config,
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
 }
 
 impl EntityExtractor {
-    pub fn new(cfg: Config, llm_client: Arc<PatchaApiClient>) -> Self {
+    pub fn new(cfg: Config, llm_client: Arc<dyn LlmBackend>) -> Self {
         Self { cfg, llm_client }
     }
 
@@ -166,9 +224,18 @@ impl EntityExtractor {
 
         if let Some(arr) = parsed.get("entities").and_then(|v| v.as_array()) {
             for item in arr {
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-                let type_str = item.get("type").and_then(|v| v.as_str()).unwrap_or("concept");
-                if name.is_empty() { continue; }
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let type_str = item
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("concept");
+                if name.is_empty() {
+                    continue;
+                }
                 let entity_type = match type_str {
                     "technology" => EntityType::Technology,
                     "project" => EntityType::Project,
@@ -193,10 +260,23 @@ impl EntityExtractor {
         let mut relationships = Vec::new();
         if let Some(arr) = parsed.get("relationships").and_then(|v| v.as_array()) {
             for item in arr {
-                let src = item.get("source").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-                let tgt = item.get("target").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-                let rel_type_str = item.get("type").and_then(|v| v.as_str()).unwrap_or("relates_to");
-                if src.is_empty() || tgt.is_empty() { continue; }
+                let src = item
+                    .get("source")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let tgt = item
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+                let rel_type_str = item
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("relates_to");
+                if src.is_empty() || tgt.is_empty() {
+                    continue;
+                }
 
                 let rel_type = match rel_type_str {
                     "uses" => RelationshipType::Uses,
@@ -205,8 +285,14 @@ impl EntityExtractor {
                 };
 
                 // Find entity IDs by name
-                let src_id = entities.iter().find(|e| e.name == src).map(|e| e.id.clone());
-                let tgt_id = entities.iter().find(|e| e.name == tgt).map(|e| e.id.clone());
+                let src_id = entities
+                    .iter()
+                    .find(|e| e.name == src)
+                    .map(|e| e.id.clone());
+                let tgt_id = entities
+                    .iter()
+                    .find(|e| e.name == tgt)
+                    .map(|e| e.id.clone());
 
                 if let (Some(sid), Some(tid)) = (src_id, tgt_id) {
                     relationships.push(Relationship {
@@ -240,7 +326,10 @@ fn capitalized_word_regex() -> &'static Regex {
 
 fn is_sentence_start_word(word: &str) -> bool {
     // Common words that appear capitalized but aren't entity names
-    const SKIP: &[&str] = &["The", "This", "That", "It", "We", "They", "He", "She", "You", "I", "And", "But", "Or", "So"];
+    const SKIP: &[&str] = &[
+        "The", "This", "That", "It", "We", "They", "He", "She", "You", "I", "And", "But", "Or",
+        "So",
+    ];
     SKIP.contains(&word)
 }
 

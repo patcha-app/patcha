@@ -1,8 +1,8 @@
 use crate::{
     config::Config,
-    db::{Db, retrieval::search::TaskAwareSearchService, store::VectorStore, tasks::TaskStore},
+    db::{retrieval::search::TaskAwareSearchService, store::VectorStore, tasks::TaskStore, Db},
     embedding::Embedder,
-    llm::client::PatchaApiClient,
+    llm::backend,
     summary::TaskSummarizer,
 };
 use anyhow::Result;
@@ -41,11 +41,16 @@ pub async fn run_summary(args: RagSummaryArgs, cfg: Config) -> Result<()> {
 
     let db = Db::open(&cfg.db_path)?;
     let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let summarizer = TaskSummarizer::new(task_store, llm_client, &cfg.data_dir);
 
-    let result = summarizer.generate_rich_daily_summary(date, args.ai).await?;
-    println!("RAG summary for {}:", result.get("date").and_then(|v| v.as_str()).unwrap_or("?"));
+    let result = summarizer
+        .generate_rich_daily_summary(date, args.ai)
+        .await?;
+    println!(
+        "RAG summary for {}:",
+        result.get("date").and_then(|v| v.as_str()).unwrap_or("?")
+    );
     println!("{}", "─".repeat(60));
     if let Some(overview) = result.get("overview").and_then(|v| v.as_str()) {
         println!("{overview}");
@@ -54,7 +59,10 @@ pub async fn run_summary(args: RagSummaryArgs, cfg: Config) -> Result<()> {
         println!("\nTasks ({}):", tasks.len());
         for t in tasks {
             let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("?");
-            let dur = t.get("duration_minutes").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let dur = t
+                .get("duration_minutes")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
             println!("  • {title} ({dur:.0}min)");
         }
     }
@@ -88,7 +96,8 @@ pub async fn run_project(args: ProjectAnalysisArgs, cfg: Config) -> Result<()> {
     println!("  Events: {}", proj_events.len());
     println!("  Tasks:  {}", proj_tasks.len());
 
-    let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut type_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for e in &proj_events {
         *type_counts.entry(e.event_type.to_string()).or_insert(0) += 1;
     }
@@ -104,7 +113,10 @@ pub async fn run_project(args: ProjectAnalysisArgs, cfg: Config) -> Result<()> {
     if !proj_tasks.is_empty() {
         println!("\nTasks:");
         for t in proj_tasks.iter().take(10) {
-            let dur = t.duration_minutes.map(|d| format!("{d:.0}min")).unwrap_or_default();
+            let dur = t
+                .duration_minutes
+                .map(|d| format!("{d:.0}min"))
+                .unwrap_or_default();
             println!("  • {} [{}]", t.title, dur);
         }
     }
@@ -133,7 +145,11 @@ pub async fn run_search(args: ContextualSearchArgs, cfg: Config) -> Result<()> {
                     .and_then(|v| v.as_f64())
                     .map(|d| format!("{d:.0}min"))
                     .unwrap_or_default();
-                let proj_tag = if proj.is_empty() { String::new() } else { format!(" [{proj}]") };
+                let proj_tag = if proj.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{proj}]")
+                };
                 println!("  • {title}{proj_tag} {dur}");
             }
             println!();
@@ -148,9 +164,7 @@ pub async fn run_search(args: ContextualSearchArgs, cfg: Config) -> Result<()> {
                 let etype = a.get("type").and_then(|v| v.as_str()).unwrap_or("?");
                 let summary = a.get("summary").and_then(|v| v.as_str()).unwrap_or("");
                 let snippet: String = summary.chars().take(80).collect();
-                println!(
-                    "  [{ts:.16}] {etype}: {snippet}"
-                );
+                println!("  [{ts:.16}] {etype}: {snippet}");
             }
         }
     }

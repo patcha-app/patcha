@@ -1,207 +1,248 @@
 # patcha
 
-Localised observability for your computer. Patcha runs as a background daemon, collects activity from your browser, terminal, git, and screen, stores it in a local vector database, and lets you query it semantically - via CLI or as an MCP tool in Claude Desktop.
+Local-first observability for your computer. Patcha runs as a background daemon,
+collects activity from your browser, terminal, git, and screen, stores it in a
+**local** vector database, and lets you query it semantically — from the CLI or
+as an MCP tool inside Claude and other MCP clients.
+
+Everything stays on your machine. Embeddings and screen understanding run
+on-device; the only network calls are optional (LLM summarization, which can
+also run through a local `claude` CLI — see [LLM backend](#llm-backend)).
+
+> **Platform:** macOS only. Patcha relies on macOS Accessibility, Screen
+> Recording, and Vision (OCR) APIs.
+
+---
 
 ## How it works
 
-1. **Daemon** polls activity sources on a configurable interval and stores raw events in [Qdrant](https://qdrant.tech).
-2. **Collectors** pull from browser history, shell history, git commits/stashes/staging, and macOS Accessibility/OCR. See [docs/collectors.md](docs/collectors.md).
-3. **Embedding** converts raw events into vectors via OpenAI `text-embedding-3-small`. See [docs/embedding.md](docs/embedding.md).
-4. **Retrieval** exposes working memory, recent activity, and semantic search. See [docs/retrieval/retrieval.md](docs/retrieval/retrieval.md).
-5. **Compaction** nightly converts raw events into structured tasks and prunes the vector store. See [docs/compaction.md](docs/compaction.md).
-6. **MCP server** exposes retrieval as tools for Claude Desktop or any MCP client. See [docs/retrieval/mcp.md](docs/retrieval/mcp.md).
+1. **Daemon** (`patcha daemon`) polls activity sources on a configurable
+   interval and writes events to a local SQLite database.
+2. **Collectors** pull from browser history, shell history, git
+   (commits/stashes/staging), and the active window/screen via macOS
+   Accessibility + OCR. See [docs/collectors.md](docs/collectors.md).
+3. **Perception** filters redundant frames and captions screenshots on-device
+   (FastVLM gist + MobileCLIP visual prefilter) so retrieval works on *what you
+   were doing*, not just literal on-screen text.
+4. **Embedding** turns events into vectors with a local
+   [fastembed](https://github.com/Anush008/fastembed-rs) model (BGE). No API key
+   required. See [docs/embedding.md](docs/embedding.md).
+5. **Storage & retrieval** live in SQLite with the
+   [`sqlite-vec`](https://github.com/asg017/sqlite-vec) extension for
+   approximate-nearest-neighbor search, plus a knowledge graph for structural
+   queries. See [docs/retrieval/retrieval.md](docs/retrieval/retrieval.md).
+6. **Compaction** nightly folds raw events into structured tasks and prunes the
+   store. See [docs/compaction.md](docs/compaction.md).
+7. **MCP server** (`patcha mcp`) exposes retrieval as tools for Claude or any
+   MCP client. See [docs/retrieval/mcp.md](docs/retrieval/mcp.md).
+
+The core is written in Rust (`rust/patcha`). A native macOS menu bar app
+(`swift-xcode/`) manages the daemon so you never need a terminal.
+
+---
 
 ## Requirements
 
-- macOS (Accessibility APIs and AppleScript are macOS-only)
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv)
-- OpenAI API key (for embeddings)
-- Qdrant — local path or remote instance
+- macOS (Apple Silicon or Intel)
+- [Rust](https://rustup.rs) (stable) to build the CLI/daemon
+- Xcode or the Xcode Command Line Tools (for the Swift helper binaries and the
+  menu bar app)
+- Optional: the [`claude` CLI](https://docs.claude.com/en/docs/claude-code)
+  installed and logged in, to run AI features (summaries, categorization, chat)
+  fully locally without a patcha account
 
-## Installation
+No OpenAI key and no external vector database are required — embeddings and the
+vector store are local.
+
+---
+
+## Build & install
+
+Clone and build the CLI:
 
 ```bash
 git clone https://github.com/xtanion/patcha.git
-cd patcha
-uv sync
+cd patcha/rust
+cargo build --release
+# binary at rust/target/release/patcha
 ```
 
-Set your OpenAI key (or patcha will prompt on first run): (wont be needed if connected to patcha API)
+Build the Swift helper binaries (Accessibility, OCR, visual embedder, window
+observer) that the daemon shells out to:
 
 ```bash
-echo "OPENAI_API_KEY=sk-..." >> ~/.patcha/.env
+bash build.sh
 ```
 
-Install git hooks:
+`build.sh` compiles the Swift helpers, builds the Rust release binary, and (if
+Xcode is present) packages the menu bar app into `dist/Patcha.app`.
+
+Install the git hooks (commit-message linting + test run):
 
 ```bash
 bash scripts/install-hooks.sh
 ```
 
-### macOS Accessibility permission
+### macOS permissions
 
-The screen/window collectors require Accessibility access. Go to:
+The screen/window collectors need **Accessibility** and **Screen Recording**
+access. Grant them under **System Settings → Privacy & Security**. The menu bar
+app requests these on first run; if you run the CLI directly, add your terminal
+(or the `patcha` binary) to both lists.
 
-**System Settings > Privacy & Security > Accessibility** and add your terminal app (or the patcha binary if using the built executable).
-
-## macOS Distribution
-
-The `swift/` directory contains a native macOS menu bar app that manages the daemon for you — no terminal required.
-
-**What it does:**
-
-- Runs entirely in the menu bar (no dock icon)
-- Spawns the Python daemon as a child process on launch
-- Requests Accessibility and Screen Recording permissions on first run
-- Auto-heals the daemon if it crashes (exponential backoff: 5s → 10s → 20s → 40s → 80s, up to 5 attempts)
-- Gracefully shuts the daemon down when you quit the app
-
-**How the Swift app runs Python:**
-
-The app uses `Foundation.Process` (macOS's subprocess API) to fork a child process. It resolves the daemon binary in this order:
-
-1. `Patcha.app/Contents/Resources/patcha` — the PyInstaller-bundled standalone binary (used in production DMG). Swift runs it directly; Python is embedded inside it. No `uv` or Python installation required.
-2. `PATCHA_DAEMON_PATH` env var — custom binary override.
-3. Dev fallback — finds `uv` in `$PATH` and runs `uv run python main.py` from the project directory. If `uv` is not installed, the app shows an alert and quits.
-
-After launch, a `DispatchSourceProcess` watches the child PID at the kernel level and fires immediately on exit — no polling.
-
-`**uv` requirement:**
-
-
-| Mode                             | `uv` needed?                                                         |
-| -------------------------------- | -------------------------------------------------------------------- |
-| Production DMG (full `build.sh`) | No — Python is bundled inside the `patcha` binary                    |
-| Dev ( only)                      | Yes — install with `curl -LsSf https://astral.sh/uv/install.sh | sh` |
-
-
-**Build:**
-
-```bash
-cd swift
-swift build -c release
-bash build_app.sh   # produces dist/Patcha.app
-```
-
-Or run the full build (Python executables + DMG):
-
-```bash
-bash build.sh
-```
+---
 
 ## Getting started
 
 Start the background daemon:
 
 ```bash
-uv run patcha start-daemon
+patcha daemon
 ```
 
-Check that it's running:
+Run a one-off collection cycle without the daemon:
 
 ```bash
-uv run patcha daemon-status
+patcha collect
 ```
 
-Collect a manual snapshot:
+Search your activity semantically:
 
 ```bash
-uv run patcha collect
+patcha search "sqlite-vec setup"
 ```
 
-Search your activity:
+Summarize a day, or review a range:
 
 ```bash
-uv run patcha search "qdrant setup"
+patcha summarize
+patcha review --from 2026-08-01 --to 2026-08-07
 ```
 
-Stop the daemon:
+Run `patcha --help` or `patcha <command> --help` for full options.
 
-```bash
-uv run patcha stop-daemon
-```
+---
+
+## LLM backend
+
+Categorization, summaries, compaction, and chat use an LLM. Patcha picks the
+backend automatically:
+
+- **No login (default):** requests run through your local `claude` CLI —
+  nothing leaves your machine beyond what the CLI itself sends.
+- **Signed in (`patcha login`):** requests route through patcha-api.
+
+Override with the `PATCHA_LLM_BACKEND` environment variable:
+
+| Value    | Behavior                                              |
+| -------- | ----------------------------------------------------- |
+| `auto`   | (default) use `claude` when there is no token, else API |
+| `claude` | always use the local `claude` CLI                     |
+| `api`    | always use patcha-api (requires `patcha login`)       |
+
+Collection, embedding, storage, and search never require a login or network.
+
+---
 
 ## CLI reference
 
+| Command                | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| `daemon`               | Run the background collector + processing loop     |
+| `mcp`                  | Run the MCP server (stdio or HTTP)                 |
+| `collect`              | Run one collection cycle from all sources          |
+| `observe`              | Collect and cluster without calling an LLM         |
+| `search <query>`       | Semantic search over activity history              |
+| `review`               | Review activity over a date range                  |
+| `summarize`            | Generate a written daily summary                   |
+| `cluster` / `patterns` | Cluster activity / find recurring patterns         |
+| `tasks`                | List identified tasks                              |
+| `task-details <id>`    | Show full detail for a task                        |
+| `compact-day`          | Manually compact a past date into tasks            |
+| `rag-summary`          | RAG-enhanced summary                               |
+| `analyze-graph`        | Analyze the activity knowledge graph               |
+| `login` / `logout`     | Sign in / out of patcha-api (optional)             |
+| `reembed` / `migrate`  | Maintenance: re-embed events / migrate old data    |
 
-| Command             | Description                                    |
-| ------------------- | ---------------------------------------------- |
-| `start-daemon`      | Start the background activity collector        |
-| `stop-daemon`       | Stop the daemon                                |
-| `daemon-status`     | Show daemon health and collection stats        |
-| `collect`           | Run a one-shot collection from all sources     |
-| `search <query>`    | Semantic search over activity history          |
-| `observe`           | Cluster today's activity into themes           |
-| `summarize`         | Generate a written summary of a day's activity |
-| `review`            | Review activity over a date range              |
-| `tasks`             | List identified tasks                          |
-| `task-details <id>` | Show full detail for a task                    |
-| `compact-day`       | Manually trigger compaction for a past date    |
-| `status`            | Show config and store health                   |
-| `config`            | Get or set configuration values                |
+Run `patcha --help` for the complete list.
 
+---
 
-Run `uv run patcha --help` or `uv run patcha <command> --help` for full options.
+## MCP (Claude Desktop & other clients)
 
-## MCP (Claude Desktop)
+The MCP server exposes six read-only tools: `get_working_memory`,
+`get_recent_activity`, `search_activity`, `get_activity_context`,
+`get_session`, and `find_connected`.
 
-The MCP server exposes three tools: `get_working_memory`, `get_recent_activity`, and `search_activity`.
-
-Add to `claude_desktop_config.json`:
+Add to your MCP client config (e.g. `claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "patcha": {
-      "command": "uv",
-      "args": ["run", "--project", "/path/to/patcha", "patcha-mcp"]
+      "command": "/path/to/patcha",
+      "args": ["mcp", "--stdio"]
     }
   }
 }
 ```
 
-For HTTP transport: `uv run patcha-mcp --http --port 7861`
+For HTTP transport: `patcha mcp --port 6969`.
 
 See [docs/retrieval/mcp.md](docs/retrieval/mcp.md) for full tool documentation.
 
+---
+
 ## Configuration
 
-Patcha reads configuration from `~/.patcha/.env`. Key variables:
+Patcha reads configuration from environment variables (and, if present,
+`~/.patcha/.env` / `.env` in the working directory). Common variables:
 
+| Variable               | Default                     | Description                            |
+| ---------------------- | --------------------------- | -------------------------------------- |
+| `PATCHA_DB_PATH`       | `~/.patcha/patcha.db`       | SQLite database path                   |
+| `DATA_DIR`             | `~/.patcha/data`            | JSONL logs and snapshots               |
+| `EMBEDDING_MODEL`      | `BAAI/bge-base-en-v1.5`     | Local fastembed model                  |
+| `EMBEDDING_CACHE_DIR`  | `~/.patcha/models`          | Where embedding models are cached      |
+| `POLL_INTERVAL`        | `60`                        | Seconds between collection cycles      |
+| `ENABLE_*_COLLECTOR`   | `true`                      | Toggle git/browser/terminal/window/AX  |
+| `PATCHA_LLM_BACKEND`   | `auto`                      | `auto` / `claude` / `api`              |
+| `LOG_LEVEL` / `RUST_LOG` | `info`                    | Logging verbosity                      |
 
-| Variable         | Default                    | Description                                      |
-| ---------------- | -------------------------- | ------------------------------------------------ |
-| `OPENAI_API_KEY` | required                   | Used for generating embeddings                   |
-| `QDRANT_PATH`    | `~/.patcha/qdrant_storage` | Local Qdrant storage path                        |
-| `QDRANT_URL`     | —                          | Remote Qdrant instance (overrides `QDRANT_PATH`) |
+See `rust/patcha/src/config.rs` for the full list of tunables.
 
-
-Run `uv run patcha config` to inspect or modify settings at runtime.
+---
 
 ## Development
 
 ```bash
-uv sync
-uv run pytest
-uv run ruff check .
-uv run ruff format .
+cd rust
+cargo build
+cargo test          # some collector tests need macOS GUI permissions
+cargo clippy --all-targets
+cargo fmt --all
 ```
+
+CI runs `fmt --check`, `clippy -D warnings`, and `build` on macOS. The
+`cargo test` suite is run locally via the pre-commit hook because several tests
+exercise OCR / Accessibility and need a real GUI session.
 
 ### Commit convention
 
-Commits must follow `type: description` where type is one of:
+Commits must follow `type: description`, where `type` is one of:
 
 - `feat:` — new feature
 - `fix:` — bug fix
 - `chore:` — maintenance, deps, tooling
 
-Scope is optional: `feat(cli): add --json flag`.
+Scope is optional: `feat(cli): add --json flag`. The `commit-msg` hook enforces
+this — install hooks with `bash scripts/install-hooks.sh`.
 
-The `commit-msg` hook enforces this. Install hooks with `bash scripts/install-hooks.sh`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
+
+---
 
 ## Docs
-
 
 | Topic                                       | File                                                       |
 | ------------------------------------------- | ---------------------------------------------------------- |
@@ -209,6 +250,11 @@ The `commit-msg` hook enforces this. Install hooks with `bash scripts/install-ho
 | Embedding pipeline                          | [docs/embedding.md](docs/embedding.md)                     |
 | Retrieval (working memory, search)          | [docs/retrieval/retrieval.md](docs/retrieval/retrieval.md) |
 | MCP server                                  | [docs/retrieval/mcp.md](docs/retrieval/mcp.md)             |
+| RAG & knowledge graph                       | [docs/retrieval/rag.md](docs/retrieval/rag.md)             |
 | Daily compaction                            | [docs/compaction.md](docs/compaction.md)                   |
 
+---
 
+## License
+
+[MIT](LICENSE) © the Patcha authors.

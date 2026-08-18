@@ -1,7 +1,7 @@
 use crate::{
     db::{entities::EntityExtractor, graph::KnowledgeGraph, store::VectorStore},
     embedding::Embedder,
-    llm::client::PatchaApiClient,
+    llm::backend::LlmBackend,
     models::Event,
 };
 use anyhow::Result;
@@ -17,7 +17,7 @@ pub struct GraphRagSystem {
     entity_extractor: Arc<EntityExtractor>,
     embedder: Arc<Embedder>,
     #[allow(dead_code)]
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
 }
 
 impl GraphRagSystem {
@@ -26,7 +26,7 @@ impl GraphRagSystem {
         knowledge_graph: Arc<KnowledgeGraph>,
         entity_extractor: Arc<EntityExtractor>,
         embedder: Arc<Embedder>,
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
     ) -> Self {
         Self {
             vector_store,

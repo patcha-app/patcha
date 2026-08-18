@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore},
+    db::{store::VectorStore, Db},
     models::{Category, Event, EventType},
 };
 use anyhow::Result;
@@ -42,10 +42,12 @@ pub async fn run_reembed(args: ReembedArgs, cfg: Config) -> Result<()> {
     let events: Vec<Event> = if args.all {
         store.get_recent_events(100_000)?
     } else {
-        let date_str = args
-            .date
-            .clone()
-            .unwrap_or_else(|| chrono::Local::now().date_naive().format("%Y-%m-%d").to_string());
+        let date_str = args.date.clone().unwrap_or_else(|| {
+            chrono::Local::now()
+                .date_naive()
+                .format("%Y-%m-%d")
+                .to_string()
+        });
         store.get_events_by_date(&date_str)?
     };
 
@@ -179,7 +181,10 @@ pub async fn run_migrate(args: MigrateArgs, cfg: Config) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_categorization_analysis(args: CategorizationAnalysisArgs, cfg: Config) -> Result<()> {
+pub async fn run_categorization_analysis(
+    args: CategorizationAnalysisArgs,
+    cfg: Config,
+) -> Result<()> {
     use std::collections::HashMap;
 
     let db = Db::open(&cfg.db_path)?;
@@ -203,7 +208,10 @@ pub async fn run_categorization_analysis(args: CategorizationAnalysisArgs, cfg: 
         }
     }
 
-    println!("Categorization analysis (last {} days, {} events):", args.days, total);
+    println!(
+        "Categorization analysis (last {} days, {} events):",
+        args.days, total
+    );
     println!("{}", "─".repeat(50));
     println!("{:<20} {:>6}  {:>6}", "Category", "Count", "Pct");
     println!("{}", "─".repeat(50));
@@ -235,10 +243,11 @@ pub async fn run_categorization_analysis(args: CategorizationAnalysisArgs, cfg: 
 fn qdrant_point_to_event(point: &serde_json::Value) -> Option<Event> {
     let id = point.get("id")?.as_str()?.to_owned();
     let payload = point.get("payload")?;
-    let vector = point
-        .get("vector")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect::<Vec<f32>>());
+    let vector = point.get("vector").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect::<Vec<f32>>()
+    });
 
     let timestamp_str = payload.get("timestamp").and_then(|v| v.as_str())?;
     let timestamp = DateTime::parse_from_rfc3339(timestamp_str)
@@ -277,14 +286,33 @@ fn qdrant_point_to_event(point: &serde_json::Value) -> Option<Event> {
         id,
         timestamp,
         event_type,
-        source: payload.get("source").and_then(|v| v.as_str()).map(|s| s.to_owned()),
-        source_doc_id: payload.get("source_doc_id").and_then(|v| v.as_str()).map(|s| s.to_owned()),
-        raw_content: payload.get("raw_content").and_then(|v| v.as_str()).unwrap_or("").to_owned(),
+        source: payload
+            .get("source")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        source_doc_id: payload
+            .get("source_doc_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        raw_content: payload
+            .get("raw_content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned(),
         embedding: vector,
-        summary: payload.get("summary").and_then(|v| v.as_str()).map(|s| s.to_owned()),
+        summary: payload
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
         category,
-        project: payload.get("project").and_then(|v| v.as_str()).map(|s| s.to_owned()),
-        task_id: payload.get("task_id").and_then(|v| v.as_str()).map(|s| s.to_owned()),
+        project: payload
+            .get("project")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
+        task_id: payload
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned()),
         metadata,
     })
 }

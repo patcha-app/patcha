@@ -160,15 +160,14 @@ impl VectorStore {
             return Ok(());
         }
         let conn = self.db.conn();
-        let placeholders = event_ids
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("?{}", i + 1))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!("UPDATE events SET compacted = 1 WHERE id IN ({placeholders})");
-        let params = rusqlite::params_from_iter(event_ids.iter());
-        conn.execute(&sql, params)?;
+        for chunk in event_ids.chunks(SQL_ID_CHUNK) {
+            let placeholders = (1..=chunk.len())
+                .map(|i| format!("?{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!("UPDATE events SET compacted = 1 WHERE id IN ({placeholders})");
+            conn.execute(&sql, rusqlite::params_from_iter(chunk.iter()))?;
+        }
         Ok(())
     }
 
@@ -197,11 +196,20 @@ impl VectorStore {
         limit: usize,
         filter: Option<&EventFilter>,
     ) -> Result<Vec<ScoredEvent>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
         let conn = self.db.conn();
-        let bytes = vec_to_bytes(embedding);
-        let limit = limit as i64;
+        // Stored embeddings are unit-length (fastembed normalizes); queries may
+        // not be (e.g. composite averages), so normalize here to keep the
+        // L2-to-cosine conversion below exact.
+        let bytes = vec_to_bytes(&normalized(embedding));
 
-        // Get top-k candidates from vec table
+        // Selective filters are applied post-KNN, so over-fetch harder when one
+        // is active to avoid starving the result set.
+        let has_filter = filter.is_some_and(|f| !f.is_empty());
+        let k = if has_filter { limit * 20 } else { limit * 4 };
+
         let mut vec_stmt = conn.prepare_cached(
             "SELECT event_id, distance
              FROM vec_events
@@ -210,7 +218,7 @@ impl VectorStore {
         )?;
 
         let candidates: Vec<(String, f64)> = vec_stmt
-            .query_map(params![bytes, limit * 4], |row| {
+            .query_map(params![bytes, k as i64], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
             })?
             .collect::<std::result::Result<_, _>>()?;
@@ -219,18 +227,24 @@ impl VectorStore {
             return Ok(Vec::new());
         }
 
-        // Fetch full event rows and apply filters
+        let ids: Vec<String> = candidates.iter().map(|(id, _)| id.clone()).collect();
+        let mut events_by_id = fetch_events_by_ids(&conn, &ids)?;
+
         let mut results = Vec::new();
         for (event_id, distance) in candidates {
-            if results.len() >= limit as usize {
+            if results.len() >= limit {
                 break;
             }
-            if let Some(event) = self.get_event_by_id_with_filter(&conn, &event_id, filter)? {
-                results.push(ScoredEvent {
-                    score: 1.0 - distance as f64, // convert distance to similarity
-                    event,
-                });
+            let Some(event) = events_by_id.remove(&event_id) else {
+                continue;
+            };
+            if has_filter && !event_matches_filter(&event, filter.unwrap()) {
+                continue;
             }
+            results.push(ScoredEvent {
+                score: l2_distance_to_cosine(distance),
+                event,
+            });
         }
 
         Ok(results)
@@ -265,9 +279,10 @@ impl VectorStore {
             .collect::<std::result::Result<_, _>>()?;
 
         Ok(match filter {
-            Some(f) if !f.is_empty() => {
-                events.into_iter().filter(|e| event_matches_filter(e, f)).collect()
-            }
+            Some(f) if !f.is_empty() => events
+                .into_iter()
+                .filter(|e| event_matches_filter(e, f))
+                .collect(),
             _ => events,
         })
     }
@@ -403,11 +418,7 @@ impl VectorStore {
         Ok(hours)
     }
 
-    pub fn get_events_by_category(
-        &self,
-        category: &Category,
-        limit: usize,
-    ) -> Result<Vec<Event>> {
+    pub fn get_events_by_category(&self, category: &Category, limit: usize) -> Result<Vec<Event>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, timestamp, date, event_type, source, raw_content, summary, category, project, task_id, metadata
@@ -451,28 +462,47 @@ impl VectorStore {
     ) -> Result<Vec<Event>> {
         let conn = self.db.conn();
         // app is stored as metadata.app_name
-        let pattern = format!("%\"app_name\":\"{}\"%", app);
         let mut stmt = conn.prepare_cached(
             "SELECT id, timestamp, date, event_type, source, raw_content, summary, category, project, task_id, metadata
-             FROM events WHERE timestamp >= ?1 AND metadata LIKE ?2 ORDER BY timestamp DESC LIMIT ?3",
+             FROM events WHERE timestamp >= ?1 AND json_extract(metadata, '$.app_name') = ?2
+             ORDER BY timestamp DESC LIMIT ?3",
         )?;
         let events = stmt
-            .query_map(params![since.to_rfc3339(), pattern, limit as i64], row_to_event)?
+            .query_map(params![since.to_rfc3339(), app, limit as i64], row_to_event)?
             .collect::<std::result::Result<_, _>>()?;
         Ok(events)
     }
 
     pub fn get_event_by_id(&self, event_id: &str) -> Result<Option<Event>> {
         let conn = self.db.conn();
-        self.get_event_by_id_with_filter(&conn, event_id, None)
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, timestamp, date, event_type, source, raw_content, summary, category, project, task_id, metadata
+             FROM events WHERE id = ?1",
+        )?;
+        stmt.query_row(params![event_id], row_to_event).optional()
     }
 
     pub fn get_events_by_ids(&self, event_ids: &[String]) -> Result<Vec<Event>> {
-        if event_ids.is_empty() {
-            return Ok(Vec::new());
-        }
         let conn = self.db.conn();
-        let placeholders = (1..=event_ids.len())
+        let mut by_id = fetch_events_by_ids(&conn, event_ids)?;
+        Ok(event_ids.iter().filter_map(|id| by_id.remove(id)).collect())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Batch row fetch
+// ---------------------------------------------------------------------------
+
+/// SQLite bound-parameter budget per statement; chunk large id lists.
+const SQL_ID_CHUNK: usize = 500;
+
+fn fetch_events_by_ids(
+    conn: &rusqlite::Connection,
+    event_ids: &[String],
+) -> Result<HashMap<String, Event>> {
+    let mut by_id = HashMap::with_capacity(event_ids.len());
+    for chunk in event_ids.chunks(SQL_ID_CHUNK) {
+        let placeholders = (1..=chunk.len())
             .map(|i| format!("?{i}"))
             .collect::<Vec<_>>()
             .join(", ");
@@ -482,37 +512,33 @@ impl VectorStore {
         );
         let mut stmt = conn.prepare(&sql)?;
         let events = stmt
-            .query_map(rusqlite::params_from_iter(event_ids.iter()), row_to_event)?
-            .collect::<std::result::Result<_, _>>()?;
-        Ok(events)
-    }
-
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
-
-    fn get_event_by_id_with_filter(
-        &self,
-        conn: &rusqlite::Connection,
-        event_id: &str,
-        filter: Option<&EventFilter>,
-    ) -> Result<Option<Event>> {
-        let mut stmt = conn.prepare_cached(
-            "SELECT id, timestamp, date, event_type, source, raw_content, summary, category, project, task_id, metadata
-             FROM events WHERE id = ?1",
-        )?;
-        let event = stmt
-            .query_row(params![event_id], row_to_event)
-            .optional()?;
-
-        if let (Some(filter), Some(ev)) = (filter, event.as_ref()) {
-            if !filter.is_empty() && !event_matches_filter(ev, filter) {
-                return Ok(None);
-            }
+            .query_map(rusqlite::params_from_iter(chunk.iter()), row_to_event)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for event in events {
+            by_id.insert(event.id.clone(), event);
         }
-
-        Ok(event)
     }
+    Ok(by_id)
+}
+
+// ---------------------------------------------------------------------------
+// Vector math
+// ---------------------------------------------------------------------------
+
+/// Return a unit-length copy of `v` (or the zero vector unchanged).
+fn normalized(v: &[f32]) -> Vec<f32> {
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 && (norm - 1.0).abs() > 1e-6 {
+        v.iter().map(|x| x / norm).collect()
+    } else {
+        v.to_vec()
+    }
+}
+
+/// Cosine similarity from the L2 distance between two unit vectors:
+/// d^2 = 2 - 2*cos, so cos = 1 - d^2/2.
+fn l2_distance_to_cosine(distance: f64) -> f64 {
+    (1.0 - distance * distance / 2.0).clamp(-1.0, 1.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -618,8 +644,7 @@ fn row_to_event_cols(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<Eve
 
     let event_type = parse_event_type(&type_str);
     let category = category_str.and_then(|s| Category::from_str(&s).ok());
-    let metadata: HashMap<String, Value> =
-        serde_json::from_str(&metadata_str).unwrap_or_default();
+    let metadata: HashMap<String, Value> = serde_json::from_str(&metadata_str).unwrap_or_default();
 
     Ok(Event {
         id,
@@ -723,27 +748,175 @@ mod tests {
     #[test]
     fn fulltext_finds_multiword_query() {
         let store = temp_store();
-        let mut hit = Event::new(EventType::Terminal, "{\"command\":\"git revert the deploy rollback\"}");
+        let mut hit = Event::new(
+            EventType::Terminal,
+            "{\"command\":\"git revert the deploy rollback\"}",
+        );
         hit.source = Some("terminal".into());
         let miss = Event::new(EventType::Terminal, "{\"command\":\"ls -la\"}");
         store.store_event(&hit).unwrap();
         store.store_event(&miss).unwrap();
 
         // A natural-language query the old LIKE '%whole query%' arm would miss.
-        let results = store.fetch_fulltext_candidates("deploy rollback message", 10, None).unwrap();
-        assert!(results.iter().any(|e| e.id == hit.id), "expected the matching event");
-        assert!(!results.iter().any(|e| e.id == miss.id), "unrelated event should not match");
+        let results = store
+            .fetch_fulltext_candidates("deploy rollback message", 10, None)
+            .unwrap();
+        assert!(
+            results.iter().any(|e| e.id == hit.id),
+            "expected the matching event"
+        );
+        assert!(
+            !results.iter().any(|e| e.id == miss.id),
+            "unrelated event should not match"
+        );
+    }
+
+    fn unit_vec(x: f32, y: f32) -> Vec<f32> {
+        let mut v = vec![0.0f32; 768];
+        v[0] = x;
+        v[1] = y;
+        v
+    }
+
+    fn embedded_event(content: &str, emb: Vec<f32>) -> Event {
+        let mut e = Event::new(EventType::Terminal, content);
+        e.embedding = Some(emb);
+        e
+    }
+
+    #[test]
+    fn knn_scores_are_cosine_similarity() {
+        let store = temp_store();
+        let a = embedded_event("exact", unit_vec(1.0, 0.0));
+        let b = embedded_event("close", unit_vec(0.8, 0.6));
+        let c = embedded_event("orthogonal", unit_vec(0.0, 1.0));
+        store
+            .store_events(&[a.clone(), b.clone(), c.clone()])
+            .unwrap();
+
+        let results = store.search_events(&unit_vec(1.0, 0.0), 3, None).unwrap();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].event.id, a.id);
+        assert_eq!(results[1].event.id, b.id);
+        assert_eq!(results[2].event.id, c.id);
+        assert!(
+            (results[0].score - 1.0).abs() < 1e-3,
+            "identical vector: {}",
+            results[0].score
+        );
+        assert!(
+            (results[1].score - 0.8).abs() < 1e-3,
+            "cos 0.8 vector: {}",
+            results[1].score
+        );
+        assert!(
+            results[2].score.abs() < 1e-3,
+            "orthogonal vector: {}",
+            results[2].score
+        );
+    }
+
+    #[test]
+    fn knn_normalizes_query_vectors() {
+        let store = temp_store();
+        let a = embedded_event("doc", unit_vec(1.0, 0.0));
+        store.store_event(&a).unwrap();
+
+        let results = store.search_events(&unit_vec(5.0, 0.0), 1, None).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(
+            (results[0].score - 1.0).abs() < 1e-3,
+            "unnormalized query must still yield cosine 1.0, got {}",
+            results[0].score
+        );
+    }
+
+    #[test]
+    fn filtered_knn_search_scans_past_candidate_window() {
+        let store = temp_store();
+        let mut events = Vec::new();
+        // 30 near-perfect matches for the wrong app dominate the KNN head.
+        for i in 0..30 {
+            let mut e = embedded_event(&format!("noise {i}"), unit_vec(1.0, 0.0));
+            e.metadata
+                .insert("app_name".into(), serde_json::json!("Xcode"));
+            events.push(e);
+        }
+        for i in 0..5 {
+            let mut e = embedded_event(&format!("target {i}"), unit_vec(0.6, 0.8));
+            e.metadata
+                .insert("app_name".into(), serde_json::json!("Terminal"));
+            events.push(e);
+        }
+        store.store_events(&events).unwrap();
+
+        let filter = EventFilter {
+            app: Some("Terminal".into()),
+            ..Default::default()
+        };
+        let results = store
+            .search_events(&unit_vec(1.0, 0.0), 5, Some(&filter))
+            .unwrap();
+
+        assert_eq!(
+            results.len(),
+            5,
+            "filter must not starve results when the KNN head is all noise"
+        );
+        assert!(results.iter().all(|r| {
+            r.event.metadata.get("app_name").and_then(|v| v.as_str()) == Some("Terminal")
+        }));
+    }
+
+    #[test]
+    fn get_events_by_ids_preserves_request_order() {
+        let store = temp_store();
+        let a = Event::new(EventType::Terminal, "a");
+        let b = Event::new(EventType::Terminal, "b");
+        store.store_events(&[a.clone(), b.clone()]).unwrap();
+
+        let events = store
+            .get_events_by_ids(&[b.id.clone(), "missing".into(), a.id.clone()])
+            .unwrap();
+        let ids: Vec<&str> = events.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec![b.id.as_str(), a.id.as_str()]);
+    }
+
+    #[test]
+    fn app_filter_rejects_like_wildcards() {
+        let store = temp_store();
+        let mut e = Event::new(EventType::Window, "window event");
+        e.metadata
+            .insert("app_name".into(), serde_json::json!("MyApp"));
+        store.store_event(&e).unwrap();
+        let since = Utc::now() - chrono::Duration::hours(1);
+
+        let exact = store.get_events_since_for_app(since, "MyApp", 10).unwrap();
+        assert_eq!(exact.len(), 1);
+
+        let wildcard = store.get_events_since_for_app(since, "My%", 10).unwrap();
+        assert!(wildcard.is_empty(), "LIKE wildcards must not match");
+
+        let underscore = store.get_events_since_for_app(since, "My_pp", 10).unwrap();
+        assert!(underscore.is_empty(), "underscore wildcard must not match");
     }
 
     #[test]
     fn compacted_events_stay_searchable() {
         let store = temp_store();
-        let mut e = Event::new(EventType::Browser, "{\"title\":\"Postgres replication tuning\",\"domain\":\"docs.example.com\"}");
+        let mut e = Event::new(
+            EventType::Browser,
+            "{\"title\":\"Postgres replication tuning\",\"domain\":\"docs.example.com\"}",
+        );
         e.source = Some("browser".into());
         store.store_event(&e).unwrap();
         store.mark_events_compacted(&[e.id.clone()]).unwrap();
 
-        let results = store.fetch_fulltext_candidates("postgres replication", 10, None).unwrap();
+        let results = store
+            .fetch_fulltext_candidates("postgres replication", 10, None)
+            .unwrap();
         assert!(
             results.iter().any(|r| r.id == e.id),
             "compacted raw events must remain keyword-searchable"

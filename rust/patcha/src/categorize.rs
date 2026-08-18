@@ -1,6 +1,6 @@
 use crate::{
     db::store::VectorStore,
-    llm::client::PatchaApiClient,
+    llm::backend::LlmBackend,
     models::{Category, Event},
 };
 use std::collections::HashMap;
@@ -9,12 +9,12 @@ use std::sync::Arc;
 
 pub struct EnhancedCategorizer {
     vector_store: Arc<VectorStore>,
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
     model: String,
 }
 
 impl EnhancedCategorizer {
-    pub fn new(vector_store: Arc<VectorStore>, llm_client: Arc<PatchaApiClient>) -> Self {
+    pub fn new(vector_store: Arc<VectorStore>, llm_client: Arc<dyn LlmBackend>) -> Self {
         Self {
             vector_store,
             llm_client,
@@ -35,14 +35,22 @@ impl EnhancedCategorizer {
         let emb = match &event.embedding {
             Some(e) => e,
             None => {
-                return (Category::Other, 0.0, serde_json::json!({"method":"fallback","reason":"no_embedding"}));
+                return (
+                    Category::Other,
+                    0.0,
+                    serde_json::json!({"method":"fallback","reason":"no_embedding"}),
+                );
             }
         };
 
         let similar = match self.vector_store.search_events(emb, k, None) {
             Ok(s) => s,
             Err(_) => {
-                return (Category::Other, 0.0, serde_json::json!({"method":"fallback","reason":"search_failed"}));
+                return (
+                    Category::Other,
+                    0.0,
+                    serde_json::json!({"method":"fallback","reason":"search_failed"}),
+                );
             }
         };
 
@@ -72,7 +80,9 @@ impl EnhancedCategorizer {
         }
 
         if category_weights.is_empty() {
-            let ai_cat = self.categorize_with_llm(event, &similar_summaries, &[]).await;
+            let ai_cat = self
+                .categorize_with_llm(event, &similar_summaries, &[])
+                .await;
             return (
                 ai_cat,
                 0.5,
@@ -95,7 +105,9 @@ impl EnhancedCategorizer {
         // Agreement boost: fraction of similar events with the majority category
         let majority_count = similar
             .iter()
-            .filter(|s| s.event.category.as_ref().map(|c| c.to_string()) == Some(best_cat_str.clone()))
+            .filter(|s| {
+                s.event.category.as_ref().map(|c| c.to_string()) == Some(best_cat_str.clone())
+            })
             .count() as f32;
         let agreement_boost = (majority_count / similar.len() as f32 * 0.2).min(0.2);
         let confidence = base_confidence + agreement_boost;
@@ -119,7 +131,13 @@ impl EnhancedCategorizer {
 
         // Low confidence — enhance with LLM
         let suggested: Vec<String> = category_weights.keys().cloned().collect();
-        let ai_cat = self.categorize_with_llm(event, &similar_summaries[..similar_summaries.len().min(3)], &suggested).await;
+        let ai_cat = self
+            .categorize_with_llm(
+                event,
+                &similar_summaries[..similar_summaries.len().min(3)],
+                &suggested,
+            )
+            .await;
         (
             ai_cat,
             confidence + 0.3,
@@ -133,13 +151,15 @@ impl EnhancedCategorizer {
 
     pub async fn batch_categorize(
         &self,
-        events: &mut Vec<Event>,
+        events: &mut [Event],
         k: usize,
         confidence_threshold: f32,
     ) {
         // Process sequentially to avoid owning issues; parallelism via caller if needed
         for event in events.iter_mut() {
-            let (cat, _, _) = self.categorize_with_rag(event, k, confidence_threshold).await;
+            let (cat, _, _) = self
+                .categorize_with_rag(event, k, confidence_threshold)
+                .await;
             event.category = Some(cat);
         }
     }

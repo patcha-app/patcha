@@ -1,7 +1,4 @@
-use crate::{
-    db::activity_graph::ActivityGraph,
-    models::GraphNode,
-};
+use crate::{db::activity_graph::ActivityGraph, models::GraphNode};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
@@ -20,7 +17,9 @@ pub fn get_activity_context(
     let header = format!("# Activity context{}", anchor_header(app, time));
     let anchor = graph.find_event(app, at)?;
     let Some(anchor) = anchor else {
-        return Ok(format!("{header}\nNo matching event found in the activity graph."));
+        return Ok(format!(
+            "{header}\nNo matching event found in the activity graph."
+        ));
     };
 
     let mut lines: Vec<String> = Vec::new();
@@ -66,16 +65,14 @@ pub fn get_activity_context(
     Ok(format!("{header}\n{}", lines.join("\n")))
 }
 
-pub fn get_session(
-    graph: &ActivityGraph,
-    app: Option<&str>,
-    time: Option<&str>,
-) -> Result<String> {
+pub fn get_session(graph: &ActivityGraph, app: Option<&str>, time: Option<&str>) -> Result<String> {
     let at = parse_time(time);
     let header = format!("# Session{}", anchor_header(app, time));
     let anchor = graph.find_event(app, at)?;
     let Some(anchor) = anchor else {
-        return Ok(format!("{header}\nNo matching event found in the activity graph."));
+        return Ok(format!(
+            "{header}\nNo matching event found in the activity graph."
+        ));
     };
 
     let session_id = match graph.session_of(&anchor.id)? {
@@ -104,12 +101,7 @@ pub fn get_session(
         .iter()
         .filter_map(|id| graph.get_node(id).ok().flatten())
         .collect();
-    events.sort_by_key(|n| {
-        n.props
-            .get("ts_ms")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0)
-    });
+    events.sort_by_key(|n| n.props.get("ts_ms").and_then(|v| v.as_i64()).unwrap_or(0));
 
     let mut lines = vec![
         format!("Span: {span}"),
@@ -145,15 +137,12 @@ pub fn find_connected(
     let header = format!("# Connected activity — {label}");
     let mut events = graph.events_touching(target, target_type)?;
     if events.is_empty() {
-        return Ok(format!("{header}\nNo events connected to this {target_type}."));
+        return Ok(format!(
+            "{header}\nNo events connected to this {target_type}."
+        ));
     }
 
-    events.sort_by_key(|n| {
-        n.props
-            .get("ts_ms")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0)
-    });
+    events.sort_by_key(|n| n.props.get("ts_ms").and_then(|v| v.as_i64()).unwrap_or(0));
 
     let mut lines = vec![format!("Events ({}):", events.len())];
     for node in &events {
@@ -195,10 +184,7 @@ fn format_node(node: &GraphNode) -> String {
         gist.to_owned()
     } else {
         let app = p.get("app_name").and_then(|v| v.as_str()).unwrap_or("");
-        let title = p
-            .get("window_title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let title = p.get("window_title").and_then(|v| v.as_str()).unwrap_or("");
         let proj = p.get("project").and_then(|v| v.as_str()).unwrap_or("");
         if !title.is_empty() {
             format!("{app} — {title}")
@@ -211,7 +197,9 @@ fn format_node(node: &GraphNode) -> String {
         }
     };
 
-    format!("[{}] {}: {}", hhmm(ts), etype, detail).trim_end().to_owned()
+    format!("[{}] {}: {}", hhmm(ts), etype, detail)
+        .trim_end()
+        .to_owned()
 }
 
 fn anchor_header(app: Option<&str>, time: Option<&str>) -> String {

@@ -14,8 +14,13 @@ const STAGE_TRIM_EVERY: usize = 500;
 
 // Directories skipped when scanning for git repos (same as Python)
 const SKIP_DIRS: &[&str] = &[
-    "Music", "Pictures", "Movies", "Library",
-    "Applications", "iCloud Drive", "iCloud",
+    "Music",
+    "Pictures",
+    "Movies",
+    "Library",
+    "Applications",
+    "iCloud Drive",
+    "iCloud",
 ];
 
 pub struct GitCollector {
@@ -84,8 +89,7 @@ impl GitCollector {
                 };
 
                 let commit_ts = commit.time().seconds();
-                let timestamp =
-                    DateTime::from_timestamp(commit_ts, 0).unwrap_or_else(Utc::now);
+                let timestamp = DateTime::from_timestamp(commit_ts, 0).unwrap_or_else(Utc::now);
 
                 if let Some(since) = since {
                     if timestamp < since {
@@ -100,7 +104,7 @@ impl GitCollector {
                 let branch = repo
                     .head()
                     .ok()
-                    .and_then(|h| h.shorthand().map(|s| s.to_owned()))
+                    .and_then(|h| h.shorthand().ok().map(str::to_owned))
                     .unwrap_or_else(|| "unknown".into());
 
                 // Get diff stats
@@ -122,12 +126,26 @@ impl GitCollector {
                 let mut e = Event::new(EventType::GitCommit, raw.to_string());
                 e.timestamp = timestamp;
                 e.source = Some("git".to_owned());
-                e.project = Some(repo_path.file_name().unwrap_or_default().to_string_lossy().into_owned());
+                e.project = Some(
+                    repo_path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                );
                 e.source_doc_id = Some(format!("{}:{}", repo_path.display(), hash));
-                e.metadata.insert("repo_path".into(), serde_json::json!(repo_path.to_string_lossy()));
-                e.metadata.insert("files_count".into(), serde_json::json!(files_changed.len()));
-                e.metadata.insert("lines_changed".into(), serde_json::json!(insertions + deletions));
-                e.metadata.insert("files_changed".into(), serde_json::json!(files_changed));
+                e.metadata.insert(
+                    "repo_path".into(),
+                    serde_json::json!(repo_path.to_string_lossy()),
+                );
+                e.metadata
+                    .insert("files_count".into(), serde_json::json!(files_changed.len()));
+                e.metadata.insert(
+                    "lines_changed".into(),
+                    serde_json::json!(insertions + deletions),
+                );
+                e.metadata
+                    .insert("files_changed".into(), serde_json::json!(files_changed));
 
                 events.push(e);
                 count += 1;
@@ -175,7 +193,7 @@ impl GitCollector {
             }
 
             self.stage_write_count += 1;
-            if self.stage_write_count % STAGE_TRIM_EVERY == 0 {
+            if self.stage_write_count.is_multiple_of(STAGE_TRIM_EVERY) {
                 let _ = trim_jsonl(&snapshot_file, STAGE_MAX_LOG_ROWS);
             }
         }
@@ -193,8 +211,7 @@ impl GitCollector {
         };
 
         // Group snapshots by repo
-        let mut by_repo: HashMap<String, Vec<(DateTime<Utc>, serde_json::Value)>> =
-            HashMap::new();
+        let mut by_repo: HashMap<String, Vec<(DateTime<Utc>, serde_json::Value)>> = HashMap::new();
 
         for line in content.lines() {
             let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -210,7 +227,11 @@ impl GitCollector {
             if ts < since {
                 continue;
             }
-            let repo = obj.get("repo").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+            let repo = obj
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
             by_repo.entry(repo).or_default().push((ts, obj));
         }
 
@@ -255,15 +276,24 @@ impl GitCollector {
                 if !newly_staged.is_empty() {
                     let mut ns: Vec<_> = newly_staged.iter().collect();
                     ns.sort();
-                    parts.push(format!("staged: {}", ns.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+                    parts.push(format!(
+                        "staged: {}",
+                        ns.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ));
                 }
                 if !newly_unstaged.is_empty() {
                     let mut nu: Vec<_> = newly_unstaged.iter().collect();
                     nu.sort();
-                    parts.push(format!("unstaged: {}", nu.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+                    parts.push(format!(
+                        "unstaged: {}",
+                        nu.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ));
                 }
 
-                let diff = entry.get("staged_diff").and_then(|v| v.as_str()).unwrap_or("");
+                let diff = entry
+                    .get("staged_diff")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let diff_section = if diff.is_empty() {
                     String::new()
                 } else {
@@ -279,10 +309,18 @@ impl GitCollector {
                 e.timestamp = *ts;
                 e.source = Some("git".to_owned());
                 e.project = Some(project);
-                e.metadata.insert("repo_path".into(), serde_json::json!(repo));
-                e.metadata.insert("staged_files".into(), serde_json::json!(all_staged));
-                e.metadata.insert("newly_staged".into(), serde_json::json!(newly_staged.iter().collect::<Vec<_>>()));
-                e.metadata.insert("newly_unstaged".into(), serde_json::json!(newly_unstaged.iter().collect::<Vec<_>>()));
+                e.metadata
+                    .insert("repo_path".into(), serde_json::json!(repo));
+                e.metadata
+                    .insert("staged_files".into(), serde_json::json!(all_staged));
+                e.metadata.insert(
+                    "newly_staged".into(),
+                    serde_json::json!(newly_staged.iter().collect::<Vec<_>>()),
+                );
+                e.metadata.insert(
+                    "newly_unstaged".into(),
+                    serde_json::json!(newly_unstaged.iter().collect::<Vec<_>>()),
+                );
 
                 events.push(e);
                 prev_staged = curr_staged;
@@ -331,10 +369,7 @@ fn walk_for_repos(path: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 // git2 helpers
 // ---------------------------------------------------------------------------
 
-fn commit_stats(
-    repo: &Repository,
-    commit: &git2::Commit,
-) -> (Vec<String>, usize, usize, String) {
+fn commit_stats(repo: &Repository, commit: &git2::Commit) -> (Vec<String>, usize, usize, String) {
     let mut files = Vec::new();
     let mut insertions = 0usize;
     let mut deletions = 0usize;
@@ -363,10 +398,13 @@ fn commit_stats(
             }
 
             let mut diff_bytes: Vec<u8> = Vec::new();
-            if diff.print(git2::DiffFormat::Patch, |_d, _h, line| {
-                diff_bytes.extend_from_slice(line.content());
-                true
-            }).is_ok() {
+            if diff
+                .print(git2::DiffFormat::Patch, |_d, _h, line| {
+                    diff_bytes.extend_from_slice(line.content());
+                    true
+                })
+                .is_ok()
+            {
                 diff_text = String::from_utf8_lossy(&diff_bytes).into_owned();
                 if diff_text.len() > 16_000 {
                     diff_text.truncate(16_000);
@@ -383,10 +421,7 @@ fn commit_stats(
 fn staging_state(repo: &Repository) -> (Vec<String>, Vec<String>, Vec<String>, String) {
     // Staged files: diff HEAD → index
     let staged = {
-        let head_tree = repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_tree().ok());
+        let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
         let index = repo.index().ok();
         let mut files = Vec::new();
         if let (Some(tree), Some(idx)) = (head_tree, index) {
@@ -398,7 +433,9 @@ fn staging_state(repo: &Repository) -> (Vec<String>, Vec<String>, Vec<String>, S
                         }
                         true
                     },
-                    None, None, None,
+                    None,
+                    None,
+                    None,
                 );
             }
         }
@@ -416,7 +453,9 @@ fn staging_state(repo: &Repository) -> (Vec<String>, Vec<String>, Vec<String>, S
                     }
                     true
                 },
-                None, None, None,
+                None,
+                None,
+                None,
             );
         }
         files
@@ -433,7 +472,7 @@ fn staging_state(repo: &Repository) -> (Vec<String>, Vec<String>, Vec<String>, S
                     .iter()
                     .filter(|s| s.status().contains(git2::Status::WT_NEW))
                     .take(20)
-                    .filter_map(|s| s.path().map(|p| p.to_owned()))
+                    .filter_map(|s| s.path().ok().map(str::to_owned))
                     .collect()
             })
             .unwrap_or_default()
@@ -467,7 +506,11 @@ fn snapshot_files(entry: &serde_json::Value, key: &str) -> HashSet<String> {
     entry
         .get(key)
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_owned())).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_owned()))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

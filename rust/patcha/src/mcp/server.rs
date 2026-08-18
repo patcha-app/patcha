@@ -1,29 +1,27 @@
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use axum::{Json, Router, extract::Query, routing::{get, post}};
+use axum::{
+    extract::Query,
+    routing::{get, post},
+    Json, Router,
+};
 use chrono::NaiveDate;
 use rmcp::{
-    ServerHandler,
-    handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::{Implementation, ServerInfo},
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{Implementation, ServerCapabilities, ServerInfo},
     schemars::{self, JsonSchema},
     serde::{self, Deserialize},
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, ServerHandler,
 };
 use tokio::net::TcpListener;
 
 use crate::{
     config::Config,
-    db::{
-        Db,
-        activity_graph::ActivityGraph,
-        retrieval,
-        store::VectorStore,
-    },
+    db::{activity_graph::ActivityGraph, retrieval, store::VectorStore, Db},
     embedding::Embedder,
     llm::client::PatchaApiClient,
-    mcp::{McpArgs, chat},
+    mcp::{chat, McpArgs},
     rerank::CrossEncoderReranker,
 };
 
@@ -45,7 +43,9 @@ struct SearchActivityParams {
     query: String,
     #[schemars(description = "Number of results to return. Default 10.")]
     limit: Option<i64>,
-    #[schemars(description = "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). Applies to screen and window events which capture app_name.")]
+    #[schemars(
+        description = "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). Applies to screen and window events which capture app_name."
+    )]
     app: Option<String>,
 }
 
@@ -54,7 +54,9 @@ struct SearchActivityParams {
 struct GetRecentActivityParams {
     #[schemars(description = "How many hours back to look. Default 3.")]
     hours: Option<i64>,
-    #[schemars(description = "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). Applies to screen and window events which capture app_name.")]
+    #[schemars(
+        description = "Filter to a specific app (e.g. 'Arc', 'Zed', 'WezTerm', 'Cursor'). Applies to screen and window events which capture app_name."
+    )]
     app: Option<String>,
 }
 
@@ -65,7 +67,9 @@ struct GetActivityContextParams {
     app: Option<String>,
     #[schemars(description = "Anchor near this ISO 8601 timestamp (e.g. '2026-06-01T14:30:00Z').")]
     time: Option<String>,
-    #[schemars(description = "Which side of the anchor to show: 'before', 'after', or 'both'. Default 'both'.")]
+    #[schemars(
+        description = "Which side of the anchor to show: 'before', 'after', or 'both'. Default 'both'."
+    )]
     direction: Option<String>,
     #[schemars(description = "How many events on each side. Default 3.")]
     count: Option<i64>,
@@ -126,7 +130,9 @@ impl PatchaServer {
         }
     }
 
-    #[tool(description = "Get a compact summary of the user's recent device activity. Shows open apps (with app-switch transitions noted), browser research, terminal commands, and git activity from the last N minutes. Use this to understand what the user is currently working on before answering questions or making suggestions.")]
+    #[tool(
+        description = "Get a compact summary of the user's recent device activity. Shows open apps (with app-switch transitions noted), browser research, terminal commands, and git activity from the last N minutes. Use this to understand what the user is currently working on before answering questions or making suggestions."
+    )]
     async fn get_working_memory(
         &self,
         Parameters(p): Parameters<GetWorkingMemoryParams>,
@@ -137,17 +143,13 @@ impl PatchaServer {
             .unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Search the user's full activity history semantically. Use this to find specific past work — e.g. 'qdrant vector search setup', 'authentication bug fix', 'npm install error', 'what changed in the auth fix'. Returns the most relevant past events with similarity scores. For git commits and stashes, the full diff is included in the result. Optionally filter to events from a specific app (e.g. 'Arc', 'Zed', 'WezTerm').")]
-    async fn search_activity(
-        &self,
-        Parameters(p): Parameters<SearchActivityParams>,
-    ) -> String {
+    #[tool(
+        description = "Search the user's full activity history semantically. Use this to find specific past work — e.g. 'qdrant vector search setup', 'authentication bug fix', 'npm install error', 'what changed in the auth fix'. Returns the most relevant past events with similarity scores. For git commits and stashes, the full diff is included in the result. Optionally filter to events from a specific app (e.g. 'Arc', 'Zed', 'WezTerm')."
+    )]
+    async fn search_activity(&self, Parameters(p): Parameters<SearchActivityParams>) -> String {
         let limit = p.limit.unwrap_or(10) as usize;
-        let params = retrieval::context::RetrievalParams::from_config(
-            &self.cfg,
-            limit,
-            p.app.as_deref(),
-        );
+        let params =
+            retrieval::context::RetrievalParams::from_config(&self.cfg, limit, p.app.as_deref());
         retrieval::context::search_activity(
             &self.store,
             &self.embedder,
@@ -159,7 +161,9 @@ impl PatchaServer {
         .unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Get a deduped log of the user's raw activity over the last N hours. Use this for broader historical context — what the user has been working on over the last few hours, not just the last few minutes. Optionally filter to a specific app.")]
+    #[tool(
+        description = "Get a deduped log of the user's raw activity over the last N hours. Use this for broader historical context — what the user has been working on over the last few hours, not just the last few minutes. Optionally filter to a specific app."
+    )]
     async fn get_recent_activity(
         &self,
         Parameters(p): Parameters<GetRecentActivityParams>,
@@ -170,7 +174,9 @@ impl PatchaServer {
             .unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Get the temporal context around a moment of activity — what the user was doing right before and after a specific event. Answers questions like 'what was I doing before I opened Slack?' or 'what happened around 2pm?'. Anchor the moment by app name, by time, or both (the app's event nearest that time). Returns the surrounding events in chronological order plus the work session they belonged to. Use this for ordering/adjacency questions that semantic search can't answer.")]
+    #[tool(
+        description = "Get the temporal context around a moment of activity — what the user was doing right before and after a specific event. Answers questions like 'what was I doing before I opened Slack?' or 'what happened around 2pm?'. Anchor the moment by app name, by time, or both (the app's event nearest that time). Returns the surrounding events in chronological order plus the work session they belonged to. Use this for ordering/adjacency questions that semantic search can't answer."
+    )]
     async fn get_activity_context(
         &self,
         Parameters(p): Parameters<GetActivityContextParams>,
@@ -187,21 +193,18 @@ impl PatchaServer {
         .unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Get the full work session around a moment — every app and event between two idle gaps. Answers 'what apps did I use in the same session as commit X?' or 'show me everything from the session around 3pm'. Anchor by app name, time, or both. Returns the session time span, the apps involved, and the events in chronological order.")]
+    #[tool(
+        description = "Get the full work session around a moment — every app and event between two idle gaps. Answers 'what apps did I use in the same session as commit X?' or 'show me everything from the session around 3pm'. Anchor by app name, time, or both. Returns the session time span, the apps involved, and the events in chronological order."
+    )]
     async fn get_session(&self, Parameters(p): Parameters<GetSessionParams>) -> String {
-        retrieval::graph_context::get_session(
-            &self.graph,
-            p.app.as_deref(),
-            p.time.as_deref(),
-        )
-        .unwrap_or_else(|e| format!("Error: {e}"))
+        retrieval::graph_context::get_session(&self.graph, p.app.as_deref(), p.time.as_deref())
+            .unwrap_or_else(|e| format!("Error: {e}"))
     }
 
-    #[tool(description = "Find every event structurally connected to a file, project, url, or app — across event types. Answers 'show me all activity touching accessibility.py' or 'everything related to the patcha project'. Provide exactly one of file, project, url, or app. Returns the connected events in chronological order.")]
-    async fn find_connected(
-        &self,
-        Parameters(p): Parameters<FindConnectedParams>,
-    ) -> String {
+    #[tool(
+        description = "Find every event structurally connected to a file, project, url, or app — across event types. Answers 'show me all activity touching accessibility.py' or 'everything related to the patcha project'. Provide exactly one of file, project, url, or app. Returns the connected events in chronological order."
+    )]
+    async fn find_connected(&self, Parameters(p): Parameters<FindConnectedParams>) -> String {
         retrieval::graph_context::find_connected(
             &self.graph,
             p.file.as_deref(),
@@ -213,16 +216,11 @@ impl PatchaServer {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for PatchaServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: Implementation {
-                name: "patcha".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-            },
-            ..ServerInfo::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("patcha", env!("CARGO_PKG_VERSION")))
     }
 }
 
@@ -270,8 +268,7 @@ async fn run_stdio(server: PatchaServer) -> Result<()> {
 
 async fn run_http(server: PatchaServer, _cfg: &Config, port: u16) -> Result<()> {
     use rmcp::transport::streamable_http_server::{
-        StreamableHttpServerConfig, StreamableHttpService,
-        session::local::LocalSessionManager,
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     };
 
     write_port(port)?;
@@ -360,7 +357,12 @@ async fn timeline_handler(
     ordered.sort_by_key(|e| e.timestamp);
 
     for event in &ordered {
-        let hour = event.timestamp.format("%H").to_string().parse::<u32>().unwrap_or(0);
+        let hour = event
+            .timestamp
+            .format("%H")
+            .to_string()
+            .parse::<u32>()
+            .unwrap_or(0);
         let bucket = hours.entry(hour).or_default();
         bucket.event_count += 1;
 
@@ -454,9 +456,7 @@ fn write_port(port: u16) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let conn = rusqlite::Connection::open(&path)?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)",
-    )?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")?;
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('mcp_port', ?1)",
         rusqlite::params![port.to_string()],
@@ -470,10 +470,7 @@ fn clear_port() -> Result<()> {
         return Ok(());
     }
     let conn = rusqlite::Connection::open(&path)?;
-    conn.execute(
-        "DELETE FROM settings WHERE key = 'mcp_port'",
-        [],
-    )?;
+    conn.execute("DELETE FROM settings WHERE key = 'mcp_port'", [])?;
     Ok(())
 }
 
@@ -503,7 +500,9 @@ mod tests {
     }
 
     async fn timeline(store: Arc<VectorStore>, date: Option<&str>) -> serde_json::Value {
-        let q = Query(TimelineQuery { date: date.map(|s| s.to_owned()) });
+        let q = Query(TimelineQuery {
+            date: date.map(|s| s.to_owned()),
+        });
         timeline_handler(store, q).await.0
     }
 

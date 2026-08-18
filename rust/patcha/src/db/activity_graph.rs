@@ -59,7 +59,12 @@ impl ActivityGraph {
             .query_row(
                 "SELECT current_session_id, last_event_ts FROM activity_session_state WHERE id = 1",
                 [],
-                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
             )
             .unwrap_or((None, None));
 
@@ -121,18 +126,25 @@ impl ActivityGraph {
         self.upsert_node_raw(&conn, &event_node_id, event_label, &event_props)?;
 
         // DURING session
-        self.upsert_edge(&conn, &event_node_id, &session_id, E_DURING, &serde_json::json!({}))?;
+        self.upsert_edge(
+            &conn,
+            &event_node_id,
+            &session_id,
+            E_DURING,
+            &serde_json::json!({}),
+        )?;
 
         // ON_APP + IN_WINDOW
         if let Some(app) = event.metadata.get("app_name").and_then(|v| v.as_str()) {
             let app_id = format!("app:{}", app.to_lowercase().replace(' ', "_"));
-            self.upsert_node_raw(
+            self.upsert_node_raw(&conn, &app_id, L_APP, &serde_json::json!({ "name": app }))?;
+            self.upsert_edge(
                 &conn,
+                &event_node_id,
                 &app_id,
-                L_APP,
-                &serde_json::json!({ "name": app }),
+                E_ON_APP,
+                &serde_json::json!({}),
             )?;
-            self.upsert_edge(&conn, &event_node_id, &app_id, E_ON_APP, &serde_json::json!({}))?;
 
             if let Some(title) = event.metadata.get("window_title").and_then(|v| v.as_str()) {
                 let win_id = format!("win:{}:{}", app.to_lowercase(), title.len());
@@ -251,9 +263,8 @@ impl ActivityGraph {
 
     pub fn events_in_session(&self, session_id: &str) -> Result<Vec<String>> {
         let conn = self.db.conn();
-        let mut stmt = conn.prepare_cached(
-            "SELECT src_id FROM activity_edges WHERE dst_id = ?1 AND type = ?2",
-        )?;
+        let mut stmt = conn
+            .prepare_cached("SELECT src_id FROM activity_edges WHERE dst_id = ?1 AND type = ?2")?;
         let ids = stmt
             .query_map(params![session_id, E_DURING], |row| row.get(0))?
             .collect::<std::result::Result<_, _>>()?;
@@ -343,23 +354,15 @@ impl ActivityGraph {
             |row| row.get(0),
         )
         .optional()
-        .map_err(Into::into)
     }
 
-    pub fn events_touching(
-        &self,
-        target: &str,
-        target_type: &str,
-    ) -> Result<Vec<GraphNode>> {
+    pub fn events_touching(&self, target: &str, target_type: &str) -> Result<Vec<GraphNode>> {
         let conn = self.db.conn();
         // Find the target node id
         let node_id: Option<String> = conn
             .query_row(
                 "SELECT id FROM activity_nodes WHERE label = ?1 AND props LIKE ?2 LIMIT 1",
-                params![
-                    target_type,
-                    format!("%{}%", target.replace('"', "\\\""))
-                ],
+                params![target_type, format!("%{}%", target.replace('"', "\\\""))],
                 |row| row.get(0),
             )
             .ok();
@@ -392,7 +395,8 @@ impl ActivityGraph {
         at: Option<DateTime<Utc>>,
     ) -> Result<Option<GraphNode>> {
         let conn = self.db.conn();
-        let event_labels = "('ScreenEvent','WindowEvent','TerminalEvent','BrowserEvent','GitCommit')";
+        let event_labels =
+            "('ScreenEvent','WindowEvent','TerminalEvent','BrowserEvent','GitCommit')";
 
         let row: Option<(String, String, String)> = match (app, at) {
             (Some(app_name), Some(ts)) => {
@@ -413,8 +417,8 @@ impl ActivityGraph {
                 )
                 .ok()
             }
-            (Some(app_name), None) => {
-                conn.query_row(
+            (Some(app_name), None) => conn
+                .query_row(
                     &format!(
                         "SELECT n.id, n.label, n.props
                          FROM activity_nodes n
@@ -428,8 +432,7 @@ impl ActivityGraph {
                     params![app_name],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
-                .ok()
-            }
+                .ok(),
             (None, Some(ts)) => {
                 let ts_unix = ts.timestamp();
                 conn.query_row(
@@ -445,8 +448,8 @@ impl ActivityGraph {
                 )
                 .ok()
             }
-            (None, None) => {
-                conn.query_row(
+            (None, None) => conn
+                .query_row(
                     &format!(
                         "SELECT id, label, props
                          FROM activity_nodes
@@ -457,8 +460,7 @@ impl ActivityGraph {
                     [],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
-                .ok()
-            }
+                .ok(),
         };
 
         Ok(row.map(|(id, label, props_str)| {
@@ -523,10 +525,7 @@ impl ActivityGraph {
         Ok(())
     }
 
-    fn event_to_node<'a>(
-        &self,
-        event: &'a Event,
-    ) -> (&'static str, serde_json::Value) {
+    fn event_to_node(&self, event: &Event) -> (&'static str, serde_json::Value) {
         let ts = event.timestamp.to_rfc3339();
         let ts_ms = event.timestamp.timestamp_millis();
 

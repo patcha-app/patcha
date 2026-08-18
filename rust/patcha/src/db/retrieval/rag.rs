@@ -1,9 +1,4 @@
-use crate::{
-    db::store::VectorStore,
-    embedding::Embedder,
-    llm::client::PatchaApiClient,
-    models::Event,
-};
+use crate::{db::store::VectorStore, embedding::Embedder, llm::backend::LlmBackend, models::Event};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -12,16 +7,20 @@ pub struct RagSystem {
     #[allow(dead_code)]
     embedder: Arc<Embedder>,
     #[allow(dead_code)]
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
 }
 
 impl RagSystem {
     pub fn new(
         vector_store: Arc<VectorStore>,
         embedder: Arc<Embedder>,
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
     ) -> Self {
-        Self { vector_store, embedder, llm_client }
+        Self {
+            vector_store,
+            embedder,
+            llm_client,
+        }
     }
 
     /// Retrieve similar activities and workflow patterns for task analysis context.
@@ -35,7 +34,9 @@ impl RagSystem {
             return Ok(serde_json::json!({"similar_activities": [], "patterns": []}));
         }
 
-        let similar = self.vector_store.search_events(&composite_emb, context_limit, None)?;
+        let similar = self
+            .vector_store
+            .search_events(&composite_emb, context_limit, None)?;
 
         let similar_json: Vec<serde_json::Value> = similar
             .iter()
@@ -78,7 +79,9 @@ impl RagSystem {
             return Ok(String::new());
         }
 
-        Ok(format!("Historical context (similar past work):\n{similar}"))
+        Ok(format!(
+            "Historical context (similar past work):\n{similar}"
+        ))
     }
 
     // -----------------------------------------------------------------------

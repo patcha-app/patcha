@@ -106,8 +106,14 @@ mod tests {
 
     #[test]
     fn parse_roundtrips_known_kinds() {
-        assert_eq!(TriggerKind::parse("app_switch"), Some(TriggerKind::AppSwitch));
-        assert_eq!(TriggerKind::parse("idle_resume"), Some(TriggerKind::IdleResume));
+        assert_eq!(
+            TriggerKind::parse("app_switch"),
+            Some(TriggerKind::AppSwitch)
+        );
+        assert_eq!(
+            TriggerKind::parse("idle_resume"),
+            Some(TriggerKind::IdleResume)
+        );
         assert_eq!(TriggerKind::parse("bogus"), None);
     }
 }

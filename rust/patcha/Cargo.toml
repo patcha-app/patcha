@@ -2,6 +2,13 @@
 name = "patcha"
 version = "0.1.0"
 edition = "2021"
+description = "Local-first observability for your computer: collects browser, terminal, git, and screen activity into a local vector store and exposes it via CLI and MCP."
+authors = ["the Patcha authors"]
+license = "MIT"
+repository = "https://github.com/xtanion/patcha"
+readme = "../../README.md"
+keywords = ["observability", "activity", "mcp", "vector-search", "local-first"]
+categories = ["command-line-utilities"]
 
 [[bin]]
 name = "patcha"
@@ -14,6 +21,7 @@ clap = { version = "4", features = ["derive", "env"] }
 # Async
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
+async-trait = "0.1"
 
 # HTTP server (MCP HTTP transport)
 axum = { version = "0.7", features = ["macros"] }
@@ -42,10 +50,10 @@ image = "0.25"
 half = "2"
 
 # Git
-git2 = { version = "0.19", default-features = false }
+git2 = { version = "0.21", default-features = false }
 
 # MCP protocol
-rmcp = { version = "0.2", features = ["server", "transport-io", "transport-streamable-http-server", "transport-worker"] }
+rmcp = { version = "1", features = ["server", "transport-io", "transport-streamable-http-server", "transport-worker"] }
 
 # Clustering
 linfa = "0.7"

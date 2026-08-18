@@ -1,6 +1,6 @@
 use crate::{
     db::store::VectorStore,
-    llm::{client::PatchaApiClient, prompts},
+    llm::{backend::LlmBackend, prompts},
     models::{Event, TimelineHourSummary, TimelineTreeNode},
 };
 use anyhow::{Context, Result};
@@ -21,7 +21,7 @@ const MAX_LINES: usize = 24;
 /// persists them so the `/api/timeline` endpoint can serve LLM summaries.
 pub struct HourlySummarizer {
     vector_store: Arc<VectorStore>,
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
 }
 
 #[derive(Deserialize)]
@@ -33,7 +33,7 @@ struct HourlyResponse {
 }
 
 impl HourlySummarizer {
-    pub fn new(vector_store: Arc<VectorStore>, llm_client: Arc<PatchaApiClient>) -> Self {
+    pub fn new(vector_store: Arc<VectorStore>, llm_client: Arc<dyn LlmBackend>) -> Self {
         Self {
             vector_store,
             llm_client,
@@ -200,7 +200,10 @@ fn aggregate_hour(events: &[&Event]) -> HourAggregate {
 fn bucket_by_hour(events: &[Event]) -> HashMap<u32, Vec<&Event>> {
     let mut buckets: HashMap<u32, Vec<&Event>> = HashMap::new();
     for event in events {
-        buckets.entry(event.timestamp.hour()).or_default().push(event);
+        buckets
+            .entry(event.timestamp.hour())
+            .or_default()
+            .push(event);
     }
     buckets
 }
@@ -246,7 +249,11 @@ mod tests {
 
     #[test]
     fn bucket_by_hour_groups_by_utc_hour() {
-        let events = vec![ev(9, None, None, None), ev(9, None, None, None), ev(14, None, None, None)];
+        let events = vec![
+            ev(9, None, None, None),
+            ev(9, None, None, None),
+            ev(14, None, None, None),
+        ];
         let buckets = bucket_by_hour(&events);
         assert_eq!(buckets.len(), 2);
         assert_eq!(buckets[&9].len(), 2);

@@ -19,7 +19,11 @@ impl TaskAwareSearchService {
         task_store: Arc<TaskStore>,
         embedder: Arc<Embedder>,
     ) -> Self {
-        Self { vector_store, task_store, embedder }
+        Self {
+            vector_store,
+            task_store,
+            embedder,
+        }
     }
 
     /// Search across tasks and/or activities. `mode` is "tasks", "activities", or "both".
@@ -34,7 +38,9 @@ impl TaskAwareSearchService {
 
         let (task_results, activity_results) = match mode {
             "tasks" => {
-                let tasks = self.task_store.search_tasks(Some(&embedding), Some(query), limit)?;
+                let tasks = self
+                    .task_store
+                    .search_tasks(Some(&embedding), Some(query), limit)?;
                 (tasks, Vec::new())
             }
             "activities" => {
@@ -44,7 +50,9 @@ impl TaskAwareSearchService {
             }
             _ => {
                 // "both" — search both, deduplicate activities belonging to matched tasks
-                let tasks = self.task_store.search_tasks(Some(&embedding), Some(query), limit / 2)?;
+                let tasks =
+                    self.task_store
+                        .search_tasks(Some(&embedding), Some(query), limit / 2)?;
                 let activity_ids: std::collections::HashSet<String> = tasks
                     .iter()
                     .flat_map(|t| t.activity_ids.iter().cloned())
@@ -84,7 +92,10 @@ impl TaskAwareSearchService {
                 .into_iter()
                 .filter(|t| {
                     t.title.to_lowercase().contains(&q_lower)
-                        || t.description.as_deref().map(|d| d.to_lowercase().contains(&q_lower)).unwrap_or(false)
+                        || t.description
+                            .as_deref()
+                            .map(|d| d.to_lowercase().contains(&q_lower))
+                            .unwrap_or(false)
                 })
                 .take(limit)
                 .collect())

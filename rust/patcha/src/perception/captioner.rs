@@ -151,14 +151,24 @@ impl FastVlmCaptioner {
 
             let embeds_t = Tensor::from_array((
                 [1, cur_seq, HIDDEN],
-                embeds.as_standard_layout().iter().copied().collect::<Vec<f32>>(),
+                embeds
+                    .as_standard_layout()
+                    .iter()
+                    .copied()
+                    .collect::<Vec<f32>>(),
             ))?;
             let mut inputs: Vec<(String, Value)> = vec![
                 ("inputs_embeds".into(), embeds_t.into_dyn()),
-                ("attention_mask".into(), Tensor::from_array(([1, total], attn))?.into_dyn()),
-                ("position_ids".into(), Tensor::from_array(([1, cur_seq], pos))?.into_dyn()),
+                (
+                    "attention_mask".into(),
+                    Tensor::from_array(([1, total], attn))?.into_dyn(),
+                ),
+                (
+                    "position_ids".into(),
+                    Tensor::from_array(([1, cur_seq], pos))?.into_dyn(),
+                ),
             ];
-            inputs.extend(past.drain(..));
+            inputs.append(&mut past);
 
             let outputs = m.decoder.run(inputs)?;
 
@@ -262,7 +272,10 @@ fn run_embed(embed: &Session, ids: &[i64]) -> Result<Array3<f32>> {
     let input = Tensor::from_array(([1, ids.len()], ids.to_vec()))?;
     let outputs = embed.run(ort::inputs![ "input_ids" => input ]?)?;
     let (shape, data) = outputs["inputs_embeds"].try_extract_raw_tensor::<f32>()?;
-    Ok(Array3::from_shape_vec((1, shape[1] as usize, HIDDEN), data.to_vec())?)
+    Ok(Array3::from_shape_vec(
+        (1, shape[1] as usize, HIDDEN),
+        data.to_vec(),
+    )?)
 }
 
 fn empty_kv() -> Result<Vec<(String, Value)>> {
@@ -270,7 +283,10 @@ fn empty_kv() -> Result<Vec<(String, Value)>> {
     for i in 0..N_LAYERS {
         for which in ["key", "value"] {
             let a = ndarray::Array4::<f32>::from_shape_vec((1, KV_HEADS, 0, HEAD_DIM), Vec::new())?;
-            kv.push((format!("past_key_values.{i}.{which}"), Tensor::from_array(a)?.into_dyn()));
+            kv.push((
+                format!("past_key_values.{i}.{which}"),
+                Tensor::from_array(a)?.into_dyn(),
+            ));
         }
     }
     Ok(kv)
@@ -282,9 +298,15 @@ mod tests {
 
     #[test]
     fn trims_trailing_incomplete_sentence() {
-        assert_eq!(trim_to_sentence("Editing main.rs. Then the tail"), "Editing main.rs.");
+        assert_eq!(
+            trim_to_sentence("Editing main.rs. Then the tail"),
+            "Editing main.rs."
+        );
         assert_eq!(trim_to_sentence("Done!"), "Done!");
-        assert_eq!(trim_to_sentence("Reviewing the PR? yes"), "Reviewing the PR?");
+        assert_eq!(
+            trim_to_sentence("Reviewing the PR? yes"),
+            "Reviewing the PR?"
+        );
         // No terminator -> returned unchanged.
         assert_eq!(trim_to_sentence("no period here"), "no period here");
     }
@@ -325,7 +347,11 @@ mod tests {
         assert!(arr[[0, 0, mid, mid]] > 0.9, "center should be red (R~1)");
         assert!(arr[[0, 1, mid, mid]] < 0.1, "center G should be ~0");
         assert_eq!(arr[[0, 0, 0, mid]], 0.0, "top band should be black padding");
-        assert_eq!(arr[[0, 0, IMAGE_SIZE - 1, mid]], 0.0, "bottom band should be black padding");
+        assert_eq!(
+            arr[[0, 0, IMAGE_SIZE - 1, mid]],
+            0.0,
+            "bottom band should be black padding"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -345,9 +371,17 @@ mod tests {
         assert!(cap.available(), "model files not found");
         let ocr = std::env::var("CAPTIONER_TEST_OCR").unwrap_or_default();
         let gist = cap
-            .caption(Path::new(&img), "Visual Studio Code", "accessibility.rs — patcha", &ocr)
+            .caption(
+                Path::new(&img),
+                "Visual Studio Code",
+                "accessibility.rs — patcha",
+                &ocr,
+            )
             .expect("caption");
         eprintln!("GIST: {gist}");
-        assert!(gist.split_whitespace().count() >= 3, "gist too short: {gist:?}");
+        assert!(
+            gist.split_whitespace().count() >= 3,
+            "gist too short: {gist:?}"
+        );
     }
 }

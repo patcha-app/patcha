@@ -24,20 +24,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController = MenuBarController(daemonManager: daemonManager, mcpManager: mcpManager, settingsWindowController: settingsWindowController, settingsStore: store)
         Installer.installIfNeeded()
 
-        authManager.$initialSessionLoaded
-            .filter { $0 }
-            .first()
-            .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.handleLaunchAuthState() }
-            }
-            .store(in: &cancellables)
-
+        // Login is optional: the daemon runs fully offline and uses the local
+        // Claude CLI for AI features when there is no token. A token, when
+        // present, upgrades those features to patcha-api — but its absence never
+        // stops the daemon. Clear it on sign-out so the daemon falls back cleanly.
         authManager.$isSignedIn
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] signedIn in
                 Task { @MainActor [weak self] in
-                    self?.handleAuthState(signedIn: signedIn)
+                    guard let self, !signedIn else { return }
+                    DaemonTokenFile.clear()
+                    self.daemonManager.authToken = nil
+                    self.mcpManager.authToken = nil
                 }
             }
             .store(in: &cancellables)
@@ -59,12 +58,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self else { return }
-            if !self.authManager.initialSessionLoaded {
-                self.settingsWindowController.show()
-            }
-        }
+        // Start the daemon + MCP immediately, independent of any auth state or
+        // network. The menu bar can open Settings to sign in at any time.
+        startServices()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -75,47 +71,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @MainActor private func handleLaunchAuthState() {
-        if authManager.isSignedIn {
-            handleSignedIn()
-        } else {
-            settingsWindowController.show()
-        }
-    }
-
-    @MainActor private func handleAuthState(signedIn: Bool) {
-        if signedIn {
-            handleSignedIn()
-        } else {
-            if case .running = daemonManager.status { daemonManager.stop() }
-            mcpManager.stop()
-            DaemonTokenFile.clear()
-            showLogin()
-        }
-    }
-
-    @MainActor private func handleSignedIn() {
-        Task {
-            // Refresh the session before starting the daemon so we never launch
-            // with a stale token that was restored from the keychain at app start.
-            let token: String?
-            do {
-                token = try await supabase.auth.session.accessToken
-            } catch {
-                token = authManager.session?.accessToken
-            }
+    @MainActor private func startServices() {
+        // If a token was restored from the keychain, hand it to the daemon so it
+        // can use patcha-api; otherwise the daemon starts token-less and uses the
+        // local Claude CLI. Either way the daemon and MCP server start now.
+        if let token = authManager.session?.accessToken {
             daemonManager.authToken = token
             mcpManager.authToken = token
             DaemonTokenFile.write(token)
-            if case .stopped = daemonManager.status {
-                daemonManager.start()
-            }
-            mcpManager.start()
         }
-    }
-
-    private func showLogin() {
-        settingsWindowController.show()
+        if case .stopped = daemonManager.status {
+            daemonManager.start()
+        }
+        mcpManager.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

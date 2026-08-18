@@ -9,7 +9,11 @@ use clap::Args;
 pub struct McpArgs {
     #[arg(long, help = "Run over stdio (default)")]
     pub stdio: bool,
-    #[arg(long, default_value = "6969", help = "HTTP port for Streamable HTTP transport")]
+    #[arg(
+        long,
+        default_value = "6969",
+        help = "HTTP port for Streamable HTTP transport"
+    )]
     pub port: u16,
 }
 

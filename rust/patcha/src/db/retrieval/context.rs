@@ -57,7 +57,9 @@ pub async fn get_working_memory(
     let lines: Vec<String> = deduped.iter().map(format_line).collect();
 
     if lines.is_empty() {
-        return Ok(format!("# Working memory (last {minutes}m)\nNo activity recorded."));
+        return Ok(format!(
+            "# Working memory (last {minutes}m)\nNo activity recorded."
+        ));
     }
 
     Ok(format!(
@@ -76,20 +78,19 @@ pub async fn get_recent_activity(
     let mut events = store.get_events_since_with_embeddings(since, 1000)?;
 
     if let Some(app) = app_filter {
-        events.retain(|e| {
-            e.metadata
-                .get("app_name")
-                .and_then(|v| v.as_str())
-                == Some(app)
-        });
+        events.retain(|e| e.metadata.get("app_name").and_then(|v| v.as_str()) == Some(app));
     }
 
     let deduped = dedup_by_similarity(events, dedup_threshold);
     let lines: Vec<String> = deduped.iter().map(format_line).collect();
 
-    let app_tag = app_filter.map(|a| format!(" (app={a})")).unwrap_or_default();
+    let app_tag = app_filter
+        .map(|a| format!(" (app={a})"))
+        .unwrap_or_default();
     if lines.is_empty() {
-        return Ok(format!("# Recent activity (last {hours}h){app_tag}\nNo activity recorded."));
+        return Ok(format!(
+            "# Recent activity (last {hours}h){app_tag}\nNo activity recorded."
+        ));
     }
 
     Ok(format!(
@@ -148,7 +149,9 @@ pub async fn search_activity(
         .unwrap_or_default();
 
     if merged.is_empty() {
-        return Ok(format!("# Search results for \"{query}\"{app_tag}\nNo results found."));
+        return Ok(format!(
+            "# Search results for \"{query}\"{app_tag}\nNo results found."
+        ));
     }
 
     let lines: Vec<String> = merged
@@ -220,12 +223,14 @@ fn format_line(event: &Event) -> String {
     let et = event.event_type.to_string();
 
     let detail = match event.event_type {
-        EventType::Terminal => {
-            serde_json::from_str::<serde_json::Value>(&event.raw_content)
-                .ok()
-                .and_then(|d| d.get("command").and_then(|v| v.as_str()).map(|s| s.chars().take(120).collect()))
-                .unwrap_or_else(|| event.raw_content.chars().take(120).collect())
-        }
+        EventType::Terminal => serde_json::from_str::<serde_json::Value>(&event.raw_content)
+            .ok()
+            .and_then(|d| {
+                d.get("command")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.chars().take(120).collect())
+            })
+            .unwrap_or_else(|| event.raw_content.chars().take(120).collect()),
         EventType::Browser => {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&event.raw_content) {
                 let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -262,9 +267,21 @@ fn format_line(event: &Event) -> String {
             if let Some(g) = gist {
                 return format!("[{hhmm}] {et}: {g}");
             }
-            let app = event.metadata.get("app_name").and_then(|v| v.as_str()).unwrap_or("");
-            let title = event.metadata.get("window_title").and_then(|v| v.as_str()).unwrap_or("");
-            if !title.is_empty() { format!("{app} — {title}") } else { app.to_owned() }
+            let app = event
+                .metadata
+                .get("app_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let title = event
+                .metadata
+                .get("window_title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !title.is_empty() {
+                format!("{app} — {title}")
+            } else {
+                app.to_owned()
+            }
         }
         _ => event.raw_content.chars().take(120).collect(),
     };
@@ -276,14 +293,23 @@ fn format_detail(event: &Event) -> String {
     match event.event_type {
         EventType::GitCommit | EventType::GitStash => {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&event.raw_content) {
-                let msg = data.get("message").and_then(|v| v.as_str()).unwrap_or("").trim().to_owned();
+                let msg = data
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_owned();
                 let files: Vec<&str> = data
                     .get("files_changed")
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
                 let diff = data.get("diff").and_then(|v| v.as_str()).unwrap_or("");
-                let proj = event.project.as_deref().map(|p| format!(" [{p}]")).unwrap_or_default();
+                let proj = event
+                    .project
+                    .as_deref()
+                    .map(|p| format!(" [{p}]"))
+                    .unwrap_or_default();
                 let ts = event.timestamp.format("%Y-%m-%d %H:%M").to_string();
                 let mut out = format!("[{ts}] {}: {msg}{proj}", event.event_type);
                 if !files.is_empty() {
@@ -345,13 +371,17 @@ fn rrf_merge(
 
     for (rank, r) in vector_results.iter().enumerate() {
         let contribution = 1.0 / (RRF_K + rank as f64 + 1.0);
-        let entry = scores.entry(r.event.id.clone()).or_insert((0.0, r.event.clone()));
+        let entry = scores
+            .entry(r.event.id.clone())
+            .or_insert((0.0, r.event.clone()));
         entry.0 += contribution;
     }
 
     for (rank, event) in text_results.iter().enumerate() {
         let contribution = 1.0 / (RRF_K + rank as f64 + 1.0);
-        let entry = scores.entry(event.id.clone()).or_insert((0.0, event.clone()));
+        let entry = scores
+            .entry(event.id.clone())
+            .or_insert((0.0, event.clone()));
         entry.0 += contribution;
     }
 
@@ -400,7 +430,10 @@ fn rerank_in_place(
         scores.into_iter().zip(merged.iter().cloned()).collect();
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     for (slot, (s, r)) in merged.iter_mut().zip(scored) {
-        *slot = MergedResult { score: s as f64, ..r };
+        *slot = MergedResult {
+            score: s as f64,
+            ..r
+        };
     }
 }
 
@@ -438,8 +471,14 @@ mod tests {
     #[test]
     fn rrf_merge_rewards_agreement_across_arms() {
         let vector = vec![
-            ScoredEvent { event: event("a", 0, "alpha"), score: 0.9 },
-            ScoredEvent { event: event("b", 0, "beta"), score: 0.8 },
+            ScoredEvent {
+                event: event("a", 0, "alpha"),
+                score: 0.9,
+            },
+            ScoredEvent {
+                event: event("b", 0, "beta"),
+                score: 0.8,
+            },
         ];
         // `b` appears top of the text arm too, so fusion should lift it above `a`.
         let text = vec![event("b", 0, "beta"), event("c", 0, "gamma")];
@@ -455,7 +494,10 @@ mod tests {
     #[test]
     fn rrf_merge_respects_candidate_pool_cap() {
         let vector: Vec<ScoredEvent> = (0..50)
-            .map(|i| ScoredEvent { event: event(&format!("v{i}"), i, "x"), score: 1.0 })
+            .map(|i| ScoredEvent {
+                event: event(&format!("v{i}"), i, "x"),
+                score: 1.0,
+            })
             .collect();
         let mut p = params();
         p.candidate_pool = 5;
@@ -482,7 +524,10 @@ mod tests {
 
         assert!((fresh - 1.0).abs() < 1e-9, "zero-age boost equals weight");
         assert!(old < fresh, "older events get a smaller boost");
-        assert!((old - (1.0 / std::f64::consts::E)).abs() < 1e-6, "one lambda of age decays by 1/e");
+        assert!(
+            (old - (1.0 / std::f64::consts::E)).abs() < 1e-6,
+            "one lambda of age decays by 1/e"
+        );
     }
 
     #[test]
@@ -506,7 +551,11 @@ mod tests {
         let kept = dedup_by_similarity(vec![a, b, c], 0.95);
         let ids: Vec<&str> = kept.iter().map(|e| e.id.as_str()).collect();
 
-        assert_eq!(ids, vec!["b", "c"], "duplicate replaced by most recent, distinct kept");
+        assert_eq!(
+            ids,
+            vec!["b", "c"],
+            "duplicate replaced by most recent, distinct kept"
+        );
     }
 
     #[test]
@@ -527,11 +576,23 @@ mod tests {
     #[test]
     fn rerank_in_place_is_noop_without_a_reranker() {
         let mut merged = vec![
-            MergedResult { id: "a".into(), score: 0.9, event: event("a", 0, "x") },
-            MergedResult { id: "b".into(), score: 0.8, event: event("b", 0, "y") },
+            MergedResult {
+                id: "a".into(),
+                score: 0.9,
+                event: event("a", 0, "x"),
+            },
+            MergedResult {
+                id: "b".into(),
+                score: 0.8,
+                event: event("b", 0, "y"),
+            },
         ];
         rerank_in_place(None, "query", &mut merged);
         let ids: Vec<&str> = merged.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["a", "b"], "order preserved when no reranker present");
+        assert_eq!(
+            ids,
+            vec!["a", "b"],
+            "order preserved when no reranker present"
+        );
     }
 }

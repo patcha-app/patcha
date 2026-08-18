@@ -26,10 +26,17 @@ impl Db {
 
         // sqlite3_auto_extension must be called BEFORE Connection::open so that the
         // extension init function is invoked when the connection is established.
+        // sqlite-vec and rusqlite define ffi types in separate -sys crates, so the
+        // init fn pointer must be transmuted across the equivalent signatures.
+        type ExtensionInit = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int;
         SQLITE_VEC_REGISTERED.get_or_init(|| unsafe {
-            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-                sqlite_vec::sqlite3_vec_init as usize,
-            )));
+            rusqlite::ffi::sqlite3_auto_extension(Some(
+                std::mem::transmute::<usize, ExtensionInit>(sqlite_vec::sqlite3_vec_init as usize),
+            ));
         });
 
         let conn = Connection::open(path)?;

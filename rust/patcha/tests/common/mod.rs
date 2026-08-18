@@ -102,7 +102,15 @@ impl MockWindow {
             }
         }
         let title_text = format!("{}  —  {}", self.app, self.title);
-        draw_line(&mut img, font, &title_text, 24, 18, 34.0, Rgb([235, 235, 235]));
+        draw_line(
+            &mut img,
+            font,
+            &title_text,
+            24,
+            18,
+            34.0,
+            Rgb([235, 235, 235]),
+        );
 
         // Body: dark text on the light canvas, one line per entry.
         let mut y = 110i32;
@@ -116,7 +124,15 @@ impl MockWindow {
     }
 }
 
-fn draw_line(img: &mut RgbImage, font: &FontVec, text: &str, x: i32, y: i32, px: f32, color: Rgb<u8>) {
+fn draw_line(
+    img: &mut RgbImage,
+    font: &FontVec,
+    text: &str,
+    x: i32,
+    y: i32,
+    px: f32,
+    color: Rgb<u8>,
+) {
     draw_text_mut(img, color, x, y, PxScale::from(px), font, text);
 }
 

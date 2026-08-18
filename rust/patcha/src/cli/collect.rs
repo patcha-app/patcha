@@ -1,13 +1,10 @@
 use crate::{
     collectors::{
-        accessibility::AccessibilityCollector,
-        browser::BrowserCollector,
-        git::GitCollector,
-        terminal::TerminalCollector,
-        window::WindowCollector,
+        accessibility::AccessibilityCollector, browser::BrowserCollector, git::GitCollector,
+        terminal::TerminalCollector, window::WindowCollector,
     },
     config::Config,
-    db::{Db, store::VectorStore},
+    db::{store::VectorStore, Db},
     embedding::Embedder,
     models::Event,
     process::EventPreprocessor,
@@ -19,7 +16,10 @@ use std::sync::Arc;
 
 #[derive(Args)]
 pub struct CollectArgs {
-    #[arg(long, help = "Collect only this source (git|browser|terminal|window|accessibility)")]
+    #[arg(
+        long,
+        help = "Collect only this source (git|browser|terminal|window|accessibility)"
+    )]
     pub source: Option<String>,
     #[arg(short, long, help = "Date to collect for (YYYY-MM-DD, default: today)")]
     pub date: Option<String>,
@@ -65,7 +65,9 @@ pub async fn run(args: CollectArgs, cfg: Config) -> Result<()> {
     println!(
         "Collecting activities since {}{}...",
         since.format("%Y-%m-%d"),
-        filter.map(|s| format!(" (source: {s})")).unwrap_or_default()
+        filter
+            .map(|s| format!(" (source: {s})"))
+            .unwrap_or_default()
     );
 
     std::fs::create_dir_all(&cfg.data_dir)?;
@@ -103,8 +105,7 @@ pub async fn run(args: CollectArgs, cfg: Config) -> Result<()> {
     }
 
     if want("terminal") && cfg.enable_terminal_collector {
-        let ev =
-            tokio::task::block_in_place(|| TerminalCollector::new().collect_all(Some(since)));
+        let ev = tokio::task::block_in_place(|| TerminalCollector::new().collect_all(Some(since)));
         source_counts.push(("terminal".into(), ev.len()));
         all_events.extend(ev);
     }

@@ -230,14 +230,12 @@ impl EventPreprocessor {
         let mut results = Vec::with_capacity(total);
         for (i, chunk) in chunks.iter().enumerate() {
             let mut chunk_event = event.clone();
-            chunk_event.metadata.insert(
-                "chunk_index".into(),
-                serde_json::json!(i),
-            );
-            chunk_event.metadata.insert(
-                "total_chunks".into(),
-                serde_json::json!(total),
-            );
+            chunk_event
+                .metadata
+                .insert("chunk_index".into(), serde_json::json!(i));
+            chunk_event
+                .metadata
+                .insert("total_chunks".into(), serde_json::json!(total));
             if let Some(ref doc_id) = event.source_doc_id {
                 chunk_event.source_doc_id = Some(format!("{doc_id}::chunk::{i}"));
             }
@@ -278,8 +276,12 @@ impl EventPreprocessor {
             for (i, chunk) in chunks.into_iter().enumerate() {
                 let mut chunk_event = event.clone();
                 if total > 1 {
-                    chunk_event.metadata.insert("chunk_index".into(), serde_json::json!(i));
-                    chunk_event.metadata.insert("total_chunks".into(), serde_json::json!(total));
+                    chunk_event
+                        .metadata
+                        .insert("chunk_index".into(), serde_json::json!(i));
+                    chunk_event
+                        .metadata
+                        .insert("total_chunks".into(), serde_json::json!(total));
                     if let Some(ref doc_id) = event.source_doc_id {
                         chunk_event.source_doc_id = Some(format!("{doc_id}::chunk::{i}"));
                     }

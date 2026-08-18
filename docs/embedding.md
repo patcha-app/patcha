@@ -1,47 +1,61 @@
 # Embedding Pipeline
 
-`patcha/process.py`
+`rust/patcha/src/process.rs` (text extraction + `EventPreprocessor`),
+`rust/patcha/src/embedding.rs` (`Embedder`)
 
-`EventPreprocessor` handles converting raw `Event` objects into vector embeddings ready for storage in Qdrant.
+The embedding pipeline turns raw `Event` objects into vectors ready for storage
+in the local `sqlite-vec` store. It runs entirely **on-device** — no API key and
+no network call.
 
 ## Model
 
-`text-embedding-3-small` via OpenAI. Configured via `config.openai_api_key`. The vector dimension is set in `config.vector_size` and must match the Qdrant collection configuration.
+Embeddings come from a local [fastembed](https://github.com/Anush008/fastembed-rs)
+model, `BAAI/bge-base-en-v1.5` by default (768-dim, 512 native tokens). Configure
+with `EMBEDDING_MODEL`; models are downloaded once and cached under
+`EMBEDDING_CACHE_DIR` (`~/.patcha/models`).
+
+BGE is an **asymmetric** retrieval model: user queries are prefixed with an
+instruction (`query_instruction_prefix`) before embedding, while stored documents
+are embedded as-is. The `Embedder` handles this distinction.
 
 ## Text extraction
 
-Before embedding, `_build_embedding_text(event)` extracts a meaningful text string from the event's `raw_content` based on type:
+Before embedding, `build_embedding_text(event)` derives a meaningful string from
+the event's `raw_content` based on its type:
 
-| Event type | Extracted text |
-|------------|---------------|
-| `browser` | `title \| domain` from JSON payload |
-| `terminal` | `command` field from JSON payload |
-| `git_commit` / `git_stash` | `message` + `files: file1, file2, ...` (up to 20 files) |
-| all others | raw `raw_content` string |
+| Event type                     | Extracted text                                    |
+| ------------------------------ | ------------------------------------------------- |
+| `Browser`                      | `title \| domain`                                 |
+| `Terminal`                     | the command                                       |
+| `GitCommit` / `GitStash`       | `message` + `files: file1, file2, ...` (up to 20) |
+| `Screen`                       | `gist \| <on-screen text>` (VLM gist prepended)   |
+| others                         | the raw `raw_content` string                      |
 
-If the event has a `project` set, it is appended as `[project_name]` to provide project-scoped context to the embedding.
+For screen events the on-device FastVLM **gist** is prepended so retrieval works
+on *what the user was doing*, not just the literal OCR text (see
+[collectors.md](collectors.md)).
 
 ## Chunking
 
-Long texts are split via `chunk_text(text, max_tokens, overlap)` using token estimates (`config.max_embedding_tokens`, `config.embedding_chunk_overlap`). Most events produce a single chunk. When an event splits into multiple chunks:
+Long texts are split into overlapping chunks sized to the model's effective token
+budget. The budget is computed from the model's native limit with a safety factor
+(`TOKEN_SAFETY = 0.8`), because BGE's WordPiece tokenizer produces more tokens
+than the `cl100k` tokenizer used for estimation. Overlap is set by
+`EMBEDDING_CHUNK_OVERLAP`.
 
-- Each chunk becomes a separate `Event` copy with `metadata.chunk_index` and `metadata.total_chunks` added
-- If `source_doc_id` is set on the original event, chunks get IDs like `{source_doc_id}::chunk::{i}` — this feeds the deterministic UUID deduplication in `VectorStore.store_event`
+Most events produce a single chunk. When an event splits into several, each chunk
+is embedded separately and stored with chunk-index metadata so the deterministic
+IDs used by the store keep chunks associated with their source event.
 
-## API
+## Pipeline (`EventPreprocessor`)
 
-### `generate_embedding(text) -> Optional[List[float]]`
+`EventPreprocessor` (in `process.rs`) owns the `Embedder` and drives processing:
 
-Calls the OpenAI embeddings API and returns the embedding vector, or `None` on failure.
+1. `build_embedding_text` extracts text for the event
+2. the text is chunked to the token budget
+3. each chunk is embedded via the local model
+4. one or more `Event` objects with populated embeddings are returned
 
-### `process_event(event) -> List[Event]`
-
-Processes a single event:
-1. Extracts text with `_build_embedding_text`
-2. Chunks the text
-3. Generates an embedding per chunk
-4. Returns one or more `Event` objects with `.embedding` populated
-
-### `process_events(events) -> List[Event]`
-
-Batch wrapper around `process_event`. Errors on individual events are logged and the unembedded event is passed through rather than dropped.
+Events that fail to embed are passed through un-embedded rather than dropped, and
+pending events can be persisted and re-processed later (`process_pending` /
+`save_pending`).

@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore, tasks::TaskStore},
-    llm::client::PatchaApiClient,
+    db::{store::VectorStore, tasks::TaskStore, Db},
+    llm::backend,
     summary::{DailySummarizer, TaskSummarizer},
 };
 use anyhow::Result;
@@ -26,7 +26,7 @@ pub async fn run(args: SummarizeArgs, cfg: Config) -> Result<()> {
 
     let db = Db::open(&cfg.db_path)?;
     let store = Arc::new(VectorStore::new(db.clone()));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
 
     if args.task_based {
         let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
@@ -79,7 +79,11 @@ pub async fn run(args: SummarizeArgs, cfg: Config) -> Result<()> {
                     println!("{}", "─".repeat(60));
                     for cs in &summary.category_summaries {
                         let snippet: String = cs.summary.chars().take(50).collect();
-                        println!("{:<18} {:>6}  {snippet}", cs.category.to_string(), cs.event_count);
+                        println!(
+                            "{:<18} {:>6}  {snippet}",
+                            cs.category.to_string(),
+                            cs.event_count
+                        );
                     }
                 }
             }

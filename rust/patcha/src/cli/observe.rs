@@ -1,10 +1,7 @@
 use crate::{
     collectors::{
-        accessibility::AccessibilityCollector,
-        browser::BrowserCollector,
-        git::GitCollector,
-        terminal::TerminalCollector,
-        window::WindowCollector,
+        accessibility::AccessibilityCollector, browser::BrowserCollector, git::GitCollector,
+        terminal::TerminalCollector, window::WindowCollector,
     },
     config::Config,
     models::Event,
@@ -93,12 +90,18 @@ pub async fn run(args: ObserveArgs, cfg: Config) -> Result<()> {
         try_collect!("browser", BrowserCollector::new().collect_all(Some(since)));
     }
     if cfg.enable_terminal_collector {
-        try_collect!("terminal", TerminalCollector::new().collect_all(Some(since)));
+        try_collect!(
+            "terminal",
+            TerminalCollector::new().collect_all(Some(since))
+        );
     }
     if cfg.enable_window_collector {
         let sp = script_path.clone();
         let dd = cfg.data_dir.clone();
-        try_collect!("window", WindowCollector::new(&dd, sp).collect_windows(since));
+        try_collect!(
+            "window",
+            WindowCollector::new(&dd, sp).collect_windows(since)
+        );
     }
     if cfg.enable_accessibility_collector {
         let ac = AccessibilityCollector::new(&cfg.data_dir, &res_dir, &cfg);
@@ -135,14 +138,24 @@ pub async fn run(args: ObserveArgs, cfg: Config) -> Result<()> {
         sessions.len()
     );
     println!(
-        "{:<5} {:<20} {:<8} {:<20} {}",
-        "#", "Time range", "Events", "Top source", "Sources"
+        "{:<5} {:<20} {:<8} {:<20} Sources",
+        "#", "Time range", "Events", "Top source"
     );
     println!("{}", "-".repeat(75));
 
     for (i, session) in sessions.iter().enumerate() {
-        let start = session.first().unwrap().timestamp.format("%H:%M").to_string();
-        let end = session.last().unwrap().timestamp.format("%H:%M").to_string();
+        let start = session
+            .first()
+            .unwrap()
+            .timestamp
+            .format("%H:%M")
+            .to_string();
+        let end = session
+            .last()
+            .unwrap()
+            .timestamp
+            .format("%H:%M")
+            .to_string();
         let mut src_counts: HashMap<String, usize> = HashMap::new();
         for e in session.iter() {
             *src_counts.entry(e.event_type.to_string()).or_insert(0) += 1;

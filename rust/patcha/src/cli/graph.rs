@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{Db, graph::KnowledgeGraph},
+    db::{graph::KnowledgeGraph, Db},
 };
 use anyhow::Result;
 use clap::Args;
@@ -29,8 +29,14 @@ pub async fn run_analyze(args: AnalyzeGraphArgs, cfg: Config) -> Result<()> {
     println!("Knowledge graph (last {} days):", args.days);
     println!("{}", "─".repeat(50));
 
-    let entities = stats.get("total_entities").and_then(|v| v.as_u64()).unwrap_or(0);
-    let rels = stats.get("total_relationships").and_then(|v| v.as_u64()).unwrap_or(0);
+    let entities = stats
+        .get("total_entities")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let rels = stats
+        .get("total_relationships")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     println!("Entities:      {entities}");
     println!("Relationships: {rels}");
 
@@ -64,8 +70,11 @@ pub async fn run_search(args: SearchGraphArgs, cfg: Config) -> Result<()> {
             println!("Entity \"{}\" not found in knowledge graph.", args.query);
         }
         Some(entity) => {
-            println!("Entity: {} [{}]", entity.name, format!("{:?}", entity.entity_type));
-            println!("Mentions: {}  |  Confidence: {:.2}", entity.mention_count, entity.confidence);
+            println!("Entity: {} [{:?}]", entity.name, entity.entity_type);
+            println!(
+                "Mentions: {}  |  Confidence: {:.2}",
+                entity.mention_count, entity.confidence
+            );
             println!();
 
             let neighbors = kg.get_neighbors(&entity.id, 2)?;
@@ -76,9 +85,7 @@ pub async fn run_search(args: SearchGraphArgs, cfg: Config) -> Result<()> {
                 for n in neighbors.iter().take(args.limit) {
                     println!(
                         "  {:<30} [{:?}]  {} mentions",
-                        n.name,
-                        n.entity_type,
-                        n.mention_count
+                        n.name, n.entity_type, n.mention_count
                     );
                 }
             }

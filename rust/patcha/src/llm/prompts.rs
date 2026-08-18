@@ -21,10 +21,7 @@ fn env() -> &'static Environment<'static> {
 /// Render the system prompt (system.j2).
 pub fn render_system() -> Result<String> {
     let tmpl = env().get_template("system.j2")?;
-    Ok(tmpl
-        .render(minijinja::Value::UNDEFINED)?
-        .trim()
-        .to_owned())
+    Ok(tmpl.render(minijinja::Value::UNDEFINED)?.trim().to_owned())
 }
 
 /// Render a named macro from user.j2 with the given keyword arguments.
@@ -69,9 +66,7 @@ fn build_macro_wrapper(template: &str, macro_name: &str, kwargs: &serde_json::Va
         String::new()
     };
 
-    format!(
-        "{{% from '{template}' import {macro_name} -%}}{{{{ {macro_name}({args}) }}}}"
-    )
+    format!("{{% from '{template}' import {macro_name} -%}}{{{{ {macro_name}({args}) }}}}")
 }
 
 #[cfg(test)]

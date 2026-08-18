@@ -1,8 +1,8 @@
 use crate::{
     compaction::DailyCompactor,
     config::Config,
-    db::{Db, store::VectorStore, tasks::TaskStore},
-    llm::client::PatchaApiClient,
+    db::{store::VectorStore, tasks::TaskStore, Db},
+    llm::backend,
 };
 use anyhow::Result;
 use chrono::{Duration, Local};
@@ -35,13 +35,21 @@ pub async fn run(args: CompactDayArgs, cfg: Config) -> Result<()> {
     let db = Db::open(&cfg.db_path)?;
     let store = Arc::new(VectorStore::new(db.clone()));
     let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let compactor = DailyCompactor::new(store, task_store, llm_client, &cfg);
 
-    let result = compactor.compact_day(date, args.dry_run, args.force).await?;
+    let result = compactor
+        .compact_day(date, args.dry_run, args.force)
+        .await?;
 
-    let tasks = result.get("tasks_identified").and_then(|v| v.as_u64()).unwrap_or(0);
-    let events = result.get("events_compacted").and_then(|v| v.as_u64()).unwrap_or(0);
+    let tasks = result
+        .get("tasks_identified")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let events = result
+        .get("events_compacted")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     if args.dry_run {
         println!("[dry-run] Would identify {tasks} tasks from {events} events.");
     } else {

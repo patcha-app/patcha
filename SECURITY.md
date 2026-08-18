@@ -1,21 +1,42 @@
 # Security Policy
 
+Patcha is a local-first tool: it continuously observes activity on your machine
+(browser history, shell history, git, and on-screen text) and stores it in a
+local database. Security issues here can expose sensitive personal data, so we
+take them seriously.
+
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Patcha is pre-1.0 and moves quickly. Only the latest release on the `main`
+branch receives security fixes.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version        | Supported |
+| -------------- | --------- |
+| latest `main`  | ✅        |
+| older releases | ❌        |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+**Do not open a public GitHub issue for security vulnerabilities.**
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Instead, report privately using
+[GitHub Security Advisories](https://github.com/xtanion/patcha/security/advisories/new),
+or email the maintainers at **anandshivam54321@gmail.com** with:
+
+- a description of the issue and its impact,
+- steps to reproduce (a proof of concept is ideal), and
+- any affected versions or configuration.
+
+You can expect an acknowledgement within **5 business days**. We will keep you
+updated on our assessment and, once a fix is available, coordinate a disclosure
+timeline with you. We are happy to credit reporters unless you prefer to remain
+anonymous.
+
+## Scope and data handling
+
+Patcha stores all collected data locally under `~/.patcha` (a SQLite database
+plus JSONL logs) and never uploads raw activity by default. When you sign in to
+patcha-api or configure the Claude CLI backend, text prompts derived from your
+activity are sent to that service for summarization — no login means everything
+stays on device. Please keep this in mind when reporting: issues that leak the
+local store, defeat the on-device boundary, or exfiltrate data are in scope.

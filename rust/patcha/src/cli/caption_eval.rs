@@ -21,7 +21,10 @@ pub struct CaptionEvalArgs {
     #[arg(long, help = "OCR helper binary (default: <resources>/ocr)")]
     pub ocr_bin: Option<PathBuf>,
 
-    #[arg(long, help = "App-name context for every image (default: each file's stem)")]
+    #[arg(
+        long,
+        help = "App-name context for every image (default: each file's stem)"
+    )]
     pub app: Option<String>,
 
     #[arg(long, help = "Window-title context for every image")]
@@ -55,7 +58,10 @@ pub async fn run(args: CaptionEvalArgs, _cfg: Config) -> Result<()> {
             .filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| {
                 matches!(
-                    p.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()).as_deref(),
+                    p.extension()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_lowercase())
+                        .as_deref(),
                     Some("png" | "jpg" | "jpeg")
                 )
             })
@@ -66,7 +72,11 @@ pub async fn run(args: CaptionEvalArgs, _cfg: Config) -> Result<()> {
         return Err(anyhow!("no png/jpg images at {:?}", args.images_dir));
     }
 
-    println!("Captioning {} image(s) from {:?}\n", images.len(), args.images_dir);
+    println!(
+        "Captioning {} image(s) from {:?}\n",
+        images.len(),
+        args.images_dir
+    );
     let mut total = 0f32;
     for img in &images {
         let stem = img.file_stem().and_then(|s| s.to_str()).unwrap_or("");
@@ -89,7 +99,11 @@ pub async fn run(args: CaptionEvalArgs, _cfg: Config) -> Result<()> {
             Err(e) => println!("── {name}  ({secs:.1}s) ──\n[error: {e}]\n"),
         }
     }
-    println!("avg {:.1}s/image over {} image(s)", total / images.len() as f32, images.len());
+    println!(
+        "avg {:.1}s/image over {} image(s)",
+        total / images.len() as f32,
+        images.len()
+    );
     Ok(())
 }
 
@@ -112,8 +126,16 @@ fn ocr_text(ocr_bin: &Path, image: &Path) -> Result<String> {
         })
         .collect();
     // Bottom-left origin: higher y = higher on screen, so descending y is top-down.
-    items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
-    Ok(items.into_iter().map(|(_, _, t)| t).collect::<Vec<_>>().join(" "))
+    items.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
+    Ok(items
+        .into_iter()
+        .map(|(_, _, t)| t)
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 fn resources_dir() -> PathBuf {

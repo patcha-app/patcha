@@ -94,19 +94,16 @@ impl PatchaApiClient {
     // -----------------------------------------------------------------------
 
     /// Send a chat completion request; returns the assistant message content.
-    pub async fn chat_completion(
-        &self,
-        system: &str,
-        user: &str,
-        model: &str,
-    ) -> Result<String> {
+    pub async fn chat_completion(&self, system: &str, user: &str, model: &str) -> Result<String> {
         let messages = vec![
             serde_json::json!({"role": "system", "content": system}),
             serde_json::json!({"role": "user", "content": user}),
         ];
         let body = serde_json::json!({ "model": model, "messages": messages });
 
-        let resp = self.post_with_auth("/api/v1/llm/chat/completions", &body).await?;
+        let resp = self
+            .post_with_auth("/api/v1/llm/chat/completions", &body)
+            .await?;
         let parsed: ChatResponse = resp
             .json()
             .await

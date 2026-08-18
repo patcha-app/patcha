@@ -1,11 +1,11 @@
 use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use axum::{
-    Json,
     response::sse::{Event, KeepAlive, Sse},
+    Json,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
@@ -259,7 +259,14 @@ pub async fn handle_chat(
 ) -> Sse<ReceiverStream<Result<Event, Infallible>>> {
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(64);
     let state = state.0;
-    let backend = Backend::parse(req.backend.as_deref());
+    // When the client doesn't pin a backend, use the built-in patcha-api loop
+    // only if we have a token; otherwise fall back to the local Claude CLI so
+    // chat works without a patcha login.
+    let backend = match req.backend.as_deref() {
+        Some(s) => Backend::parse(Some(s)),
+        None if state.api.is_authenticated() => Backend::Api,
+        None => Backend::Claude,
+    };
 
     tokio::spawn(async move {
         let result = match backend {
@@ -529,7 +536,8 @@ async fn run_codex(
     messages: Vec<IncomingMessage>,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> anyhow::Result<()> {
-    let last_msg_path = std::env::temp_dir().join(format!("patcha-codex-{}.txt", std::process::id()));
+    let last_msg_path =
+        std::env::temp_dir().join(format!("patcha-codex-{}.txt", std::process::id()));
     let prompt = format!("{CHAT_SYSTEM}\n\n{}", build_transcript(&messages));
 
     let mut cmd = Command::new("codex");
@@ -552,9 +560,11 @@ async fn run_codex(
         cmd.current_dir(home);
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("couldn't launch the Codex CLI (`codex`): {e}. Make sure it's installed and logged in."))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!(
+            "couldn't launch the Codex CLI (`codex`): {e}. Make sure it's installed and logged in."
+        )
+    })?;
     let stdout = child.stdout.take().expect("piped stdout");
     let mut lines = BufReader::new(stdout).lines();
 
@@ -627,7 +637,9 @@ fn cli_available(name: &str) -> bool {
     };
     std::env::split_paths(&path).any(|dir| {
         let candidate = dir.join(name);
-        std::fs::metadata(&candidate).map(|m| m.is_file()).unwrap_or(false)
+        std::fs::metadata(&candidate)
+            .map(|m| m.is_file())
+            .unwrap_or(false)
     })
 }
 
@@ -674,7 +686,11 @@ mod tests {
         assert_eq!(arr.len(), 6);
         let names: Vec<&str> = arr
             .iter()
-            .map(|s| s.pointer("/function/name").and_then(|v| v.as_str()).unwrap())
+            .map(|s| {
+                s.pointer("/function/name")
+                    .and_then(|v| v.as_str())
+                    .unwrap()
+            })
             .collect();
         for expected in [
             "get_working_memory",
@@ -695,7 +711,9 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|s| s.pointer("/function/name").and_then(|v| v.as_str()) == Some("search_activity"))
+            .find(|s| {
+                s.pointer("/function/name").and_then(|v| v.as_str()) == Some("search_activity")
+            })
             .unwrap();
         let required = search
             .pointer("/function/parameters/required")

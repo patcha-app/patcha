@@ -1,61 +1,49 @@
-# RAG System
+# RAG & Knowledge Graph
 
-`patcha/db/retrieval/rag.py`, `patcha/db/retrieval/graphrag.py`
+`rust/patcha/src/db/retrieval/rag.rs`, `rust/patcha/src/db/retrieval/graphrag.rs`
 
-Two RAG implementations that augment task analysis and daily summaries with historical context pulled from the vector store.
+Two RAG implementations that augment task analysis and daily summaries with
+historical context pulled from the local store. Both call the configured
+[LLM backend](../../README.md#llm-backend) (patcha-api or the local `claude` CLI)
+for narrative generation and fall back gracefully when the LLM is unavailable.
 
 ---
 
-## RAGSystem (`rag.py`)
+## RagSystem (`rag.rs`)
 
-Standard vector-only RAG. Takes current activities, retrieves semantically similar historical activities, and uses GPT-4o-mini to produce enhanced analysis or summaries.
+Vector-only RAG. Takes current activities, retrieves semantically similar
+historical activities from `sqlite-vec`, and asks the LLM for enhanced analysis
+or summaries.
 
-### Core methods
+### Core capabilities
 
-**`retrieve_context_for_task_analysis(activities, context_limit=10)`**
+**Context for task analysis** — builds a composite embedding from an activity set
+(weighted by content length), retrieves similar historical activities (excluding
+the current session with a time buffer), and extracts workflow patterns, project
+context, category insights, and tool usage.
 
-Builds a context dict for an in-progress task:
-- Generates a composite embedding from the activity set (weighted average, weight ∝ content length)
-- Retrieves similar historical activities, excluding the current session ± 1h buffer
-- Extracts from those results: workflow patterns, project context, category insights, temporal patterns, tool usage
+**Context for a daily summary** — finds same-weekday activities from recent weeks,
+computes per-project progression, and derives productivity patterns (activity
+intensity, focus score vs. a recent average).
 
-**`retrieve_context_for_summary(target_date, activities, context_limit=15)`**
+**Enhanced task analysis / daily summary** — sends the retrieved context to the
+LLM to produce an enhanced title, contextual insights, accomplishments,
+productivity notes, and recommendations. Falls back to the base analysis on any
+LLM error.
 
-Builds context for a daily summary:
-- Finds same-weekday activities from the past 4 weeks
-- Retrieves project progression (per-project activity count over last 30 days)
-- Computes productivity patterns (activity intensity, focus score vs. 7-day average)
-
-**`enhance_task_analysis_with_rag(activities, base_analysis)`**
-
-Calls `retrieve_context_for_task_analysis`, then sends a structured prompt to GPT-4o-mini asking for:
-- Enhanced title
-- Contextual insights
-- Enhanced accomplishments list
-- Productivity notes
-- Recommendations
-
-Falls back to `base_analysis` on any LLM error.
-
-**`enhance_daily_summary_with_rag(target_date, activities, base_summary)`**
-
-Same pattern for daily summaries. Adds `contextual_overview` and `rag_enhanced: True` to the base summary dict.
-
-**`contextual_search(query, expand_context=True, limit=10)`**
-
-Semantic search with optional context expansion (currently returns filtered vector results; expansion hook exists for future query-expansion logic).
+**Contextual search** — semantic search with an optional context-expansion hook.
 
 ### Focus score
 
-`_calculate_focus_score` rates 0–1 based on:
-- Category diversity: score decreases by 0.2 per additional unique category
-- Project consistency: score decreases by 0.3 per additional unique project
+A 0–1 score that decreases with category diversity and project switching, used as
+a rough proxy for focused vs. fragmented work.
 
 ---
 
-## GraphRAGSystem (`graphrag.py`)
+## GraphRagSystem (`graphrag.rs`)
 
-Hybrid RAG that combines vector similarity with knowledge graph traversal via `KnowledgeGraph` and `EntityExtractor`.
+Hybrid RAG that combines vector similarity with knowledge-graph traversal via
+`KnowledgeGraph` and `EntityExtractor`.
 
 ### Architecture
 
@@ -65,40 +53,30 @@ query activities
     │       └── graph traversal (KnowledgeGraph)
     │               → related entities, relationships, paths
     └── composite embedding
-            └── vector search (VectorStore)
+            └── vector search (VectorStore / sqlite-vec)
 
-combined and ranked by: vector_weight=0.6, graph_weight=0.4 (defaults)
+combined and ranked by vector_weight (default 0.6) and graph_weight (default 0.4)
 ```
 
-### Core methods
+### Core capabilities
 
-**`retrieve_enhanced_context(query_activities, context_limit=15, vector_weight=0.6, graph_weight=0.4)`**
+**Enhanced context retrieval** — runs both the vector and graph paths and merges
+them into a unified result: ranked activities, a graph-context object (query
+entities, related entities, relationships, paths, context strength), per-source
+strengths, a combined score, and a source breakdown.
 
-Main entry point. Runs both retrieval paths and calls `_combine_contexts` to produce a unified result dict with keys:
-- `activities` — top-N ranked results
-- `graph_context` — `GraphContext` dataclass (query entities, related entities, relationships, paths, context_strength)
-- `vector_strength`, `graph_strength`, `combined_score`
-- `source_breakdown` — `{vector: N, graph: N}`
+**Activity enrichment** — runs each activity through the entity extractor and adds
+the extracted entities and relationships both to the in-memory `KnowledgeGraph`
+and to the activity's metadata for downstream use.
 
-**`enhance_activity_processing(activities)`**
+**Graph-aware summary** — generates a narrative summary from both the activity
+list and the graph context, falling back to a simple count summary on error.
 
-Processes each activity through the entity extractor and adds extracted entities and relationships to:
-1. The in-memory `KnowledgeGraph`
-2. The activity's `metadata` dict (for downstream use)
-
-**`generate_enhanced_summary_with_graph(activities, target_date)`**
-
-Generates a narrative summary using GPT-4o-mini, providing both the activity list and `graph_context.to_text_context()` as context. Falls back to a simple count summary on error.
-
-**`get_knowledge_graph_insights()`**
-
-Returns graph statistics plus the 10 most-connected and 10 most-recently-seen entities.
+**Graph insights** — returns graph statistics plus the most-connected and
+most-recently-seen entities.
 
 ### Scoring
 
-Results are position-ranked within each source:
-```
-score = weight * (1 - rank/total) * source_strength
-```
-
-Vector and graph results are merged, deduplicated by `(type, timestamp)`, sorted by score, and truncated to `context_limit`.
+Results are position-ranked within each source
+(`score = weight * (1 - rank/total) * source_strength`), merged, deduplicated by
+`(type, timestamp)`, sorted by score, and truncated to the context limit.

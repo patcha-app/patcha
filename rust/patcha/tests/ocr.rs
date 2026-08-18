@@ -20,7 +20,9 @@ macro_rules! skip_if_no_ocr {
         match run_ocr($img) {
             Some(t) => t,
             None => {
-                eprintln!("skipping: `ocr` helper not built (run ./build.sh or set PATCHA_RESOURCES)");
+                eprintln!(
+                    "skipping: `ocr` helper not built (run ./build.sh or set PATCHA_RESOURCES)"
+                );
                 return;
             }
         }
@@ -43,7 +45,14 @@ fn ocr_reads_vscode_window() {
     let (_dir, path) = win.render(&font);
     let text = skip_if_no_ocr!(&path);
 
-    let expected = ["accessibility", "patcha", "record", "screen", "capture", "window"];
+    let expected = [
+        "accessibility",
+        "patcha",
+        "record",
+        "screen",
+        "capture",
+        "window",
+    ];
     let found = hits(&text, &expected);
     assert!(
         found >= expected.len() - 1,
@@ -103,8 +112,16 @@ fn ocr_reads_browser_window() {
 fn ocr_distinguishes_different_apps() {
     let font = load_font();
 
-    let editor = MockWindow::new("Xcode", "ContentView.swift", &["struct ContentView some View"]);
-    let chat = MockWindow::new("Slack", "engineering channel", &["shipping the rust rewrite today"]);
+    let editor = MockWindow::new(
+        "Xcode",
+        "ContentView.swift",
+        &["struct ContentView some View"],
+    );
+    let chat = MockWindow::new(
+        "Slack",
+        "engineering channel",
+        &["shipping the rust rewrite today"],
+    );
 
     let (_d1, p1) = editor.render(&font);
     let (_d2, p2) = chat.render(&font);
@@ -116,8 +133,14 @@ fn ocr_distinguishes_different_apps() {
     });
     let t1 = norm(&t1);
 
-    assert!(t1.contains("contentview") || t1.contains("swift"), "editor OCR: {t1}");
-    assert!(t2.contains("rust") || t2.contains("slack") || t2.contains("rewrite"), "chat OCR: {t2}");
+    assert!(
+        t1.contains("contentview") || t1.contains("swift"),
+        "editor OCR: {t1}"
+    );
+    assert!(
+        t2.contains("rust") || t2.contains("slack") || t2.contains("rewrite"),
+        "chat OCR: {t2}"
+    );
     assert_ne!(t1, t2, "distinct windows produced identical OCR text");
 }
 
@@ -132,13 +155,26 @@ fn live_window_ocr() {
 
     let dir = tempfile::tempdir().unwrap();
     let doc = dir.path().join("patcha_live_ocr.txt");
-    std::fs::write(&doc, "patcha live window ocr smoke test\nrust pipeline verification").unwrap();
+    std::fs::write(
+        &doc,
+        "patcha live window ocr smoke test\nrust pipeline verification",
+    )
+    .unwrap();
 
-    Command::new("open").arg("-a").arg("TextEdit").arg(&doc).status().unwrap();
+    Command::new("open")
+        .arg("-a")
+        .arg("TextEdit")
+        .arg(&doc)
+        .status()
+        .unwrap();
     std::thread::sleep(Duration::from_secs(2));
 
     let shot = dir.path().join("shot.png");
-    let status = Command::new("screencapture").arg("-x").arg(&shot).status().unwrap();
+    let status = Command::new("screencapture")
+        .arg("-x")
+        .arg(&shot)
+        .status()
+        .unwrap();
     assert!(status.success(), "screencapture failed");
 
     let text = norm(&run_ocr(&shot).expect("ocr helper required for live test"));

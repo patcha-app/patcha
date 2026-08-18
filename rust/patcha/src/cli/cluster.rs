@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore},
+    db::{store::VectorStore, Db},
 };
 use anyhow::Result;
 use chrono::Local;
@@ -40,7 +40,7 @@ pub async fn run(args: ClusterArgs, cfg: Config) -> Result<()> {
     }
 
     println!("Clusters for {date_str} ({} events):\n", events.len());
-    println!("{:<30} {:>6}  {}", "Project", "Events", "Types");
+    println!("{:<30} {:>6}  Types", "Project", "Events");
     println!("{}", "─".repeat(65));
 
     let mut projects: Vec<_> = by_project.iter().collect();

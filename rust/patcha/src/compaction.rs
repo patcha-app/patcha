@@ -2,7 +2,7 @@ use crate::{
     config::Config,
     db::{store::VectorStore, tasks::TaskStore},
     embedding::cosine_similarity,
-    llm::{client::PatchaApiClient, prompts},
+    llm::{backend::LlmBackend, prompts},
     models::{Category, Event, EventType, Task, TaskPriority, TaskStatus},
 };
 use anyhow::Result;
@@ -28,12 +28,12 @@ struct TaskAnalysis {
 }
 
 pub struct LLMTaskAnalyzer {
-    client: Arc<PatchaApiClient>,
+    client: Arc<dyn LlmBackend>,
     model: String,
 }
 
 impl LLMTaskAnalyzer {
-    pub fn new(client: Arc<PatchaApiClient>) -> Self {
+    pub fn new(client: Arc<dyn LlmBackend>) -> Self {
         Self {
             client,
             model: "gpt-4o-mini".to_owned(),
@@ -121,14 +121,25 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
 
     for (i, a) in activities.iter().enumerate() {
         let ts = a.timestamp.format("%H:%M");
-        let proj = a.project.as_deref().map(|p| format!(" | project: {p}")).unwrap_or_default();
-        let src = a.source.as_deref().map(|s| format!(" ({s})")).unwrap_or_default();
+        let proj = a
+            .project
+            .as_deref()
+            .map(|p| format!(" | project: {p}"))
+            .unwrap_or_default();
+        let src = a
+            .source
+            .as_deref()
+            .map(|s| format!(" ({s})"))
+            .unwrap_or_default();
         let header = format!("{}. [{}] {}{}{}", i + 1, ts, a.event_type, proj, src);
 
         let detail = match a.event_type {
             EventType::Terminal => {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&a.raw_content) {
-                    let cmd = data.get("command").and_then(|v| v.as_str()).unwrap_or(&a.raw_content);
+                    let cmd = data
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&a.raw_content);
                     format!("   CMD: {cmd}")
                 } else {
                     format!("   {}", a.summary.as_deref().unwrap_or(&a.raw_content))
@@ -139,9 +150,15 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
                     let url = data.get("url").and_then(|v| v.as_str()).unwrap_or("");
                     let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("");
                     let mut lines = Vec::new();
-                    if !url.is_empty() { lines.push(format!("   URL: {url}")); }
-                    if !title.is_empty() { lines.push(format!("   TITLE: {title}")); }
-                    if lines.is_empty() { lines.push(format!("   {}", a.raw_content)); }
+                    if !url.is_empty() {
+                        lines.push(format!("   URL: {url}"));
+                    }
+                    if !title.is_empty() {
+                        lines.push(format!("   TITLE: {title}"));
+                    }
+                    if lines.is_empty() {
+                        lines.push(format!("   {}", a.raw_content));
+                    }
                     lines.join("\n")
                 } else {
                     format!("   {}", a.raw_content)
@@ -151,7 +168,8 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&a.raw_content) {
                     let msg = data.get("message").and_then(|v| v.as_str()).unwrap_or("");
                     let branch = data.get("branch").and_then(|v| v.as_str()).unwrap_or("");
-                    let files: Vec<&str> = data.get("files_changed")
+                    let files: Vec<&str> = data
+                        .get("files_changed")
                         .and_then(|v| v.as_array())
                         .map(|arr| arr.iter().filter_map(|v| v.as_str()).take(5).collect())
                         .unwrap_or_default();
@@ -166,7 +184,9 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
                     if !files.is_empty() {
                         lines.push(format!("   FILES: {}", files.join(", ")));
                     }
-                    if lines.is_empty() { lines.push(format!("   {}", a.raw_content)); }
+                    if lines.is_empty() {
+                        lines.push(format!("   {}", a.raw_content));
+                    }
                     lines.join("\n")
                 } else {
                     format!("   {}", a.raw_content)
@@ -174,8 +194,16 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
             }
             EventType::GitStaged => format!("   {}", a.raw_content),
             EventType::Screen | EventType::Window => {
-                let app = a.metadata.get("app_name").and_then(|v| v.as_str()).unwrap_or("");
-                let win = a.metadata.get("window_title").and_then(|v| v.as_str()).unwrap_or("");
+                let app = a
+                    .metadata
+                    .get("app_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let win = a
+                    .metadata
+                    .get("window_title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if !app.is_empty() {
                     if !win.is_empty() {
                         format!("   APP: {app} | WINDOW: {win}")
@@ -200,11 +228,7 @@ fn aggregate_activity_content(activities: &[Event]) -> String {
 // LLM response parser
 // ---------------------------------------------------------------------------
 
-fn parse_llm_response(
-    text: &str,
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-) -> TaskAnalysis {
+fn parse_llm_response(text: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> TaskAnalysis {
     let mut title = "Unknown Task".to_owned();
     let mut accomplishments = Vec::new();
     let mut description = "Task analysis unavailable".to_owned();
@@ -213,7 +237,9 @@ fn parse_llm_response(
 
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         if let Some(rest) = line.strip_prefix("TASK_TITLE:") {
             title = rest.trim().to_owned();
@@ -264,7 +290,9 @@ fn fallback_analysis(activities: &[Event]) -> TaskAnalysis {
         .take(3)
         .collect();
 
-    let title = snippets.first().map(|s| s.chars().take(50).collect::<String>())
+    let title = snippets
+        .first()
+        .map(|s| s.chars().take(50).collect::<String>())
         .unwrap_or_else(|| format!("{primary} Work"));
     let description = if snippets.is_empty() {
         format!("{} {} activities", activities.len(), primary.to_lowercase())
@@ -272,8 +300,16 @@ fn fallback_analysis(activities: &[Event]) -> TaskAnalysis {
         snippets.join("; ")
     };
 
-    let start = activities.iter().map(|a| a.timestamp).min().unwrap_or_else(Utc::now);
-    let end = activities.iter().map(|a| a.timestamp).max().unwrap_or_else(Utc::now);
+    let start = activities
+        .iter()
+        .map(|a| a.timestamp)
+        .min()
+        .unwrap_or_else(Utc::now);
+    let end = activities
+        .iter()
+        .map(|a| a.timestamp)
+        .max()
+        .unwrap_or_else(Utc::now);
 
     TaskAnalysis {
         title,
@@ -298,7 +334,7 @@ pub enum ClusteringMethod {
 }
 
 pub struct TaskIdentifier {
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
     min_activities_per_task: usize,
     #[allow(dead_code)]
     dedup_threshold: f32,
@@ -306,7 +342,7 @@ pub struct TaskIdentifier {
 
 impl TaskIdentifier {
     pub fn new(
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
         min_activities_per_task: usize,
         dedup_threshold: f32,
     ) -> Self {
@@ -364,12 +400,8 @@ impl TaskIdentifier {
 
         let mut all_chunks = Vec::new();
         for group in project_groups.into_values() {
-            let chunks = self.cluster_project_group(
-                &group,
-                similarity_threshold,
-                min_per_chunk,
-                method,
-            );
+            let chunks =
+                self.cluster_project_group(&group, similarity_threshold, min_per_chunk, method);
             all_chunks.extend(chunks);
         }
         all_chunks
@@ -414,7 +446,10 @@ impl TaskIdentifier {
             if label == -1 {
                 noise.push(embedded[idx].clone());
             } else {
-                clusters.entry(label).or_default().push(embedded[idx].clone());
+                clusters
+                    .entry(label)
+                    .or_default()
+                    .push(embedded[idx].clone());
             }
         }
 
@@ -569,7 +604,10 @@ fn build_task_from_analysis(activities: &[Event], analysis: TaskAnalysis) -> Tas
         .collect();
 
     // Mean embedding across activities
-    let embeddings: Vec<&Vec<f32>> = activities.iter().filter_map(|a| a.embedding.as_ref()).collect();
+    let embeddings: Vec<&Vec<f32>> = activities
+        .iter()
+        .filter_map(|a| a.embedding.as_ref())
+        .collect();
     let mean_embedding = if embeddings.is_empty() {
         None
     } else {
@@ -634,7 +672,7 @@ impl DailyCompactor {
     pub fn new(
         vector_store: Arc<VectorStore>,
         task_store: Arc<TaskStore>,
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
         cfg: &Config,
     ) -> Self {
         let task_identifier = TaskIdentifier::new(
@@ -661,17 +699,23 @@ impl DailyCompactor {
     ) -> Result<serde_json::Value> {
         let today = Utc::now().date_naive();
         if target_date >= today {
-            return Ok(serde_json::json!({"skipped": true, "reason": "cannot_compact_today_or_future"}));
+            return Ok(
+                serde_json::json!({"skipped": true, "reason": "cannot_compact_today_or_future"}),
+            );
         }
 
         let date_str = target_date.format("%Y-%m-%d").to_string();
         let mut state = load_state(&self.data_dir);
 
         if state.compacted_dates.contains(&date_str) && !force {
-            return Ok(serde_json::json!({"skipped": true, "reason": "already_compacted", "date": date_str}));
+            return Ok(
+                serde_json::json!({"skipped": true, "reason": "already_compacted", "date": date_str}),
+            );
         }
 
-        let events = self.vector_store.get_uncompacted_events_by_date(&date_str)?;
+        let events = self
+            .vector_store
+            .get_uncompacted_events_by_date(&date_str)?;
         tracing::info!(date = %date_str, events = events.len(), "compacting day");
 
         if events.is_empty() {
@@ -693,12 +737,7 @@ impl DailyCompactor {
 
         let tasks = self
             .task_identifier
-            .identify_tasks_from_activities(
-                deduped.clone(),
-                0.7,
-                30,
-                ClusteringMethod::Hdbscan,
-            )
+            .identify_tasks_from_activities(deduped.clone(), 0.7, 30, ClusteringMethod::Hdbscan)
             .await;
 
         tracing::info!(date = %date_str, tasks = tasks.len(), "identified tasks");
@@ -809,7 +848,11 @@ fn dedup_by_content(events: Vec<Event>) -> Vec<Event> {
             EventType::Terminal => {
                 let cmd = serde_json::from_str::<serde_json::Value>(&event.raw_content)
                     .ok()
-                    .and_then(|d| d.get("command").and_then(|v| v.as_str()).map(|s| s.to_owned()))
+                    .and_then(|d| {
+                        d.get("command")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_owned())
+                    })
                     .unwrap_or_else(|| event.raw_content.clone());
                 Some(format!("terminal:{cmd}"))
             }
@@ -821,8 +864,16 @@ fn dedup_by_content(events: Vec<Event>) -> Vec<Event> {
                 Some(format!("browser:{url}"))
             }
             EventType::Window | EventType::Screen => {
-                let app = event.metadata.get("app_name").and_then(|v| v.as_str()).unwrap_or("");
-                let title = event.metadata.get("window_title").and_then(|v| v.as_str()).unwrap_or("");
+                let app = event
+                    .metadata
+                    .get("app_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let title = event
+                    .metadata
+                    .get("window_title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 Some(format!("{}:{}:{}", event.event_type, app, title))
             }
             _ => None,
@@ -893,14 +944,23 @@ fn split_oversized_chunks(chunks: Vec<Vec<Event>>, max_size: usize) -> Vec<Vec<E
 }
 
 fn mode_string(vals: &[String]) -> Option<String> {
-    if vals.is_empty() { return None; }
+    if vals.is_empty() {
+        return None;
+    }
     let mut counts: HashMap<&str, usize> = HashMap::new();
-    for v in vals { *counts.entry(v.as_str()).or_insert(0) += 1; }
-    counts.into_iter().max_by_key(|(_, c)| *c).map(|(k, _)| k.to_owned())
+    for v in vals {
+        *counts.entry(v.as_str()).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(k, _)| k.to_owned())
 }
 
 fn mode_category(cats: &[Category]) -> Option<Category> {
-    if cats.is_empty() { return None; }
+    if cats.is_empty() {
+        return None;
+    }
     let strings: Vec<String> = cats.iter().map(|c| c.to_string()).collect();
     mode_string(&strings).and_then(|s| s.parse().ok())
 }

@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore},
+    db::{store::VectorStore, Db},
 };
 use anyhow::Result;
 use chrono::{Duration, Local, NaiveDate, TimeZone, Timelike, Utc};
@@ -89,7 +89,11 @@ pub async fn run(args: PatternsArgs, cfg: Config) -> Result<()> {
     } else {
         total as f64 / by_day.len() as f64
     };
-    println!("\nActive days: {}  |  Avg events/day: {:.0}", by_day.len(), avg);
+    println!(
+        "\nActive days: {}  |  Avg events/day: {:.0}",
+        by_day.len(),
+        avg
+    );
 
     Ok(())
 }

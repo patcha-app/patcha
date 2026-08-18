@@ -93,7 +93,6 @@ impl TaskStore {
             row_to_task,
         )
         .optional()
-        .map_err(Into::into)
     }
 
     pub fn get_tasks_by_date(&self, date: NaiveDate) -> Result<Vec<Task>> {
@@ -114,11 +113,7 @@ impl TaskStore {
         Ok(tasks)
     }
 
-    pub fn get_tasks_by_date_range(
-        &self,
-        start: NaiveDate,
-        end: NaiveDate,
-    ) -> Result<Vec<Task>> {
+    pub fn get_tasks_by_date_range(&self, start: NaiveDate, end: NaiveDate) -> Result<Vec<Task>> {
         let conn = self.db.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, title, description, status, priority, category, project,
@@ -264,7 +259,12 @@ impl TaskStore {
             "SELECT category, COUNT(*) FROM tasks WHERE date(start_time) >= ?1 GROUP BY category ORDER BY 2 DESC",
         )?;
         let categories: Vec<(String, i64)> = cat_stmt
-            .query_map(params![since], |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?)))?
+            .query_map(params![since], |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                    r.get(1)?,
+                ))
+            })?
             .collect::<std::result::Result<_, _>>()?;
 
         Ok(serde_json::json!({

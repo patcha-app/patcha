@@ -27,7 +27,9 @@ struct Opts {
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let dir = args.next().ok_or_else(|| anyhow!("usage: <model_dir> <image> [ocr_bin]"))?;
+    let dir = args
+        .next()
+        .ok_or_else(|| anyhow!("usage: <model_dir> <image> [ocr_bin]"))?;
     let image_path = args.next().ok_or_else(|| anyhow!("missing image"))?;
     let ocr_bin = args
         .next()
@@ -36,7 +38,8 @@ fn main() -> Result<()> {
     let app = "Zed";
     let window = "patcha";
 
-    let tokenizer = Tokenizer::from_file(format!("{dir}/tokenizer.json")).map_err(|e| anyhow!("{e}"))?;
+    let tokenizer =
+        Tokenizer::from_file(format!("{dir}/tokenizer.json")).map_err(|e| anyhow!("{e}"))?;
     let build = || Session::builder()?.with_optimization_level(GraphOptimizationLevel::Disable);
     let vision = build()?.commit_from_file(format!("{dir}/onnx/vision_encoder_q4f16.onnx"))?;
     let embed = build()?.commit_from_file(format!("{dir}/onnx/embed_tokens_q4f16.onnx"))?;
@@ -44,16 +47,45 @@ fn main() -> Result<()> {
 
     let ocr = ocr_snippet(&ocr_bin, &image_path).ok();
     if let Some(o) = &ocr {
-        eprintln!("OCR snippet ({} chars): {}…\n", o.len(), &o[..o.len().min(160)]);
+        eprintln!(
+            "OCR snippet ({} chars): {}…\n",
+            o.len(),
+            &o[..o.len().min(160)]
+        );
     }
 
-    let v1 = Opts { pad: false, max_new: 40, detailed: false, ocr: None };
-    let v2 = Opts { pad: true, max_new: 100, detailed: true, ocr: ocr.clone() };
+    let v1 = Opts {
+        pad: false,
+        max_new: 40,
+        detailed: false,
+        ocr: None,
+    };
+    let v2 = Opts {
+        pad: true,
+        max_new: 100,
+        detailed: true,
+        ocr: ocr.clone(),
+    };
 
-    for (label, opts) in [("V1 OLD (crop, terse, no OCR)", v1), ("V2 NEW (pad, OCR, detailed)", v2)] {
+    for (label, opts) in [
+        ("V1 OLD (crop, terse, no OCR)", v1),
+        ("V2 NEW (pad, OCR, detailed)", v2),
+    ] {
         let t = Instant::now();
-        let gist = caption(&vision, &embed, &decoder, &tokenizer, &image_path, app, window, &opts)?;
-        println!("\n=== {label} | {:.1}s ===\n{gist}", t.elapsed().as_secs_f32());
+        let gist = caption(
+            &vision,
+            &embed,
+            &decoder,
+            &tokenizer,
+            &image_path,
+            app,
+            window,
+            &opts,
+        )?;
+        println!(
+            "\n=== {label} | {:.1}s ===\n{gist}",
+            t.elapsed().as_secs_f32()
+        );
     }
     Ok(())
 }
@@ -72,11 +104,20 @@ fn ocr_snippet(ocr_bin: &str, image: &str) -> Result<String> {
         })
         .collect();
     // Top-to-bottom (y is bottom-left origin, so descending), then left-to-right.
-    items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
-    let text: String = items.iter().map(|(_, _, t)| t.as_str()).collect::<Vec<_>>().join(" ");
+    items.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
+    let text: String = items
+        .iter()
+        .map(|(_, _, t)| t.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
     Ok(text.chars().take(600).collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn caption(
     vision: &Session,
     embed: &Session,
@@ -100,7 +141,8 @@ fn caption(
              In one sentence, describe what the user is doing."
         )
     };
-    let before = "<|im_start|>system\nYou are observing a user's screen.<|im_end|>\n<|im_start|>user\n";
+    let before =
+        "<|im_start|>system\nYou are observing a user's screen.<|im_end|>\n<|im_start|>user\n";
     let after = format!("\n{prompt}<|im_end|>\n<|im_start|>assistant\n");
 
     // Vision.
@@ -114,7 +156,10 @@ fn caption(
     let after_ids = encode(tokenizer, &after)?;
     let e_before = run_embed(embed, &before_ids)?;
     let e_after = run_embed(embed, &after_ids)?;
-    let mut embeds = ndarray::concatenate(Axis(1), &[e_before.view(), image_features.view(), e_after.view()])?;
+    let mut embeds = ndarray::concatenate(
+        Axis(1),
+        &[e_before.view(), image_features.view(), e_after.view()],
+    )?;
 
     let mut past = empty_kv()?;
     let mut past_len = 0usize;
@@ -127,41 +172,69 @@ fn caption(
         let pos: Vec<i64> = (past_len as i64..total as i64).collect();
         let embeds_t = Tensor::from_array((
             [1, cur_seq, HIDDEN],
-            embeds.as_standard_layout().iter().copied().collect::<Vec<f32>>(),
+            embeds
+                .as_standard_layout()
+                .iter()
+                .copied()
+                .collect::<Vec<f32>>(),
         ))?;
         let mut inputs: Vec<(String, Value)> = vec![
             ("inputs_embeds".into(), embeds_t.into_dyn()),
-            ("attention_mask".into(), Tensor::from_array(([1, total], attn))?.into_dyn()),
-            ("position_ids".into(), Tensor::from_array(([1, cur_seq], pos))?.into_dyn()),
+            (
+                "attention_mask".into(),
+                Tensor::from_array(([1, total], attn))?.into_dyn(),
+            ),
+            (
+                "position_ids".into(),
+                Tensor::from_array(([1, cur_seq], pos))?.into_dyn(),
+            ),
         ];
-        inputs.extend(past.drain(..));
+        inputs.append(&mut past);
         let outputs = decoder.run(inputs)?;
         let (lshape, logits) = outputs["logits"].try_extract_raw_tensor::<f32>()?;
         let vocab = lshape[2] as usize;
         let last = (lshape[1] as usize - 1) * vocab;
         let next = logits[last..last + vocab]
-            .iter().enumerate()
+            .iter()
+            .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i as i64).unwrap();
-        if next == EOS { break; }
+            .map(|(i, _)| i as i64)
+            .unwrap();
+        if next == EOS {
+            break;
+        }
         generated.push(next as u32);
         past_len = total;
         let mut new_past: Vec<(String, Value)> = Vec::with_capacity(N_LAYERS * 2);
         for i in 0..N_LAYERS {
             for which in ["key", "value"] {
-                let (sh, d) = outputs[format!("present.{i}.{which}").as_str()].try_extract_raw_tensor::<f32>()?;
+                let (sh, d) = outputs[format!("present.{i}.{which}").as_str()]
+                    .try_extract_raw_tensor::<f32>()?;
                 let dims: Vec<usize> = sh.iter().map(|&x| x as usize).collect();
-                new_past.push((format!("past_key_values.{i}.{which}"), Tensor::from_array((dims, d.to_vec()))?.into_dyn()));
+                new_past.push((
+                    format!("past_key_values.{i}.{which}"),
+                    Tensor::from_array((dims, d.to_vec()))?.into_dyn(),
+                ));
             }
         }
         past = new_past;
         embeds = run_embed(embed, &[next])?;
     }
-    Ok(tokenizer.decode(&generated, true).map_err(|e| anyhow!("{e}"))?.trim().to_string())
+    Ok(tokenizer
+        .decode(&generated, true)
+        .map_err(|e| anyhow!("{e}"))?
+        .trim()
+        .to_string())
 }
 
 fn encode(tok: &Tokenizer, text: &str) -> Result<Vec<i64>> {
-    Ok(tok.encode(text, false).map_err(|e| anyhow!("{e}"))?.get_ids().iter().map(|&x| x as i64).collect())
+    Ok(tok
+        .encode(text, false)
+        .map_err(|e| anyhow!("{e}"))?
+        .get_ids()
+        .iter()
+        .map(|&x| x as i64)
+        .collect())
 }
 
 // pad=true: letterbox the whole image into 1024² (preserves the full screen).
@@ -211,7 +284,10 @@ fn run_embed(embed: &Session, ids: &[i64]) -> Result<Array3<f32>> {
     let input = Tensor::from_array(([1, ids.len()], ids.to_vec()))?;
     let outputs = embed.run(ort::inputs![ "input_ids" => input ]?)?;
     let (shape, data) = outputs["inputs_embeds"].try_extract_raw_tensor::<f32>()?;
-    Ok(Array3::from_shape_vec((1, shape[1] as usize, HIDDEN), data.to_vec())?)
+    Ok(Array3::from_shape_vec(
+        (1, shape[1] as usize, HIDDEN),
+        data.to_vec(),
+    )?)
 }
 
 fn empty_kv() -> Result<Vec<(String, Value)>> {
@@ -219,7 +295,10 @@ fn empty_kv() -> Result<Vec<(String, Value)>> {
     for i in 0..N_LAYERS {
         for which in ["key", "value"] {
             let a = Array4::<f32>::from_shape_vec((1, KV_HEADS, 0, HEAD_DIM), Vec::new())?;
-            kv.push((format!("past_key_values.{i}.{which}"), Tensor::from_array(a)?.into_dyn()));
+            kv.push((
+                format!("past_key_values.{i}.{which}"),
+                Tensor::from_array(a)?.into_dyn(),
+            ));
         }
     }
     Ok(kv)

@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
-    db::{Db, store::VectorStore},
-    llm::client::PatchaApiClient,
+    db::{store::VectorStore, Db},
+    llm::backend,
     summary::DailySummarizer,
 };
 use anyhow::Result;
@@ -28,7 +28,7 @@ pub async fn run(args: ReviewArgs, cfg: Config) -> Result<()> {
 
     let db = Db::open(&cfg.db_path)?;
     let store = Arc::new(VectorStore::new(db));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let summarizer = DailySummarizer::new(store, llm_client, &cfg.data_dir);
 
     println!("Review: {} to {}\n", start_date, end_date);

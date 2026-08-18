@@ -8,25 +8,21 @@ use std::{
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use tokio::{
-    signal::unix::{SignalKind, signal},
+    signal::unix::{signal, SignalKind},
     time::interval,
 };
 
 use crate::{
     collectors::{
-        accessibility::AccessibilityCollector,
-        browser::BrowserCollector,
-        git::GitCollector,
-        guard::CollectorGuard,
-        terminal::TerminalCollector,
-        window::WindowCollector,
+        accessibility::AccessibilityCollector, browser::BrowserCollector, git::GitCollector,
+        guard::CollectorGuard, terminal::TerminalCollector, window::WindowCollector,
     },
     compaction::DailyCompactor,
     config::Config,
-    db::{Db, activity_graph::ActivityGraph, store::VectorStore, tasks::TaskStore},
+    db::{activity_graph::ActivityGraph, store::VectorStore, tasks::TaskStore, Db},
     embedding::Embedder,
     hourly::HourlySummarizer,
-    llm::client::PatchaApiClient,
+    llm::backend,
     models::Event,
     process::EventPreprocessor,
 };
@@ -150,13 +146,16 @@ pub async fn start(cfg: Config) -> Result<()> {
     let store = Arc::new(VectorStore::new(db.clone()));
     let task_store = Arc::new(TaskStore::new(db.clone(), cfg.data_dir.clone()));
     let graph: Option<Arc<ActivityGraph>> = if cfg.enable_activity_graph {
-        Some(Arc::new(ActivityGraph::new(db.clone(), cfg.session_gap_seconds)))
+        Some(Arc::new(ActivityGraph::new(
+            db.clone(),
+            cfg.session_gap_seconds,
+        )))
     } else {
         None
     };
     let embedder = Arc::new(Embedder::new(&cfg)?);
     let preprocessor = EventPreprocessor::new(&cfg, Arc::clone(&embedder));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let compactor = DailyCompactor::new(
         Arc::clone(&store),
         Arc::clone(&task_store),
@@ -214,8 +213,8 @@ pub async fn start(cfg: Config) -> Result<()> {
     // -----------------------------------------------------------------------
     if let Some(ax_arc) = ax.as_ref().cloned() {
         let observer_bin = res_dir.join("observer");
-        let use_triggers = cfg.enable_event_triggers
-            && crate::triggers::ObserverHandle::available(&observer_bin);
+        let use_triggers =
+            cfg.enable_event_triggers && crate::triggers::ObserverHandle::available(&observer_bin);
 
         if use_triggers {
             let coord_cfg = crate::triggers::coordinator::CoordinatorConfig {
@@ -301,26 +300,44 @@ pub async fn start(cfg: Config) -> Result<()> {
             }
 
             // Git commits + staged events
-            collect_source("git", &git, &mut guards, |g: &mut GitCollector| {
-                let mut ev = g.collect_commits(Some(since));
-                ev.extend(g.collect_staging_events(since));
-                ev
-            }, &mut events);
+            collect_source(
+                "git",
+                &git,
+                &mut guards,
+                |g: &mut GitCollector| {
+                    let mut ev = g.collect_commits(Some(since));
+                    ev.extend(g.collect_staging_events(since));
+                    ev
+                },
+                &mut events,
+            );
 
             // Browser
-            collect_source("browser", &browser, &mut guards, |b: &mut BrowserCollector| {
-                b.collect_all(Some(since))
-            }, &mut events);
+            collect_source(
+                "browser",
+                &browser,
+                &mut guards,
+                |b: &mut BrowserCollector| b.collect_all(Some(since)),
+                &mut events,
+            );
 
             // Terminal
-            collect_source("terminal", &terminal, &mut guards, |t: &mut TerminalCollector| {
-                t.collect_all(Some(since))
-            }, &mut events);
+            collect_source(
+                "terminal",
+                &terminal,
+                &mut guards,
+                |t: &mut TerminalCollector| t.collect_all(Some(since)),
+                &mut events,
+            );
 
             // Window sessions
-            collect_source("window", &window, &mut guards, |w: &mut WindowCollector| {
-                w.collect_windows(since)
-            }, &mut events);
+            collect_source(
+                "window",
+                &window,
+                &mut guards,
+                |w: &mut WindowCollector| w.collect_windows(since),
+                &mut events,
+            );
 
             // Accessibility (collect already-recorded entries)
             if let Some(ax_arc) = &ax {
@@ -352,8 +369,8 @@ pub async fn start(cfg: Config) -> Result<()> {
         // -----------------------------------------------------------------------
         // Embed + process
         // -----------------------------------------------------------------------
-        let pending = tokio::task::block_in_place(|| preprocessor.process_pending())
-            .unwrap_or_default();
+        let pending =
+            tokio::task::block_in_place(|| preprocessor.process_pending()).unwrap_or_default();
         let processed = tokio::task::block_in_place(|| preprocessor.process_events(all_events));
 
         // -----------------------------------------------------------------------

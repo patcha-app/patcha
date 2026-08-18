@@ -1,6 +1,4 @@
-use crate::{
-    models::{Event, EventType},
-};
+use crate::models::{Event, EventType};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::io::Write;
@@ -50,7 +48,7 @@ impl WindowCollector {
         writeln!(f, "{}", entry)?;
 
         self.write_count += 1;
-        if self.write_count % TRIM_EVERY == 0 {
+        if self.write_count.is_multiple_of(TRIM_EVERY) {
             trim_jsonl(&self.log_file, MAX_LOG_ROWS)?;
         }
 
@@ -142,8 +140,16 @@ impl WindowCollector {
             if ts < since {
                 continue;
             }
-            let app = obj.get("app").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-            let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+            let app = obj
+                .get("app")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            let title = obj
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
             entries.push((ts, app, title));
         }
 
@@ -164,8 +170,12 @@ fn make_window_event(
     e.timestamp = timestamp;
     e.source = Some("window".to_owned());
     e.metadata.insert("app_name".into(), serde_json::json!(app));
-    e.metadata.insert("window_title".into(), serde_json::json!(title));
-    e.metadata.insert("duration_seconds".into(), serde_json::json!(duration_seconds));
+    e.metadata
+        .insert("window_title".into(), serde_json::json!(title));
+    e.metadata.insert(
+        "duration_seconds".into(),
+        serde_json::json!(duration_seconds),
+    );
     e
 }
 

@@ -70,6 +70,10 @@ pub struct Config {
     pub patcha_api_url: String,
     pub patcha_access_token: String,
     pub patcha_refresh_token: String,
+
+    // LLM backend for background AI features: "auto" | "api" | "claude".
+    // "auto" uses the local claude CLI when there is no access token.
+    pub llm_backend: String,
 }
 
 impl Default for Config {
@@ -83,7 +87,8 @@ impl Default for Config {
             vector_size: 768,
             embedding_model_name: "BAAI/bge-base-en-v1.5".into(),
             embedding_cache_dir: base.join("models"),
-            query_instruction_prefix: "Represent this sentence for searching relevant passages: ".into(),
+            query_instruction_prefix: "Represent this sentence for searching relevant passages: "
+                .into(),
             max_events_per_day: 10_000,
             max_embedding_tokens: 8191,
             embedding_chunk_overlap: 100,
@@ -119,6 +124,7 @@ impl Default for Config {
             patcha_api_url: "https://api.patcha.app".into(),
             patcha_access_token: String::new(),
             patcha_refresh_token: String::new(),
+            llm_backend: "auto".into(),
         }
     }
 }
@@ -183,22 +189,26 @@ impl Config {
         let data_dir = env_path("DATA_DIR", base.join("data"));
 
         // Read tokens from their dedicated files if env vars are empty
-        let access_token = std::env::var("PATCHA_ACCESS_TOKEN").unwrap_or_default().or_else_if_empty(|| {
-            std::fs::read_to_string(base.join("access_token"))
-                .map(|s| s.trim().to_owned())
-                .unwrap_or_default()
-        });
+        let access_token = std::env::var("PATCHA_ACCESS_TOKEN")
+            .unwrap_or_default()
+            .or_else_if_empty(|| {
+                std::fs::read_to_string(base.join("access_token"))
+                    .map(|s| s.trim().to_owned())
+                    .unwrap_or_default()
+            });
 
-        let refresh_token = std::env::var("PATCHA_REFRESH_TOKEN").unwrap_or_default().or_else_if_empty(|| {
-            std::fs::read_to_string(base.join(".env"))
-                .ok()
-                .and_then(|s| {
-                    s.lines()
-                        .find(|l| l.starts_with("PATCHA_REFRESH_TOKEN="))
-                        .map(|l| l.splitn(2, '=').nth(1).unwrap_or("").to_owned())
-                })
-                .unwrap_or_default()
-        });
+        let refresh_token = std::env::var("PATCHA_REFRESH_TOKEN")
+            .unwrap_or_default()
+            .or_else_if_empty(|| {
+                std::fs::read_to_string(base.join(".env"))
+                    .ok()
+                    .and_then(|s| {
+                        s.lines()
+                            .find(|l| l.starts_with("PATCHA_REFRESH_TOKEN="))
+                            .map(|l| l.split_once('=').map(|x| x.1).unwrap_or("").to_owned())
+                    })
+                    .unwrap_or_default()
+            });
 
         Ok(Self {
             data_dir: data_dir.clone(),
@@ -247,6 +257,7 @@ impl Config {
             patcha_api_url: env_str("PATCHA_API_URL", "https://api.patcha.app"),
             patcha_access_token: access_token,
             patcha_refresh_token: refresh_token,
+            llm_backend: env_str("PATCHA_LLM_BACKEND", "auto"),
         })
     }
 }
@@ -258,6 +269,10 @@ trait OrElseIfEmpty {
 
 impl OrElseIfEmpty for String {
     fn or_else_if_empty(self, f: impl FnOnce() -> String) -> String {
-        if self.is_empty() { f() } else { self }
+        if self.is_empty() {
+            f()
+        } else {
+            self
+        }
     }
 }

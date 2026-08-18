@@ -112,8 +112,14 @@ impl CrossEncoderReranker {
             let mask: Vec<i64> = enc.get_attention_mask().iter().map(|&x| x as i64).collect();
 
             let mut inputs: Vec<(String, Value)> = vec![
-                ("input_ids".into(), Tensor::from_array(([1, len], ids))?.into_dyn()),
-                ("attention_mask".into(), Tensor::from_array(([1, len], mask))?.into_dyn()),
+                (
+                    "input_ids".into(),
+                    Tensor::from_array(([1, len], ids))?.into_dyn(),
+                ),
+                (
+                    "attention_mask".into(),
+                    Tensor::from_array(([1, len], mask))?.into_dyn(),
+                ),
             ];
             if wants_type_ids {
                 let type_ids: Vec<i64> = enc.get_type_ids().iter().map(|&x| x as i64).collect();

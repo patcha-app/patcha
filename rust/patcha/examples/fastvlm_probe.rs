@@ -25,8 +25,14 @@ fn main() -> ort::Result<()> {
         describe("model", &arg)?;
         return Ok(());
     }
-    describe("vision_encoder", &format!("{arg}/onnx/vision_encoder_q4f16.onnx"))?;
-    describe("embed_tokens", &format!("{arg}/onnx/embed_tokens_q4f16.onnx"))?;
+    describe(
+        "vision_encoder",
+        &format!("{arg}/onnx/vision_encoder_q4f16.onnx"),
+    )?;
+    describe(
+        "embed_tokens",
+        &format!("{arg}/onnx/embed_tokens_q4f16.onnx"),
+    )?;
     describe(
         "decoder_model_merged",
         &format!("{arg}/onnx/decoder_model_merged_q4f16.onnx"),

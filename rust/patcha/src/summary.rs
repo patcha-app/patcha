@@ -1,7 +1,7 @@
 use crate::{
     db::{store::VectorStore, tasks::TaskStore},
-    llm::{client::PatchaApiClient, prompts},
-    models::{Category, DailySummary, DailyTaskSummary, CategorySummary, Task, TaskStatus},
+    llm::{backend::LlmBackend, prompts},
+    models::{Category, CategorySummary, DailySummary, DailyTaskSummary, Task, TaskStatus},
 };
 use anyhow::Result;
 use chrono::{NaiveDate, Utc};
@@ -18,14 +18,14 @@ const MODEL: &str = "gpt-4o-mini";
 
 pub struct DailySummarizer {
     vector_store: Arc<VectorStore>,
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
     summaries_dir: PathBuf,
 }
 
 impl DailySummarizer {
     pub fn new(
         vector_store: Arc<VectorStore>,
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
         data_dir: &Path,
     ) -> Self {
         Self {
@@ -80,10 +80,8 @@ impl DailySummarizer {
         }
 
         // Top categories by count
-        let mut top_cats: Vec<(&String, usize)> = by_category
-            .iter()
-            .map(|(k, v)| (k, v.len()))
-            .collect();
+        let mut top_cats: Vec<(&String, usize)> =
+            by_category.iter().map(|(k, v)| (k, v.len())).collect();
         top_cats.sort_by(|a, b| b.1.cmp(&a.1));
         let top_categories_str = top_cats
             .iter()
@@ -192,7 +190,9 @@ impl DailySummarizer {
             .await
         {
             Ok(resp) => resp,
-            Err(_) => format!("Tracked {total_events} activities. Top categories: {top_categories_str}."),
+            Err(_) => {
+                format!("Tracked {total_events} activities. Top categories: {top_categories_str}.")
+            }
         }
     }
 
@@ -200,11 +200,15 @@ impl DailySummarizer {
         std::fs::create_dir_all(&self.summaries_dir)?;
 
         // JSON
-        let json_path = self.summaries_dir.join(format!("{}_summary.json", summary.date));
+        let json_path = self
+            .summaries_dir
+            .join(format!("{}_summary.json", summary.date));
         std::fs::write(&json_path, serde_json::to_string_pretty(summary)?)?;
 
         // Markdown
-        let md_path = self.summaries_dir.join(format!("{}_summary.md", summary.date));
+        let md_path = self
+            .summaries_dir
+            .join(format!("{}_summary.md", summary.date));
         std::fs::write(&md_path, format_summary_as_markdown(summary))?;
 
         Ok(())
@@ -228,14 +232,14 @@ impl DailySummarizer {
 
 pub struct TaskSummarizer {
     task_store: Arc<TaskStore>,
-    llm_client: Arc<PatchaApiClient>,
+    llm_client: Arc<dyn LlmBackend>,
     summaries_dir: PathBuf,
 }
 
 impl TaskSummarizer {
     pub fn new(
         task_store: Arc<TaskStore>,
-        llm_client: Arc<PatchaApiClient>,
+        llm_client: Arc<dyn LlmBackend>,
         data_dir: &Path,
     ) -> Self {
         Self {
@@ -283,9 +287,7 @@ impl TaskSummarizer {
             .take(5)
             .collect();
 
-        let overall = self
-            .generate_task_based_overview(date, &tasks)
-            .await;
+        let overall = self.generate_task_based_overview(date, &tasks).await;
 
         Ok(DailyTaskSummary {
             date: date.format("%Y-%m-%d").to_string(),
@@ -318,7 +320,10 @@ impl TaskSummarizer {
         }
 
         let total = tasks.len();
-        let completed = tasks.iter().filter(|t| t.status == TaskStatus::Completed).count();
+        let completed = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .count();
         let total_minutes: f64 = tasks.iter().filter_map(|t| t.duration_minutes).sum();
 
         // Build task summary list, sorted by duration
@@ -394,14 +399,21 @@ impl TaskSummarizer {
         let tasks = self.task_store.get_tasks_by_date_range(start, end)?;
 
         let total = tasks.len();
-        let completed = tasks.iter().filter(|t| t.status == TaskStatus::Completed).count();
+        let completed = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .count();
         let total_hours: f64 = tasks.iter().filter_map(|t| t.duration_minutes).sum::<f64>() / 60.0;
 
         let mut by_project: HashMap<String, usize> = HashMap::new();
         let mut by_category: HashMap<String, usize> = HashMap::new();
         for task in &tasks {
-            if let Some(p) = &task.project { *by_project.entry(p.clone()).or_insert(0) += 1; }
-            if let Some(c) = &task.category { *by_category.entry(c.to_string()).or_insert(0) += 1; }
+            if let Some(p) = &task.project {
+                *by_project.entry(p.clone()).or_insert(0) += 1;
+            }
+            if let Some(c) = &task.category {
+                *by_category.entry(c.to_string()).or_insert(0) += 1;
+            }
         }
 
         Ok(serde_json::json!({
@@ -440,12 +452,21 @@ impl TaskSummarizer {
         self.llm_client
             .chat_completion(&system, &prompt, MODEL)
             .await
-            .unwrap_or_else(|_| format!("{} — {}", task.title, task.description.as_deref().unwrap_or("")))
+            .unwrap_or_else(|_| {
+                format!(
+                    "{} — {}",
+                    task.title,
+                    task.description.as_deref().unwrap_or("")
+                )
+            })
     }
 
     async fn generate_task_based_overview(&self, date: NaiveDate, tasks: &[Task]) -> String {
         let total = tasks.len();
-        let completed = tasks.iter().filter(|t| t.status == TaskStatus::Completed).count();
+        let completed = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Completed)
+            .count();
         let total_hours: f64 = tasks.iter().filter_map(|t| t.duration_minutes).sum::<f64>() / 60.0;
         let top_titles: Vec<&str> = tasks.iter().take(5).map(|t| t.title.as_str()).collect();
         let projects: Vec<String> = tasks
@@ -470,14 +491,20 @@ impl TaskSummarizer {
             .unwrap_or_else(|_| {
                 format!(
                     "{} — {} tasks, {}/{} completed, {:.1}h total.",
-                    date.format("%B %d, %Y"), total, completed, total, total_hours
+                    date.format("%B %d, %Y"),
+                    total,
+                    completed,
+                    total,
+                    total_hours
                 )
             })
     }
 
     pub fn save_summary(&self, date: NaiveDate, data: &serde_json::Value) -> Result<()> {
         std::fs::create_dir_all(&self.summaries_dir)?;
-        let path = self.summaries_dir.join(format!("{}_task_summary.json", date.format("%Y-%m-%d")));
+        let path = self
+            .summaries_dir
+            .join(format!("{}_task_summary.json", date.format("%Y-%m-%d")));
         std::fs::write(path, serde_json::to_string_pretty(data)?)?;
         Ok(())
     }

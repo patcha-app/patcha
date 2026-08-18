@@ -33,8 +33,7 @@ impl Embedder {
             .with_cache_dir(cfg.embedding_cache_dir.clone())
             .with_show_download_progress(true);
 
-        let model = TextEmbedding::try_new(init_opts)
-            .context("failed to load fastembed model")?;
+        let model = TextEmbedding::try_new(init_opts).context("failed to load fastembed model")?;
 
         let native_limit = MODEL_MAX_TOKENS
             .iter()
@@ -59,7 +58,9 @@ impl Embedder {
     /// Use this for stored content and document-to-document similarity — it does
     /// NOT apply the query instruction prefix.
     pub fn embed_one(&self, text: &str) -> Result<Vec<f32>> {
-        let mut results = self.model.embed(vec![text.to_owned()], None)
+        let mut results = self
+            .model
+            .embed(vec![text.to_owned()], None)
             .context("fastembed embed_one failed")?;
         Ok(results.remove(0))
     }
@@ -68,14 +69,18 @@ impl Embedder {
     /// query lands in the same region of vector space as the matching documents.
     pub fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
         let prefixed = format!("{}{}", self.query_prefix, query);
-        let mut results = self.model.embed(vec![prefixed], None)
+        let mut results = self
+            .model
+            .embed(vec![prefixed], None)
             .context("fastembed embed_query failed")?;
         Ok(results.remove(0))
     }
 
     /// Embed a batch of texts. The returned Vec has the same length as `texts`.
     pub fn embed_many(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
-        self.model.embed(texts, None).context("fastembed embed_many failed")
+        self.model
+            .embed(texts, None)
+            .context("fastembed embed_many failed")
     }
 }
 
@@ -152,7 +157,11 @@ mod tests {
         // Build a text that's clearly longer than 10 tokens
         let text = "one two three four five six seven eight nine ten eleven twelve ".repeat(3);
         let chunks = chunk_text(&text, 10, 2).unwrap();
-        assert!(chunks.len() > 1, "expected multiple chunks, got {}", chunks.len());
+        assert!(
+            chunks.len() > 1,
+            "expected multiple chunks, got {}",
+            chunks.len()
+        );
         // Each chunk (when tokenised) should be at most max_tokens
         let bpe = tiktoken_rs::cl100k_base().unwrap();
         for chunk in &chunks {

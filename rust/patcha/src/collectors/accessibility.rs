@@ -19,9 +19,20 @@ const CAPTIONER_TAG: &str = "fastvlm_0.5b";
 
 // Apps skipped during screen capture
 const SKIP_APPS: &[&str] = &[
-    "Finder", "System Preferences", "System Settings", "loginwindow",
-    "Dock", "", "1Password", "1Password 7 - Password Manager", "Bitwarden",
-    "LastPass", "Dashlane", "Keychain Access", "KeePassXC", "NordPass",
+    "Finder",
+    "System Preferences",
+    "System Settings",
+    "loginwindow",
+    "Dock",
+    "",
+    "1Password",
+    "1Password 7 - Password Manager",
+    "Bitwarden",
+    "LastPass",
+    "Dashlane",
+    "Keychain Access",
+    "KeePassXC",
+    "NordPass",
 ];
 
 pub struct AccessibilityCollector {
@@ -241,7 +252,10 @@ impl AccessibilityCollector {
                 .or_else(|| obj.get("app"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let window_title = obj.get("window_title").and_then(|v| v.as_str()).unwrap_or("");
+            let window_title = obj
+                .get("window_title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
 
             if is_banking_domain(app) || is_incognito_window(window_title) {
                 continue;
@@ -256,10 +270,15 @@ impl AccessibilityCollector {
             let mut e = Event::new(EventType::Screen, raw_content);
             e.timestamp = ts;
             e.source = Some("accessibility".to_owned());
-            e.source_doc_id = obj.get("source_doc_id").and_then(|v| v.as_str()).map(|s| s.to_owned());
+            e.source_doc_id = obj
+                .get("source_doc_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_owned());
             e.metadata.insert("app_name".into(), serde_json::json!(app));
-            e.metadata.insert("window_title".into(), serde_json::json!(window_title));
-            e.metadata.insert("duration_seconds".into(), serde_json::json!(duration));
+            e.metadata
+                .insert("window_title".into(), serde_json::json!(window_title));
+            e.metadata
+                .insert("duration_seconds".into(), serde_json::json!(duration));
             e.metadata.insert(
                 "raw_text_source".into(),
                 obj.get("raw_text_source")
@@ -327,7 +346,8 @@ impl AccessibilityCollector {
 
         // Keep the file alive by moving it to a named path
         let out_path = path.to_path_buf();
-        path.keep().map_err(|e| anyhow::anyhow!("tempfile keep: {e}"))?;
+        path.keep()
+            .map_err(|e| anyhow::anyhow!("tempfile keep: {e}"))?;
         Ok(out_path)
     }
 
@@ -336,9 +356,7 @@ impl AccessibilityCollector {
             return Ok(String::new());
         }
 
-        let out = Command::new(&self.ocr_binary)
-            .arg(image_path)
-            .output()?;
+        let out = Command::new(&self.ocr_binary).arg(image_path).output()?;
 
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
@@ -386,7 +404,7 @@ impl AccessibilityCollector {
         writeln!(f, "{}", entry)?;
 
         self.write_count += 1;
-        if self.write_count % TRIM_EVERY == 0 {
+        if self.write_count.is_multiple_of(TRIM_EVERY) {
             trim_jsonl(&self.log_file, MAX_LOG_ROWS)?;
         }
 

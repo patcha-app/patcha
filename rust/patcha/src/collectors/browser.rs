@@ -19,6 +19,12 @@ pub struct BrowserCollector {
     safari_guard: CollectorGuard,
 }
 
+impl Default for BrowserCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrowserCollector {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_default();
@@ -125,8 +131,8 @@ impl BrowserCollector {
         for row in rows.flatten() {
             let (title, url, last_visit_time, visit_count) = row;
             let unix_us = last_visit_time - CHROME_EPOCH_OFFSET_US;
-            let timestamp = DateTime::from_timestamp(unix_us / 1_000_000, 0)
-                .unwrap_or_else(Utc::now);
+            let timestamp =
+                DateTime::from_timestamp(unix_us / 1_000_000, 0).unwrap_or_else(Utc::now);
 
             let domain = extract_domain(&url);
             if is_banking_domain(&domain) {
@@ -136,7 +142,12 @@ impl BrowserCollector {
             let title = enhance_youtube_title(title.unwrap_or_else(|| "Untitled".into()), &url);
 
             events.push(make_browser_event(
-                timestamp, &title, &url, &domain, browser, visit_count,
+                timestamp,
+                &title,
+                &url,
+                &domain,
+                browser,
+                visit_count,
             ));
         }
 
@@ -161,8 +172,7 @@ impl BrowserCollector {
                     "{} — grant Full Disk Access in System Settings → Privacy & Security",
                     e
                 );
-                self.safari_guard
-                    .fail(&anyhow::anyhow!(msg));
+                self.safari_guard.fail(&anyhow::anyhow!(msg));
                 Vec::new()
             }
         }
@@ -178,16 +188,14 @@ impl BrowserCollector {
 
         let conn = Connection::open(tmp.path())?;
 
-        let since_ts: f64 = since
-            .map(|dt| dt.timestamp() as f64)
-            .unwrap_or_else(|| {
-                Utc::now()
-                    .date_naive()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap()
-                    .and_utc()
-                    .timestamp() as f64
-            });
+        let since_ts: f64 = since.map(|dt| dt.timestamp() as f64).unwrap_or_else(|| {
+            Utc::now()
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp() as f64
+        });
 
         let mut stmt = conn.prepare(
             "SELECT hv.title, hi.url, hv.visit_time
@@ -209,8 +217,7 @@ impl BrowserCollector {
 
         for row in rows.flatten() {
             let (title, url, visit_time) = row;
-            let timestamp =
-                DateTime::from_timestamp(visit_time as i64, 0).unwrap_or_else(Utc::now);
+            let timestamp = DateTime::from_timestamp(visit_time as i64, 0).unwrap_or_else(Utc::now);
 
             let domain = extract_domain(&url);
             if is_banking_domain(&domain) {
@@ -218,7 +225,9 @@ impl BrowserCollector {
             }
 
             let title = enhance_youtube_title(title.unwrap_or_else(|| "Untitled".into()), &url);
-            events.push(make_browser_event(timestamp, &title, &url, &domain, "safari", 1));
+            events.push(make_browser_event(
+                timestamp, &title, &url, &domain, "safari", 1,
+            ));
         }
 
         Ok(events)
@@ -274,8 +283,11 @@ fn make_browser_event(
     let mut e = Event::new(EventType::Browser, raw.to_string());
     e.timestamp = timestamp;
     e.source = Some(browser.to_owned());
-    e.metadata.insert("domain".into(), serde_json::json!(domain));
-    e.metadata.insert("visit_count".into(), serde_json::json!(visit_count));
-    e.metadata.insert("browser".into(), serde_json::json!(browser));
+    e.metadata
+        .insert("domain".into(), serde_json::json!(domain));
+    e.metadata
+        .insert("visit_count".into(), serde_json::json!(visit_count));
+    e.metadata
+        .insert("browser".into(), serde_json::json!(browser));
     e
 }

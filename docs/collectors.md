@@ -1,99 +1,126 @@
 # Collectors
 
-`patcha/collectors/`
+`rust/patcha/src/collectors/`
 
-Collectors are responsible for pulling raw activity data from various sources on the user's machine and converting them into `Event` objects. Each collector is independent and can be polled on its own schedule.
+Collectors pull raw activity data from sources on the user's machine and convert
+them into `Event` objects (`rust/patcha/src/models.rs`). Each collector is
+independent and is polled by the daemon on its own schedule. Toggle each one
+with the `ENABLE_*_COLLECTOR` config variables.
+
+Collectors that read fragile external state (browser databases, git repos) are
+wrapped in a `CollectorGuard`, which disables a source after repeated failures
+so one broken source can't stall the loop. Privacy filters in
+`collectors/filters.rs` drop banking domains and incognito windows before
+anything is stored.
 
 ---
 
-## BrowserCollector (`browser.py`)
+## BrowserCollector (`browser.rs`)
 
 Reads browser history SQLite databases directly from disk.
 
 **Supported browsers:**
 - Chrome — `~/Library/Application Support/Google/Chrome/Default/History`
-- Arc — same Chrome-format SQLite schema
+- Arc — `~/Library/Application Support/Arc/User Data/Default/History` (Chrome-format schema)
 - Safari — `~/Library/Safari/History.db` (different schema: `history_visits` + `history_items` join)
 
 **How it works:**
-- Copies the live database to a `.tmp` file before opening (browsers lock the file)
+- Copies the live database before opening (browsers hold a lock on it), reading via `rusqlite`
 - Queries visits since the provided `since` timestamp
-- Converts Chrome/Arc's microsecond epoch (offset from 1601-01-01) to UTC datetime
-- Enhances YouTube URLs: if the title is empty or just a video ID, it falls back to `YouTube Video (ID: {id})` or prefixes `YouTube: ` to avoid useless entries
+- Converts Chrome/Arc's microsecond Windows-epoch timestamps (offset `11_644_473_600_000_000`) to UTC
+- Drops visits to banking domains (`filters::is_banking_domain`)
 
-Each visit becomes an `Event(type=BROWSER)` with `raw_content` as a JSON-serialized `BrowserActivity` containing `title`, `url`, `domain`, `timestamp`.
+Each visit becomes an `Event(EventType::Browser)` whose `raw_content` carries the
+title, url, and domain.
 
-**Entry point:** `collect_all(since)` — runs all three browsers and returns a merged, timestamp-sorted list.
+**Entry point:** `collect_all(since)` — runs all browsers and returns a merged,
+timestamp-sorted list.
 
 ---
 
-## TerminalCollector (`terminal.py`)
+## TerminalCollector (`terminal.rs`)
 
 Reads shell history files.
 
 **Supported shells:**
-- **zsh** (`~/.zsh_history`) — parses the extended format `: timestamp:0;command`, skips malformed lines
-- **bash** (`~/.bash_history`) — no timestamps; uses file mtime as best estimate, limited to last 10 lines when `since` is provided
-- **fish** (`~/.local/share/fish/fish_history`) — YAML-like format, splits on `- cmd:` then extracts `when:` timestamp
+- **zsh** (`~/.zsh_history`) — parses the extended `: timestamp:0;command` format, skipping malformed lines
+- **bash** (`~/.bash_history`) — no timestamps; uses the file mtime and, for incremental runs, only the last handful of lines
+- **fish** (`~/.local/share/fish/fish_history`) — YAML-like format, split on `- cmd:` with the `when:` timestamp
 
-Each command becomes an `Event(type=TERMINAL)` with `raw_content` as a JSON-serialized `TerminalCommand`.
+Each command becomes an `Event(EventType::Terminal)`.
 
-**Entry point:** `collect_all(since)` — runs all three shells and returns a merged, timestamp-sorted list.
-
----
-
-## GitCollector (`git.py`)
-
-Captures git activity: commits, stashes, and staged file changes.
-
-### Commits (`collect_commits`)
-
-- Auto-discovers git repos: checks current directory first, then scans up to 3 levels deep for `.git` directories
-- Uses `gitpython` to iterate commits since the provided timestamp (or the latest 50 if no timestamp)
-- Filters changed files to known language/config extensions to produce cleaner summaries; falls back to the first 5 files if none match
-- Each commit → `Event(type=GIT_COMMIT)` with a serialized `GitCommit` payload
-
-### Stashes (`collect_stashes`)
-
-- Calls `git stash list` and `git stash show --stat` for each stash entry
-- Each stash → `Event(type=GIT_STASH)` with a serialized `GitStash` payload
-
-### Staging snapshots (`record_staging_snapshot` / `collect_staging_events`)
-
-Tracks when the staged file set changes (i.e. when the user runs `git add` or `git reset`).
-
-- `record_staging_snapshot()` — writes the current staged/unstaged/untracked state for all repos to `data/git_stage_snapshots.jsonl`
-- `collect_staging_events(since)` — reads the snapshot log, compares consecutive snapshots per repo, and emits an `Event(type=GIT_STAGED)` whenever the staged set changes
-
-This is called on a periodic interval by the daemon to detect active staging activity between commits.
+**Entry point:** `collect_all(since)` — runs all three shells and returns a
+merged, timestamp-sorted list.
 
 ---
 
-## AccessibilityCollector (`accessibility.py`)
+## GitCollector (`git.rs`)
 
-Captures on-screen text content using macOS Accessibility APIs and OCR as a fallback.
+Captures git activity: commits, stashes, and staged-file changes, using
+[`git2`](https://docs.rs/git2). It auto-discovers repositories by scanning the
+home directory a few levels deep, skipping large non-code directories
+(`Music`, `Pictures`, `Library`, `Applications`, iCloud, ...).
 
-Requires macOS Accessibility permission for the terminal or patcha process (`System Settings > Privacy & Security > Accessibility`).
+### Commits
+
+Iterates commits since the provided timestamp (or the most recent ones on first
+run). Each commit → `Event(EventType::GitCommit)` with the message and the list
+of changed files.
+
+### Stashes
+
+Reads the stash list and each stash's stat summary → `Event(EventType::GitStash)`.
+
+### Staging snapshots
+
+Tracks when the staged file set changes (i.e. when you run `git add` / `git
+reset`). The collector periodically records the staged/unstaged/untracked state
+to a log under `DATA_DIR`, compares consecutive snapshots per repo, and emits an
+`Event(EventType::GitStaged)` whenever the staged set changes. The log is trimmed
+periodically (`STAGE_MAX_LOG_ROWS`) to stay bounded.
+
+---
+
+## WindowCollector (`window.rs`)
+
+Tracks the active macOS app and window title.
+
+- Runs a compiled Swift helper (`helpers/observer.swift`, resolved from the
+  configured script path) to read the frontmost `app` and window `title`
+- Appends captures to `window_log.jsonl` under `DATA_DIR`, ignoring focus blips
+  shorter than `MIN_DURATION_SECS` (30s)
+- Trims the log (`MAX_LOG_ROWS` = 100,000, every 1,000 writes)
+
+The daemon reads this log to produce `Event(EventType::Window)` objects carrying
+the app name and window title.
+
+---
+
+## AccessibilityCollector (`accessibility.rs`)
+
+Captures on-screen content using macOS Accessibility APIs, with Vision-framework
+OCR as a fallback, and enriches it with on-device perception.
+
+Requires **Accessibility** and **Screen Recording** permission for the terminal
+or `patcha` process.
 
 **How it works:**
-- Compiles two Swift binaries on first run (if not already built): `ax_content.swift` (AX API) and `ocr.swift` (Vision framework OCR)
-- Polls the active app and window on a configurable interval (`settings.poll_interval`)
-- Skips system apps: Finder, System Preferences, Dock, etc.
-- Detects the active frame (focused text field / mouse position) rather than dumping the entire screen
-- When AX text extraction fails (`ocr_needed`), OCR is scoped to the same frame instead of capturing the full screen — `screencapture -R x,y,w,h` crops to the active element with 50 px padding
-- Writes diffs to `data/screen_log.jsonl` — if the new content is >80% different from the last capture it stores the full text (new page), otherwise stores only the diff
-- Trims the log file every 1,000 writes to stay under 100,000 lines
+- Calls compiled Swift helpers (`helpers/ax_content.swift` for the AX tree,
+  `helpers/ocr.swift` for Vision OCR) rather than dumping the whole screen
+- Skips system apps and, importantly, **password managers** (1Password,
+  Bitwarden, LastPass, Dashlane, KeePassXC, NordPass, Keychain Access)
+- Skips incognito/private windows (`filters::is_incognito_window`) and content
+  shorter than `MIN_CONTENT_LEN` (60 chars) or focus shorter than
+  `MIN_DURATION_SECS` (4s)
+- Runs a **visual prefilter** (MobileCLIP, tag `mobileclip_s2`): near-duplicate
+  frames are dropped before any expensive work (see
+  `config.visual_drop_threshold`)
+- Captions the frame with an on-device **FastVLM** model (tag `fastvlm_0.5b`) to
+  produce a short "gist" of what the user was doing, stored in the event
+  metadata and prepended to the embedding text (see
+  [embedding.md](embedding.md))
+- Writes to `screen_log.jsonl` under `DATA_DIR`, trimmed periodically
 
-The daemon reads `screen_log.jsonl` to produce `Event(type=SCREEN)` objects.
-
----
-
-## WindowCollector (`window.py`)
-
-Tracks the active macOS app and window title via AppleScript.
-
-- Runs `osascript window_title.applescript` with a 5-second timeout
-- Script returns `app_name|||window_title` separated by `|||`
-- Appends each capture to `data/window_log.jsonl`
-
-The daemon reads this log to produce `Event(type=WINDOW)` objects with `metadata.app_name` and `metadata.window_title`.
+The daemon reads `screen_log.jsonl` to produce `Event(EventType::Screen)`
+objects. Perception (prefilter + captioner) is controlled by
+`ENABLE_VISUAL_PREFILTER` and `ENABLE_CAPTIONER`.

@@ -52,11 +52,7 @@ impl KnowledgeGraph {
     }
 
     /// Upsert entity by name — returns the canonical id (existing or new).
-    pub fn upsert_entity_by_name(
-        &self,
-        name: &str,
-        entity_type: EntityType,
-    ) -> Result<String> {
+    pub fn upsert_entity_by_name(&self, name: &str, entity_type: EntityType) -> Result<String> {
         let conn = self.db.conn();
         let type_str = format!("{:?}", entity_type).to_lowercase();
 
@@ -138,7 +134,6 @@ impl KnowledgeGraph {
             row_to_entity,
         )
         .optional()
-        .map_err(Into::into)
     }
 
     pub fn get_entity_by_name(&self, name: &str) -> Result<Option<Entity>> {
@@ -150,15 +145,10 @@ impl KnowledgeGraph {
             row_to_entity,
         )
         .optional()
-        .map_err(Into::into)
     }
 
     /// BFS neighbors up to `max_depth` hops.
-    pub fn get_neighbors(
-        &self,
-        entity_id: &str,
-        max_depth: usize,
-    ) -> Result<Vec<Entity>> {
+    pub fn get_neighbors(&self, entity_id: &str, max_depth: usize) -> Result<Vec<Entity>> {
         let mut visited: HashSet<String> = HashSet::new();
         let mut queue: VecDeque<(String, usize)> = VecDeque::new();
         let mut results: Vec<Entity> = Vec::new();

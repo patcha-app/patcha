@@ -10,6 +10,12 @@ pub struct TerminalCollector {
     fish_guard: CollectorGuard,
 }
 
+impl Default for TerminalCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalCollector {
     pub fn new() -> Self {
         Self {

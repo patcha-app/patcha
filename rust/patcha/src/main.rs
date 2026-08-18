@@ -1,10 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use patcha::{cli, config, daemon, mcp};
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser)]
-#[command(name = "patcha", version, about = "Local observability for your computer")]
+#[command(
+    name = "patcha",
+    version,
+    about = "Local observability for your computer"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -25,7 +29,10 @@ enum Commands {
     Collect(cli::collect::CollectArgs),
     #[command(name = "observe", about = "Collect and cluster without LLM")]
     Observe(cli::observe::ObserveArgs),
-    #[command(name = "caption-eval", about = "Run the FastVLM captioner over a folder of screenshots")]
+    #[command(
+        name = "caption-eval",
+        about = "Run the FastVLM captioner over a folder of screenshots"
+    )]
     CaptionEval(cli::caption_eval::CaptionEvalArgs),
 
     // Summarization
@@ -57,7 +64,10 @@ enum Commands {
     CompleteTask(cli::tasks::CompleteTaskArgs),
     #[command(name = "task-stats", about = "Productivity statistics")]
     TaskStats(cli::tasks::TaskStatsArgs),
-    #[command(name = "identify-tasks", about = "Identify tasks from activities for a date")]
+    #[command(
+        name = "identify-tasks",
+        about = "Identify tasks from activities for a date"
+    )]
     IdentifyTasks(cli::tasks::IdentifyTasksArgs),
     #[command(name = "compact-day", about = "Compact raw activities into tasks")]
     CompactDay(cli::compact::CompactDayArgs),
@@ -91,7 +101,10 @@ enum Commands {
     Reembed(cli::maintenance::ReembedArgs),
     #[command(name = "migrate", about = "Migrate data from Qdrant to sqlite-vec")]
     Migrate(cli::maintenance::MigrateArgs),
-    #[command(name = "categorization-analysis", about = "Analyze categorization performance")]
+    #[command(
+        name = "categorization-analysis",
+        about = "Analyze categorization performance"
+    )]
     CategorizationAnalysis(cli::maintenance::CategorizationAnalysisArgs),
 }
 

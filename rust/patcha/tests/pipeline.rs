@@ -27,9 +27,11 @@ use std::sync::Arc;
 /// left at its default (`~/.patcha/models`) so an already-downloaded model is
 /// reused instead of re-fetched.
 fn test_config(tmp: &std::path::Path) -> Config {
-    let mut cfg = Config::default();
-    cfg.data_dir = tmp.join("data");
-    cfg.db_path = tmp.join("patcha.db");
+    let cfg = Config {
+        data_dir: tmp.join("data"),
+        db_path: tmp.join("patcha.db"),
+        ..Config::default()
+    };
     std::fs::create_dir_all(&cfg.data_dir).unwrap();
     cfg
 }
@@ -51,13 +53,21 @@ fn try_embedder(cfg: &Config) -> Option<Arc<Embedder>> {
 
 #[test]
 fn screen_event_embedding_text_prepends_gist() {
-    let mut e = Event::new(EventType::Screen, "Visual Studio Code — main.rs: fn main() {}");
-    e.metadata
-        .insert("gist".into(), serde_json::json!("Editing the Rust entrypoint"));
+    let mut e = Event::new(
+        EventType::Screen,
+        "Visual Studio Code — main.rs: fn main() {}",
+    );
+    e.metadata.insert(
+        "gist".into(),
+        serde_json::json!("Editing the Rust entrypoint"),
+    );
     e.project = Some("patcha".into());
 
     let text = build_embedding_text(&e);
-    assert!(text.starts_with("Editing the Rust entrypoint | "), "got: {text}");
+    assert!(
+        text.starts_with("Editing the Rust entrypoint | "),
+        "got: {text}"
+    );
     assert!(text.contains("fn main"), "got: {text}");
     assert!(text.ends_with("[patcha]"), "project tag missing: {text}");
 }
@@ -74,7 +84,10 @@ fn git_commit_embedding_text_extracts_message_and_files() {
     let e = Event::new(EventType::GitCommit, raw);
 
     let text = build_embedding_text(&e);
-    assert!(text.contains("feat: rust rewrite of the daemon"), "got: {text}");
+    assert!(
+        text.contains("feat: rust rewrite of the daemon"),
+        "got: {text}"
+    );
     assert!(text.contains("src/main.rs"), "got: {text}");
     assert!(text.contains("files:"), "got: {text}");
 }
@@ -118,7 +131,12 @@ fn git_staging_collector_emits_event_for_newly_staged_file() {
     let since = chrono::Utc::now() - chrono::Duration::hours(1);
     let events = collector.collect_staging_events(since);
 
-    assert_eq!(events.len(), 1, "expected one staging event, got {}", events.len());
+    assert_eq!(
+        events.len(),
+        1,
+        "expected one staging event, got {}",
+        events.len()
+    );
     let e = &events[0];
     assert_eq!(e.event_type, EventType::GitStaged);
     assert_eq!(e.project.as_deref(), Some("patcha"));
@@ -168,7 +186,8 @@ fn ocr_to_store_to_search_roundtrip() {
             format!("Visual Studio Code — embedder.rs — patcha: {ocr_text}"),
         );
         e.source = Some("accessibility".into());
-        e.metadata.insert("app_name".into(), serde_json::json!("Visual Studio Code"));
+        e.metadata
+            .insert("app_name".into(), serde_json::json!("Visual Studio Code"));
         e
     };
     let git = {
@@ -190,11 +209,8 @@ fn ocr_to_store_to_search_roundtrip() {
 
     // 3. Embed (real model) and store.
     let preprocessor = EventPreprocessor::new(&cfg, embedder.clone());
-    let processed = preprocessor.process_events(vec![
-        screen.clone(),
-        git.clone(),
-        distractor.clone(),
-    ]);
+    let processed =
+        preprocessor.process_events(vec![screen.clone(), git.clone(), distractor.clone()]);
     assert_eq!(processed.len(), 3, "all events should embed");
     assert!(processed.iter().all(|e| e.embedding.is_some()));
 

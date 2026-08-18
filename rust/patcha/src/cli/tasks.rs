@@ -1,9 +1,9 @@
 use crate::{
     compaction::DailyCompactor,
     config::Config,
-    db::{Db, retrieval::search::TaskAwareSearchService, store::VectorStore, tasks::TaskStore},
+    db::{retrieval::search::TaskAwareSearchService, store::VectorStore, tasks::TaskStore, Db},
     embedding::Embedder,
-    llm::client::PatchaApiClient,
+    llm::backend,
     models::TaskStatus,
     summary::TaskSummarizer,
 };
@@ -88,7 +88,10 @@ pub async fn run_list(args: TasksArgs, cfg: Config) -> Result<()> {
         return Ok(());
     }
 
-    println!("{:<10} {:<50} {:<12} {:>8}  {}", "ID", "Title", "Status", "Duration", "Project");
+    println!(
+        "{:<10} {:<50} {:<12} {:>8}  Project",
+        "ID", "Title", "Status", "Duration"
+    );
     println!("{}", "─".repeat(100));
     for t in &tasks {
         let id_short = &t.id[..t.id.len().min(8)];
@@ -100,7 +103,11 @@ pub async fn run_list(args: TasksArgs, cfg: Config) -> Result<()> {
         let proj = t.project.as_deref().unwrap_or("-");
         println!(
             "{:<10} {:<50} {:<12} {:>8}  {}",
-            id_short, title, format!("{:?}", t.status), dur, proj
+            id_short,
+            title,
+            format!("{:?}", t.status),
+            dur,
+            proj
         );
     }
     println!("\n{} tasks", tasks.len());
@@ -137,7 +144,10 @@ pub async fn run_details(args: TaskDetailsArgs, cfg: Config) -> Result<()> {
     if let Some(dur) = task.duration_minutes {
         println!("Duration:    {dur:.0} min");
     }
-    println!("Confidence:  {:.0}%", task.confidence_score.unwrap_or(0.0) * 100.0);
+    println!(
+        "Confidence:  {:.0}%",
+        task.confidence_score.unwrap_or(0.0) * 100.0
+    );
     if let Some(desc) = &task.description {
         println!("\nDescription:\n{desc}");
     }
@@ -157,7 +167,7 @@ pub async fn run_summary(args: TaskSummaryArgs, cfg: Config) -> Result<()> {
     let date = parse_date(args.date.as_deref());
     let db = Db::open(&cfg.db_path)?;
     let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let summarizer = TaskSummarizer::new(task_store, llm_client, &cfg.data_dir);
 
     let summary = summarizer.generate_daily_task_summary(date).await?;
@@ -202,7 +212,11 @@ pub async fn run_search(args: SearchTasksArgs, cfg: Config) -> Result<()> {
             .and_then(|v| v.as_f64())
             .map(|d| format!("{d:.0}min"))
             .unwrap_or_default();
-        let proj_tag = if proj.is_empty() { String::new() } else { format!(" [{proj}]") };
+        let proj_tag = if proj.is_empty() {
+            String::new()
+        } else {
+            format!(" [{proj}]")
+        };
         println!("  • {title}{proj_tag} {dur}");
         if let Some(desc) = t.get("description").and_then(|v| v.as_str()) {
             let s: String = desc.chars().take(80).collect();
@@ -253,13 +267,23 @@ pub async fn run_identify(args: IdentifyTasksArgs, cfg: Config) -> Result<()> {
     let db = Db::open(&cfg.db_path)?;
     let store = Arc::new(VectorStore::new(db.clone()));
     let task_store = Arc::new(TaskStore::new(db, cfg.data_dir.clone()));
-    let llm_client = Arc::new(PatchaApiClient::new(&cfg));
+    let llm_client = backend::build(&cfg);
     let compactor = DailyCompactor::new(store, task_store, llm_client, &cfg);
 
-    println!("Identifying tasks for {}{}...", date, if args.dry_run { " [dry-run]" } else { "" });
+    println!(
+        "Identifying tasks for {}{}...",
+        date,
+        if args.dry_run { " [dry-run]" } else { "" }
+    );
     let result = compactor.compact_day(date, args.dry_run, true).await?;
-    let tasks = result.get("tasks_identified").and_then(|v| v.as_u64()).unwrap_or(0);
-    let events = result.get("events_compacted").and_then(|v| v.as_u64()).unwrap_or(0);
+    let tasks = result
+        .get("tasks_identified")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let events = result
+        .get("events_compacted")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     println!("{tasks} tasks identified from {events} events.");
     Ok(())
 }
