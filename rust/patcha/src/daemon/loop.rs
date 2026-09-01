@@ -24,6 +24,7 @@ use crate::{
     hourly::HourlySummarizer,
     llm::backend,
     models::Event,
+    perception::model_fetch,
     process::EventPreprocessor,
 };
 
@@ -138,6 +139,23 @@ pub async fn start(cfg: Config) -> Result<()> {
         ax_interval = cfg.ax_poll_interval_seconds,
         "patcha daemon starting"
     );
+
+    // The first-run model fetch is ~810 MB, so it runs in the background: the
+    // daemon starts collecting immediately and the captioner picks the model up
+    // once it lands.
+    if cfg.enable_captioner && cfg.enable_model_auto_download {
+        let model_dir = model_fetch::resolve_model_dir(&res_dir);
+        if !model_fetch::is_complete(&model_dir) {
+            tokio::spawn(async move {
+                if let Err(e) = model_fetch::ensure_fastvlm(&model_dir).await {
+                    tracing::warn!(
+                        error = %e,
+                        "FastVLM model fetch failed; gist captioning stays off"
+                    );
+                }
+            });
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Subsystems

@@ -34,6 +34,8 @@ enum Commands {
         about = "Run the FastVLM captioner over a folder of screenshots"
     )]
     CaptionEval(cli::caption_eval::CaptionEvalArgs),
+    #[command(name = "fetch-models", about = "Download the FastVLM captioner model")]
+    FetchModels(cli::fetch_models::FetchModelsArgs),
 
     // Summarization
     #[command(name = "summarize", about = "Generate daily summary")]
@@ -127,6 +129,7 @@ async fn main() -> Result<()> {
         Commands::Collect(args) => cli::collect::run(args, cfg).await,
         Commands::Observe(args) => cli::observe::run(args, cfg).await,
         Commands::CaptionEval(args) => cli::caption_eval::run(args, cfg).await,
+        Commands::FetchModels(args) => cli::fetch_models::run(args, cfg).await,
         Commands::Summarize(args) => cli::summarize::run(args, cfg).await,
         Commands::Search(args) => cli::search::run(args, cfg).await,
         Commands::Review(args) => cli::review::run(args, cfg).await,

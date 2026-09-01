@@ -54,12 +54,11 @@ impl FastVlmCaptioner {
         }
     }
 
-    /// Whether the model files are present (so the collector can skip captioning
-    /// cleanly when the model hasn't been fetched).
+    /// Whether every model file is present (so the collector can skip captioning
+    /// cleanly while the first-run fetch is still in flight). Delegates to
+    /// `model_fetch` so a partly-downloaded model never counts as ready.
     pub fn available(&self) -> bool {
-        ["tokenizer.json", &format!("onnx/{DECODER_FILE}")]
-            .iter()
-            .all(|f| self.model_dir.join(f).exists())
+        super::model_fetch::is_complete(&self.model_dir)
     }
 
     fn load(&self) -> Result<Loaded> {

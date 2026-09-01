@@ -65,6 +65,8 @@ pub struct Config {
     // Gist captioning (Phase 3) — model resolved from resources_dir/models/fastvlm.
     pub enable_captioner: bool,
     pub caption_max_new_tokens: usize,
+    /// Fetch the ~810 MB FastVLM model on first run when it is not bundled.
+    pub enable_model_auto_download: bool,
 
     // Patcha cloud API
     pub patcha_api_url: String,
@@ -121,6 +123,7 @@ impl Default for Config {
             background_poll_interval_seconds: 15,
             enable_captioner: true,
             caption_max_new_tokens: 56,
+            enable_model_auto_download: true,
             patcha_api_url: "https://api.patcha.app".into(),
             patcha_access_token: String::new(),
             patcha_refresh_token: String::new(),
@@ -254,6 +257,7 @@ impl Config {
             background_poll_interval_seconds: env_u64("BACKGROUND_POLL_INTERVAL", 15),
             enable_captioner: env_bool("ENABLE_CAPTIONER", true),
             caption_max_new_tokens: env_usize("CAPTION_MAX_NEW_TOKENS", 56),
+            enable_model_auto_download: env_bool("ENABLE_MODEL_AUTO_DOWNLOAD", true),
             patcha_api_url: env_str("PATCHA_API_URL", "https://api.patcha.app"),
             patcha_access_token: access_token,
             patcha_refresh_token: refresh_token,

@@ -8,6 +8,7 @@
 mod app_cache;
 mod captioner;
 mod embedder;
+pub mod model_fetch;
 
 pub use app_cache::{cosine, AppEmbeddingCache};
 pub use captioner::FastVlmCaptioner;

@@ -3,7 +3,7 @@
 //! across screen types (editor, browser, design tool, terminal, video, …).
 
 use crate::config::Config;
-use crate::perception::FastVlmCaptioner;
+use crate::perception::{model_fetch, FastVlmCaptioner};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,10 @@ pub struct CaptionEvalArgs {
     #[arg(help = "A screenshot image, or a directory of png/jpg images, to caption")]
     pub images_dir: PathBuf,
 
-    #[arg(long, help = "FastVLM model dir (default: <resources>/models/fastvlm)")]
+    #[arg(
+        long,
+        help = "FastVLM model dir (default: bundled, else ~/.patcha/models/fastvlm)"
+    )]
     pub model_dir: Option<PathBuf>,
 
     #[arg(long, help = "OCR helper binary (default: <resources>/ocr)")]
@@ -41,13 +44,13 @@ pub async fn run(args: CaptionEvalArgs, _cfg: Config) -> Result<()> {
     let res = resources_dir();
     let model_dir = args
         .model_dir
-        .unwrap_or_else(|| res.join("models").join("fastvlm"));
+        .unwrap_or_else(|| model_fetch::resolve_model_dir(&res));
     let ocr_bin = args.ocr_bin.unwrap_or_else(|| res.join("ocr"));
 
     let mut cap = FastVlmCaptioner::new(model_dir.clone(), args.max_new_tokens);
     if !cap.available() {
         return Err(anyhow!(
-            "FastVLM model not found at {model_dir:?} — pass --model-dir or fetch the model"
+            "FastVLM model not found at {model_dir:?} — run `patcha fetch-models` or pass --model-dir"
         ));
     }
 

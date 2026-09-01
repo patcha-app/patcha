@@ -2,7 +2,7 @@ use crate::{
     collectors::filters::{is_banking_domain, is_incognito_window},
     config::Config,
     models::{Event, EventType},
-    perception::{AppEmbeddingCache, FastVlmCaptioner, MobileClipEmbedder},
+    perception::{model_fetch, AppEmbeddingCache, FastVlmCaptioner, MobileClipEmbedder},
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -70,18 +70,18 @@ impl AccessibilityCollector {
             None
         };
 
+        // Constructed even when the model is absent: availability is re-checked
+        // per caption, so gist starts working as soon as the first-run fetch
+        // finishes rather than waiting for a daemon restart.
         let captioner = if cfg.enable_captioner {
-            let model_dir = resources_dir.join("models").join("fastvlm");
-            let candidate = FastVlmCaptioner::new(model_dir.clone(), cfg.caption_max_new_tokens);
-            if candidate.available() {
-                Some(candidate)
-            } else {
-                tracing::warn!(
-                    "captioner enabled but FastVLM model not found at {:?}; gist disabled",
+            let model_dir = model_fetch::resolve_model_dir(resources_dir);
+            if !model_fetch::is_complete(&model_dir) {
+                tracing::info!(
+                    "FastVLM model not yet present at {:?}; gist stays off until the fetch completes",
                     model_dir
                 );
-                None
             }
+            Some(FastVlmCaptioner::new(model_dir, cfg.caption_max_new_tokens))
         } else {
             None
         };
@@ -188,15 +188,18 @@ impl AccessibilityCollector {
         // 5. Gist: caption only on context switches (new app / new window), while the
         //    screenshot is still on disk. Within-window drift ("same") skips the VLM.
         let gist = if transition != "same" {
-            self.captioner.as_mut().and_then(|c| {
-                match c.caption(&screenshot, &app_name, &window_title, &ocr_text) {
-                    Ok(g) => Some(g),
-                    Err(e) => {
-                        tracing::debug!(error = %e, "captioner failed");
-                        None
-                    }
-                }
-            })
+            self.captioner
+                .as_mut()
+                .filter(|c| c.available())
+                .and_then(
+                    |c| match c.caption(&screenshot, &app_name, &window_title, &ocr_text) {
+                        Ok(g) => Some(g),
+                        Err(e) => {
+                            tracing::debug!(error = %e, "captioner failed");
+                            None
+                        }
+                    },
+                )
         } else {
             None
         };
