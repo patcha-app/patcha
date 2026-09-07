@@ -3,6 +3,7 @@ pub mod caption_eval;
 pub mod cluster;
 pub mod collect;
 pub mod compact;
+pub mod fetch_models;
 pub mod graph;
 pub mod maintenance;
 pub mod observe;

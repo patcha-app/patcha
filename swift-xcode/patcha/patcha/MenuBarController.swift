@@ -32,6 +32,7 @@ private final class NoIconMenuItem: NSMenuItem {
 
     private var resumeNowItem: NSMenuItem!
     private var mcpStatusItem: NSMenuItem!
+    private var modelStatusItem: NSMenuItem!
     private var mcpPollTimer: Timer?
 
     init(daemonManager: DaemonManager, mcpManager: MCPManager, settingsWindowController: SettingsWindowController, settingsStore: SettingsStore) {
@@ -95,6 +96,11 @@ private final class NoIconMenuItem: NSMenuItem {
         mcpStatusItem = NSMenuItem(title: "MCP Server: Checking...", action: nil, keyEquivalent: "")
         mcpStatusItem.isEnabled = false
         menu.addItem(mcpStatusItem)
+
+        modelStatusItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        modelStatusItem.isEnabled = false
+        modelStatusItem.isHidden = true
+        menu.addItem(modelStatusItem)
 
         menu.addItem(.separator())
         menu.addItem(buildPauseSubmenu())
@@ -269,6 +275,35 @@ private final class NoIconMenuItem: NSMenuItem {
 extension MenuBarController: NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshPermissions()
+        refreshModelStatus()
         resumeNowItem?.isHidden = daemonManager.status != .paused
+    }
+
+    /// The FastVLM captioner model is fetched by the daemon on first run, so the
+    /// menu reports progress from the status file it writes.
+    private func refreshModelStatus() {
+        let path = NSHomeDirectory() + "/.patcha/model_download.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let state = obj["state"] as? String else {
+            modelStatusItem?.isHidden = true
+            return
+        }
+
+        switch state {
+        case "downloading":
+            let done = (obj["downloaded_bytes"] as? Double) ?? 0
+            let total = (obj["total_bytes"] as? Double) ?? 0
+            let pct = total > 0 ? Int((done / total) * 100) : 0
+            let index = (obj["file_index"] as? Int) ?? 0
+            let count = (obj["file_count"] as? Int) ?? 0
+            modelStatusItem?.title = "Downloading gist model: \(pct)% (\(index) of \(count))"
+            modelStatusItem?.isHidden = false
+        case "failed":
+            modelStatusItem?.title = "Gist model download failed"
+            modelStatusItem?.isHidden = false
+        default:
+            modelStatusItem?.isHidden = true
+        }
     }
 }

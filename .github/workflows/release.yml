@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, sign, notarize
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      # The Developer ID certificate is imported into a throwaway keychain so it
+      # never persists on the runner beyond this job.
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN=$RUNNER_TEMP/build.keychain
+          echo "$MACOS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import $RUNNER_TEMP/cert.p12 -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain
+          rm $RUNNER_TEMP/cert.p12
+
+      - name: Store notarytool credentials
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          echo "$APPLE_API_KEY" | base64 --decode > $RUNNER_TEMP/AuthKey.p8
+          xcrun notarytool store-credentials "patcha-notary" \
+            --key $RUNNER_TEMP/AuthKey.p8 \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --keychain $RUNNER_TEMP/build.keychain
+          rm $RUNNER_TEMP/AuthKey.p8
+
+      - name: Build, sign, notarize
+        env:
+          PATCHA_SIGN_IDENTITY: ${{ secrets.PATCHA_SIGN_IDENTITY }}
+          PATCHA_NOTARY_PROFILE: patcha-notary
+        run: ./build.sh
+
+      - name: Verify notarization
+        run: |
+          DMG=$(ls dist/patcha-*.dmg)
+          spctl -a -vvv -t install "$DMG"
+          xcrun stapler validate "$DMG"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/patcha-*.dmg
+          generate_release_notes: true

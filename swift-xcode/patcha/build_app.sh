@@ -9,11 +9,16 @@ if ! command -v xcodebuild &>/dev/null; then
 fi
 
 echo "Building Patcha.app (Xcode)..."
+
+# Built unsigned on purpose: build.sh copies the daemon, helper binaries and
+# models into Contents/Resources afterwards, which would invalidate any
+# signature applied here. All signing happens in build.sh after staging.
 xcodebuild \
     -project patcha.xcodeproj \
     -scheme patcha \
     -configuration Release \
     -derivedDataPath .build \
+    CODE_SIGNING_ALLOWED=NO \
     build 2>&1
 
 APP_SRC=".build/Build/Products/Release/patcha.app"
@@ -23,7 +28,4 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "../../dist"
 cp -r "$APP_SRC" "$APP_BUNDLE"
 
-echo "  Signing app bundle (ad-hoc)..."
-codesign --force --deep --sign - "$APP_BUNDLE"
-
-echo "  Built: $APP_BUNDLE"
+echo "  Built (unsigned): $APP_BUNDLE"
